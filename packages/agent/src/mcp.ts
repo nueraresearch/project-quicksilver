@@ -137,6 +137,24 @@ export async function closeAll(clients: NamedMcpClient[]): Promise<void> {
  * a `<label>_<name>` alias so both stay reachable rather than one silently
  * shadowing the other.
  */
+const SECRET_KEY = /token|secret|key|authorization|password|credential/i
+
+/**
+ * A short, plain description of what a Context MCP call asked for: the GROQ query, or the knowledge-base
+ * entry or search text. Only top-level string arguments, never one whose name looks like a credential,
+ * bounded to 240 characters. Shown to the person who asked, never persisted.
+ */
+export function summarizeToolCall(args: unknown): string | undefined {
+  if (!args || typeof args !== 'object') return undefined
+  const preferred = ['query', 'groq', 'search', 'question', 'id', 'entryId', 'entry', 'path', 'title', 'slug', 'name']
+  const record = args as Record<string, unknown>
+  const pick = preferred.find((k) => typeof record[k] === 'string' && (record[k] as string).trim() && !SECRET_KEY.test(k))
+    ?? Object.keys(record).find((k) => typeof record[k] === 'string' && (record[k] as string).trim() && !SECRET_KEY.test(k))
+  if (!pick) return undefined
+  const text = (record[pick] as string).replace(/\s+/g, ' ').trim()
+  return text.length > 240 ? `${text.slice(0, 237)}...` : text
+}
+
 export async function mergeClientTools(
   clients: NamedMcpClient[],
   callLog: EvaluatorToolCall[] = [],
@@ -187,7 +205,8 @@ export async function mergeClientTools(
           try {
             const result = await originalExecute(args, options)
             completedTools.push(key)
-            callLog.push({ name: key, succeeded: true, durationMs: Math.max(0, Date.now() - startedAt) })
+            const detail = summarizeToolCall(args)
+            callLog.push({ name: key, succeeded: true, durationMs: Math.max(0, Date.now() - startedAt), ...(detail ? { detail } : {}) })
             return result
           } catch (error) {
             // Record outcome without persisting provider error text, which can
