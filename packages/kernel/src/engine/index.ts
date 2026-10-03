@@ -11,6 +11,8 @@ export interface EvaluatorToolCall {
   succeeded: boolean
   error?: string
   durationMs?: number
+  /** What the call asked for, bounded and secret-free, for the person's own eyes (the chat's sources list). Never persisted to traces or evaluations. */
+  detail?: string
 }
 
 export interface EvaluationInput {

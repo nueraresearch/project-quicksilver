@@ -169,3 +169,8 @@
 .offerButton:disabled { cursor: not-allowed; opacity: 0.55; }
 .retry { min-height: 2.25rem; padding: 0.3rem 0.7rem; margin-left: 0.3rem; }
 .offerButton:focus-visible, .retry:focus-visible, .offerText:focus-visible { outline: 3px solid #a8e4ff; outline-offset: 2px; }
+
+.sources { margin: 0.4rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.45rem; font-size: 0.78rem; }
+.sourceBadge { display: inline-block; border: 1px solid #3f8f86; border-radius: 999px; padding: 0.05rem 0.5rem; color: #bdeee6; font-size: 0.7rem; font-weight: 600; }
+.sourceBadge[data-kind="app"] { border-color: #4a6078; color: #b9c8d8; }
+.sourceDetail { display: block; margin-top: 0.2rem; overflow-wrap: anywhere; border-radius: 0.4rem; background: #0c1726; padding: 0.3rem 0.45rem; color: #cfe1f3; font-size: 0.72rem; }
