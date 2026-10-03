@@ -5,6 +5,8 @@ import type { WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowNodeKind } from
 import { validateWorkflowGraph } from '@quicksilver/kernel/workflows/graph'
 import { authFailureMessage, consoleHeaders, resolveConsoleAccess, type ConsoleRoute } from '@/lib/console-auth'
 import { graphLayout } from '@/lib/workflow-layout'
+import { NOTHING_TO_REDO, NOTHING_TO_UNDO, canRedo, canUndo, emptyHistory, recordEdit, redo, undo, type EditHistory } from '@/lib/workflow-history'
+import { WORKFLOW_TEMPLATES, templateGraph } from '@/lib/workflow-templates'
 
 type ValidationResponse = { valid: boolean; errors: string[]; topologicalOrder: string[] }
 type PublicationVersion = { workflowId: string; version: number; graph: WorkflowGraph; digest: string; authoredBy: string; createdAt: number; status: 'draft' | 'in-review' | 'published' | 'deprecated'; reviewedBy?: string; reviewNote?: string; publishedAt?: number }
@@ -25,6 +27,7 @@ const initialEdges: WorkflowEdge[] = [
   { id: 'edge-2', from: 'agent-1', to: 'output-1' },
 ]
 const nodeTitles: Record<WorkflowNodeKind, string> = { trigger: 'Trigger', agent: 'Agent', tool: 'Tool', condition: 'Condition', loop: 'Bounded loop', output: 'Output' }
+type DraftSnapshot = { graphId: string; graphVersion: number; nodes: WorkflowNode[]; edges: WorkflowEdge[] }
 const DRAFT_STORAGE_KEY = 'nuera-quicksilver/workflow-draft/v1'
 
 /**
@@ -142,6 +145,13 @@ export default function WorkflowBuilderPage() {
   const [versionDiff, setVersionDiff] = useState<WorkflowVersionDiff | null>(null)
   const [diffBusy, setDiffBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const [history, setHistory] = useState<EditHistory<DraftSnapshot>>(() => emptyHistory())
+  const [historyNotice, setHistoryNotice] = useState<string | null>(null)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [pendingTemplate, setPendingTemplate] = useState<string | null>(null)
+  const confirmPanel = useRef<HTMLDivElement>(null)
+  // The draft as last loaded, imported, or saved as a shared version. Anything different is an unsaved change.
+  const baseline = useRef(JSON.stringify({ nodes: initialNodes, edges: initialEdges }))
   const [simulation, setSimulation] = useState<{ graphKey: string; result: SimulationResponse } | null>(null)
   const [liveInput, setLiveInput] = useState('Summarize the available information relevant to this request.')
   const [liveRunning, setLiveRunning] = useState(false)
@@ -155,6 +165,11 @@ export default function WorkflowBuilderPage() {
     nodes,
     edges,
   }
+  const snapshot = useRef<DraftSnapshot>({ graphId, graphVersion, nodes, edges })
+  snapshot.current = { graphId, graphVersion, nodes, edges }
+  const unsavedChanges = JSON.stringify({ nodes, edges }) !== baseline.current
+  const undoable = canUndo(history)
+  const redoable = canRedo(history)
   const map = graphLayout(nodes, edges)
   const diagramViewport = useRef<HTMLDivElement>(null)
   const [diagramSize, setDiagramSize] = useState({ width: 0, height: 0 })
@@ -225,6 +240,7 @@ export default function WorkflowBuilderPage() {
         const trigger = payload.nodes.find((node) => node.kind === 'trigger')
         const first = payload.edges.find((edge) => edge.from === trigger?.id)
         setConnection({ from: trigger?.id ?? '', to: first?.to ?? trigger?.id ?? '', branch: '' })
+        baseline.current = JSON.stringify({ nodes: payload.nodes, edges: payload.edges })
         setValidation(result)
         setPersistenceReady(true)
       } catch (cause) {
@@ -282,6 +298,7 @@ export default function WorkflowBuilderPage() {
       setValidation(result)
       if (!result.valid) throw new Error('Fix the workflow validation issues before saving a platform draft.')
       await postWorkflow('workflows/drafts', { graph }, 'Could not save the workflow draft.')
+      baseline.current = JSON.stringify({ nodes: graph.nodes, edges: graph.edges })
       await refreshPublications()
       setPublicationNotice(`Saved ${graph.id} v${graph.version} as a shared draft.`)
     } catch (cause) {
@@ -326,17 +343,86 @@ export default function WorkflowBuilderPage() {
     await runPublicationAction('workflows/rollback', version, 'Previously reviewed version restored as active.')
   }
 
-  function forkVersionAsNextDraft(version: PublicationVersion) {
-    const nextVersion = Math.max(version.version, ...publication.versions.map((item) => item.version)) + 1
-    setGraphId(version.workflowId)
-    setGraphVersion(nextVersion)
-    setNodes(version.graph.nodes)
-    setEdges(version.graph.edges)
-    setSequence(nextSequence(version.graph.nodes, version.graph.edges))
-    const trigger = version.graph.nodes.find((node) => node.kind === 'trigger')
-    const first = version.graph.edges.find((edge) => edge.from === trigger?.id)
+  /** Put a whole draft on the canvas: ids, version, steps, connections, and a sensible default connection. */
+  function loadDraft(next: DraftSnapshot) {
+    setGraphId(next.graphId)
+    setGraphVersion(next.graphVersion)
+    setNodes(next.nodes)
+    setEdges(next.edges)
+    setSequence(nextSequence(next.nodes, next.edges))
+    const trigger = next.nodes.find((node) => node.kind === 'trigger')
+    const first = next.edges.find((edge) => edge.from === trigger?.id)
     setConnection({ from: trigger?.id ?? '', to: first?.to ?? trigger?.id ?? '', branch: '' })
     setValidation(null)
+    setSimulation(null)
+  }
+
+  /** Remember the draft as it is now so the next change can be undone. Edits with the same key in a row (typing in one field) share one step. */
+  function recordHistory(key: string | null = null) {
+    setHistory((current) => recordEdit(current, snapshot.current, key))
+    setHistoryNotice(null)
+  }
+
+  function undoEdit() {
+    const step = undo(history, snapshot.current)
+    if (!step) return
+    setHistory(step.history)
+    loadDraft(step.snapshot)
+    setHistoryNotice('Undid the last change.')
+  }
+
+  function redoEdit() {
+    const step = redo(history, snapshot.current)
+    if (!step) return
+    setHistory(step.history)
+    loadDraft(step.snapshot)
+    setHistoryNotice('Restored the change you undid.')
+  }
+
+  const historyKeys = useRef({ undoEdit, redoEdit })
+  historyKeys.current = { undoEdit, redoEdit }
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key !== 'z' && key !== 'y') return
+      const target = event.target as HTMLElement | null
+      // Leave the browser's own undo alone while typing in a text field.
+      if (target?.isContentEditable || target?.tagName === 'TEXTAREA' || (target?.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes((target as HTMLInputElement).type))) return
+      event.preventDefault()
+      if (key === 'y' || event.shiftKey) historyKeys.current.redoEdit()
+      else historyKeys.current.undoEdit()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
+    // On a phone the confirmation opens below the card that was pressed; bring it into view.
+    if (pendingTemplate) confirmPanel.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [pendingTemplate])
+
+  function chooseTemplate(id: string, confirmed = false) {
+    if (unsavedChanges && !confirmed) {
+      setPendingTemplate(id)
+      return
+    }
+    const graph = templateGraph(id)
+    if (!graph) return
+    recordHistory()
+    baseline.current = JSON.stringify({ nodes: graph.nodes, edges: graph.edges })
+    loadDraft({ graphId: graph.id, graphVersion: graph.version, nodes: graph.nodes, edges: graph.edges })
+    setPendingTemplate(null)
+    setTemplatesOpen(false)
+    setError(null)
+    setHistoryNotice(`Started from "${WORKFLOW_TEMPLATES.find((item) => item.id === id)?.title}". Undo brings your previous draft back.`)
+  }
+
+  function forkVersionAsNextDraft(version: PublicationVersion) {
+    const nextVersion = Math.max(version.version, ...publication.versions.map((item) => item.version)) + 1
+    recordHistory()
+    baseline.current = JSON.stringify({ nodes: version.graph.nodes, edges: version.graph.edges })
+    loadDraft({ graphId: version.workflowId, graphVersion: nextVersion, nodes: version.graph.nodes, edges: version.graph.edges })
     setPublicationNotice(`Loaded immutable v${version.version} as editable v${nextVersion}. Save it as a new shared version when ready.`)
     setPublicationError(null)
   }
@@ -378,6 +464,7 @@ export default function WorkflowBuilderPage() {
       ...(kind === 'tool' ? { config: { toolId: '', impact: 'low' as const } } : {}),
       ...(kind === 'loop' ? { config: { loop: { maxIterations: 5, maxDurationMs: 60_000, continueWhile: '$input.iteration < 2', body: loopBody } } } : {}),
     }
+    recordHistory()
     setNodes((current) => [...current, node])
     setSequence((current) => current + 1)
     setValidation(null)
@@ -385,23 +472,27 @@ export default function WorkflowBuilderPage() {
   }
 
   function updateNode(id: string, patch: Partial<WorkflowNode>) {
+    recordHistory(`node:${id}:${Object.keys(patch).join(',')}`)
     setNodes((current) => current.map((node) => node.id === id ? { ...node, ...patch } : node))
     setValidation(null)
   }
 
   function updateConfig(id: string, patch: NonNullable<WorkflowNode['config']>) {
+    recordHistory(`config:${id}:${Object.keys(patch).join(',')}`)
     setNodes((current) => current.map((node) => node.id === id ? { ...node, config: { ...node.config, ...patch } } : node))
     setValidation(null)
   }
 
   function addConnection() {
     const id = `edge-${sequence + edges.length + 1}`
+    recordHistory()
     setEdges((current) => [...current, { id, from: connection.from, to: connection.to, ...(connection.branch ? { branch: connection.branch } : {}) }])
     setValidation(null)
   }
 
   function removeNode(id: string) {
     if (nodes.find((node) => node.id === id)?.kind === 'trigger') return
+    recordHistory()
     setNodes((current) => current.filter((node) => node.id !== id))
     setEdges((current) => current.filter((edge) => edge.from !== id && edge.to !== id))
     setConnection((current) => ({ from: current.from === id ? 'trigger-1' : current.from, to: current.to === id ? 'trigger-1' : current.to, branch: current.branch }))
@@ -409,6 +500,7 @@ export default function WorkflowBuilderPage() {
   }
 
   function removeConnection(id: string) {
+    recordHistory()
     setEdges((current) => current.filter((edge) => edge.id !== id))
     setValidation(null)
   }
@@ -482,23 +574,19 @@ export default function WorkflowBuilderPage() {
         setError('This workflow has validation issues. Your current draft was left unchanged.')
         return
       }
-      setGraphId(candidate.id)
-      setGraphVersion(candidate.version)
-      setNodes(candidate.nodes)
-      setEdges(candidate.edges)
-      setSequence(nextSequence(candidate.nodes, candidate.edges))
+      recordHistory()
+      baseline.current = JSON.stringify({ nodes: candidate.nodes, edges: candidate.edges })
+      loadDraft({ graphId: candidate.id, graphVersion: candidate.version, nodes: candidate.nodes, edges: candidate.edges })
+      setValidation(result)
       setStorageAvailable(true)
       setPersistenceReady(true)
-      const trigger = candidate.nodes.find((node) => node.kind === 'trigger')
-      const first = candidate.edges.find((edge) => edge.from === trigger?.id)
-      setConnection({ from: trigger?.id ?? '', to: first?.to ?? trigger?.id ?? '', branch: '' })
     } catch (cause) {
       setError((cause as Error).message || 'Could not read that workflow file.')
     }
   }
 
   return (
-    <main className="app-main">
+    <main className="app-main qs-workflow-page">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-5">
         <div>
           <p className="qs-eyebrow mb-2">Workflow studio <span aria-hidden="true">/</span> Draft workspace</p>
@@ -510,6 +598,35 @@ export default function WorkflowBuilderPage() {
           <button onClick={validateDraft} disabled={validating} className="qs-action-primary disabled:cursor-wait disabled:opacity-50">{validating ? 'Checking workflow…' : 'Validate workflow'}</button>
         </div>
       </header>
+
+      <section aria-label="Start and undo" className="qs-panel mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-sm font-semibold text-quicksilver-signal">Start and undo</h2><p id="history-hint" className="qs-helper mt-1">{!undoable ? NOTHING_TO_UNDO : !redoable ? NOTHING_TO_REDO : 'Undo: Ctrl or Cmd + Z. Redo: Ctrl or Cmd + Shift + Z.'}</p></div>
+          <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto">
+            <button type="button" onClick={() => setTemplatesOpen((open) => !open)} aria-expanded={templatesOpen} aria-controls="workflow-templates" className="qs-action-secondary w-full sm:w-auto">Templates</button>
+            <button type="button" onClick={undoEdit} disabled={!undoable} aria-describedby="history-hint" title={undoable ? 'Undo the last change (Ctrl or Cmd + Z)' : NOTHING_TO_UNDO} className="qs-action-secondary w-full disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">↶ Undo</button>
+            <button type="button" onClick={redoEdit} disabled={!redoable} aria-describedby="history-hint" title={redoable ? 'Redo the change you undid (Ctrl or Cmd + Shift + Z)' : NOTHING_TO_REDO} className="qs-action-secondary w-full disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">↷ Redo</button>
+          </div>
+        </div>
+        {historyNotice && <p role="status" className="mt-3 text-xs text-emerald-300">{historyNotice}</p>}
+        {templatesOpen && <div id="workflow-templates" className="mt-4 border-t border-quicksilver-border pt-4">
+          <h3 className="text-sm font-semibold text-quicksilver-signal">Start from a template</h3>
+          <p className="qs-helper mt-1">A template replaces the draft on the canvas with a ready-made flow you can edit. You can undo it.</p>
+          <ul className="mt-3 grid gap-3 md:grid-cols-2">
+            {WORKFLOW_TEMPLATES.map((template) => <li key={template.id} className="flex flex-col rounded-xl border border-quicksilver-border bg-quicksilver-bg p-4">
+              <p className="text-sm font-semibold text-quicksilver-signal">{template.title}</p>
+              <p className="mt-1 text-xs text-quicksilver-accent">{template.summary}</p>
+              <p className="mt-2 text-xs text-quicksilver-accent">{template.outline}</p>
+              <button type="button" onClick={() => chooseTemplate(template.id)} aria-label={`Use the template: ${template.title}`} className="qs-action-secondary mt-3 w-full self-start sm:w-auto">Use this template</button>
+            </li>)}
+          </ul>
+          {pendingTemplate && <div ref={confirmPanel} role="alertdialog" aria-labelledby="template-confirm-title" className="mt-4 rounded-xl border border-amber-800 bg-amber-950/20 p-4">
+            <p id="template-confirm-title" className="text-sm font-semibold text-amber-100">Replace your current draft?</p>
+            <p className="mt-1 text-xs text-amber-100">You have changes that are not saved as a shared version. Starting from "{WORKFLOW_TEMPLATES.find((item) => item.id === pendingTemplate)?.title}" replaces them. You can undo this right after.</p>
+            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => chooseTemplate(pendingTemplate, true)} className="qs-action-primary">Replace my draft</button><button type="button" onClick={() => setPendingTemplate(null)} className="qs-action-secondary">Keep my draft</button></div>
+          </div>}
+        </div>}
+      </section>
 
       <section aria-label="Add workflow step" className="qs-panel mb-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -538,13 +655,13 @@ export default function WorkflowBuilderPage() {
                 const endY = to.y + 29
                 const middleX = (startX + endX) / 2
                 const middleY = (startY + endY) / 2
-                return <g key={edge.id}><path d={`M ${startX} ${startY} C ${middleX} ${startY}, ${middleX} ${endY}, ${endX - 7} ${endY}`} fill="none" stroke="#56d7e7" strokeOpacity="0.65" strokeWidth="1.5" markerEnd="url(#workflow-arrow)" />{edge.branch && <text x={middleX} y={middleY - 5} textAnchor="middle" fill="#a8b7c7" fontSize="10">{edge.branch}</text>}</g>
+                return <g key={edge.id}><path d={`M ${startX} ${startY} C ${middleX} ${startY}, ${middleX} ${endY}, ${endX - 7} ${endY}`} fill="none" stroke="#56d7e7" strokeOpacity="0.65" strokeWidth="1.5" markerEnd="url(#workflow-arrow)" />{edge.branch && <text x={middleX} y={middleY - 5} textAnchor="middle" fill="#a8b7c7" fontSize="11">{edge.branch}</text>}</g>
               })}
               {nodes.map((node) => {
                 const point = map.positions.get(node.id)
                 if (!point) return null
                 const stroke = node.kind === 'condition' ? '#f0be65' : node.kind === 'agent' ? '#56d7e7' : '#60778d'
-                return <g key={node.id}><rect x={point.x} y={point.y} width="180" height="58" rx="5" fill="#0b1119" stroke={stroke} strokeWidth="1.5" /><text x={point.x + 10} y={point.y + 19} fill={stroke} fontSize="9" letterSpacing="1">{node.kind.toUpperCase()}</text><text x={point.x + 10} y={point.y + 39} fill="#edf4fa" fontSize="12">{node.label.length > 22 ? `${node.label.slice(0, 21)}…` : node.label}</text></g>
+                return <g key={node.id}><rect x={point.x} y={point.y} width="180" height="58" rx="5" fill="#0b1119" stroke={stroke} strokeWidth="1.5" /><text x={point.x + 10} y={point.y + 19} fill={stroke} fontSize="11" letterSpacing="1">{node.kind.toUpperCase()}</text><text x={point.x + 10} y={point.y + 39} fill="#edf4fa" fontSize="12">{node.label.length > 22 ? `${node.label.slice(0, 21)}…` : node.label}</text></g>
               })}
             </svg>
             </div>
@@ -556,8 +673,8 @@ export default function WorkflowBuilderPage() {
                 {index > 0 && <div aria-hidden="true" className="absolute -top-4 left-8 h-4 border-l border-quicksilver-accent/50" />}
                 <div className="mb-3 flex flex-wrap items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-quicksilver-accent/10 text-sm font-semibold text-quicksilver-signal">{index + 1}</span><span className="text-sm font-semibold text-quicksilver-signal">{nodeTitles[node.kind]}</span><span className="min-w-0 break-all rounded-full border border-quicksilver-border px-2 py-1 text-[11px] text-quicksilver-accent">{node.id}</span>{node.kind !== 'trigger' && <button onClick={() => removeNode(node.id)} aria-label={`Remove ${node.label}`} className="qs-action-secondary ml-auto min-h-9 px-3 py-1 text-xs">Remove step</button>}</div>
                 <label className="block text-sm font-medium text-quicksilver-signal">Step name<input value={node.label} onChange={(event) => updateNode(node.id, { label: event.target.value })} className="qs-field mt-2 text-sm focus:border-quicksilver-accent focus:outline-none" /></label>
-                {node.kind === 'condition' && <label className="mt-3 block text-xs text-quicksilver-accent">Condition<input value={node.config?.conditionExpression ?? ''} onChange={(event) => updateConfig(node.id, { conditionExpression: event.target.value })} placeholder={'$nqc.agent-1.reasoningScore >= 70'} className="qs-field mt-1" /><span className="mt-1 block text-[10px]">Use $input, $steps.&lt;node-id&gt;.&lt;field&gt;, or $nqc.&lt;agent-node-id&gt;.reasoningScore with comparisons or exists.</span></label>}
-                {node.kind === 'loop' && node.config?.loop && <div className="mt-3 rounded-lg border border-quicksilver-border bg-quicksilver-panel p-3 sm:p-4"><p className="text-xs font-semibold text-quicksilver-signal">Bounded repeat</p><p className="mt-1 text-xs text-quicksilver-accent">Run an isolated, safety-governed workflow body until the condition becomes false. Iteration and wall-clock limits are mandatory; every tool approval is checked again each iteration.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-xs text-quicksilver-accent">Maximum iterations<input type="number" min={1} max={100} value={node.config.loop.maxIterations} onChange={(event) => updateConfig(node.id, { loop: { ...node.config!.loop!, maxIterations: Number(event.target.value) } })} className="qs-field mt-1" /></label><label className="text-xs text-quicksilver-accent">Time budget (milliseconds)<input type="number" min={1} max={300000} value={node.config.loop.maxDurationMs} onChange={(event) => updateConfig(node.id, { loop: { ...node.config!.loop!, maxDurationMs: Number(event.target.value) } })} className="qs-field mt-1" /></label></div><label className="mt-3 block text-xs text-quicksilver-accent">Continue while<input value={node.config.loop.continueWhile} onChange={(event) => updateConfig(node.id, { loop: { ...node.config!.loop!, continueWhile: event.target.value } })} placeholder="$input.iteration < 3" className="qs-field mt-1 font-mono" /><span className="mt-1 block text-[10px]">Use the data-only condition language with $input or $steps.&lt;body-node-id&gt;.&lt;field&gt;. A still-true condition at the iteration limit fails safely.</span></label><LoopBodyEditor key={`${node.id}:${node.config.loop.body.id}`} body={node.config.loop.body} onApply={(body) => updateConfig(node.id, { loop: { ...node.config!.loop!, body } })} /></div>}
+                {node.kind === 'condition' && <label className="mt-3 block text-xs text-quicksilver-accent">Condition<input value={node.config?.conditionExpression ?? ''} onChange={(event) => updateConfig(node.id, { conditionExpression: event.target.value })} placeholder={'$nqc.agent-1.reasoningScore >= 70'} className="qs-field mt-1" /><span className="mt-1 block text-xs">Use $input, $steps.&lt;node-id&gt;.&lt;field&gt;, or $nqc.&lt;agent-node-id&gt;.reasoningScore with comparisons or exists.</span></label>}
+                {node.kind === 'loop' && node.config?.loop && <div className="mt-3 rounded-lg border border-quicksilver-border bg-quicksilver-panel p-3 sm:p-4"><p className="text-xs font-semibold text-quicksilver-signal">Bounded repeat</p><p className="mt-1 text-xs text-quicksilver-accent">Run an isolated, safety-governed workflow body until the condition becomes false. Iteration and wall-clock limits are mandatory; every tool approval is checked again each iteration.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-xs text-quicksilver-accent">Maximum iterations<input type="number" min={1} max={100} value={node.config.loop.maxIterations} onChange={(event) => updateConfig(node.id, { loop: { ...node.config!.loop!, maxIterations: Number(event.target.value) } })} className="qs-field mt-1" /></label><label className="text-xs text-quicksilver-accent">Time budget (milliseconds)<input type="number" min={1} max={300000} value={node.config.loop.maxDurationMs} onChange={(event) => updateConfig(node.id, { loop: { ...node.config!.loop!, maxDurationMs: Number(event.target.value) } })} className="qs-field mt-1" /></label></div><label className="mt-3 block text-xs text-quicksilver-accent">Continue while<input value={node.config.loop.continueWhile} onChange={(event) => updateConfig(node.id, { loop: { ...node.config!.loop!, continueWhile: event.target.value } })} placeholder="$input.iteration < 3" className="qs-field mt-1 font-mono" /><span className="mt-1 block text-xs">Use the data-only condition language with $input or $steps.&lt;body-node-id&gt;.&lt;field&gt;. A still-true condition at the iteration limit fails safely.</span></label><LoopBodyEditor key={`${node.id}:${node.config.loop.body.id}`} body={node.config.loop.body} onApply={(body) => updateConfig(node.id, { loop: { ...node.config!.loop!, body } })} /></div>}
                 {node.kind === 'agent' && <div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-xs text-quicksilver-accent">Agent configuration key<input value={node.config?.agentId ?? ''} onChange={(event) => updateConfig(node.id, { agentId: event.target.value })} className="mt-1 w-full rounded border border-quicksilver-border bg-quicksilver-panel px-3 py-2 text-sm text-quicksilver-signal" /></label><ImpactField value={node.config?.impact ?? 'low'} onChange={(impact) => updateConfig(node.id, { impact })} /><ExecutionPolicyFields config={node.config ?? {}} onChange={(patch) => updateConfig(node.id, patch)} allowRetries />{(node.config?.impact === 'high' || node.config?.impact === 'critical') && <SafetyGates config={node.config} onChange={(patch) => updateConfig(node.id, patch)} />}</div>}
                 {node.kind === 'tool' && <div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-xs text-quicksilver-accent">Tool contract key<input value={node.config?.toolId ?? ''} onChange={(event) => updateConfig(node.id, { toolId: event.target.value })} className="mt-1 w-full rounded border border-quicksilver-border bg-quicksilver-panel px-3 py-2 text-sm text-quicksilver-signal" /></label><ImpactField value={node.config?.impact ?? 'low'} onChange={(impact) => updateConfig(node.id, { impact })} /><ExecutionPolicyFields config={node.config ?? {}} onChange={(patch) => updateConfig(node.id, patch)} /> <label className="flex items-center gap-2 text-xs text-quicksilver-accent"><input type="checkbox" checked={node.config?.sideEffect ?? false} onChange={(event) => updateConfig(node.id, { sideEffect: event.target.checked, evaluationRequired: event.target.checked || node.config?.evaluationRequired, supervisorApprovalRequired: event.target.checked || node.config?.supervisorApprovalRequired })} /> Tool changes external state</label>{(node.config?.sideEffect || node.config?.impact === 'high' || node.config?.impact === 'critical') && <SafetyGates config={node.config} onChange={(patch) => updateConfig(node.id, patch)} />}</div>}
               </div>
@@ -590,25 +707,25 @@ export default function WorkflowBuilderPage() {
             <summary className="min-h-11 cursor-pointer text-sm font-semibold text-quicksilver-signal">Version history <span className="ml-2 text-xs font-normal text-quicksilver-accent">{publication.versions.length} versions</span></summary>
             <div className="mt-3 space-y-3">
               {publication.versions.map((version) => <article key={`${version.workflowId}@${version.version}`} className="rounded border border-quicksilver-border p-3">
-                <div className="flex items-center justify-between gap-3"><p className="font-mono text-xs text-quicksilver-signal">v{version.version} · {version.status}</p>{version.status === 'published' && <span className="font-mono text-[9px] uppercase tracking-widest text-emerald-300">active</span>}</div>
-                <p className="mt-1 break-all font-mono text-[9px] text-quicksilver-accent">{version.digest.slice(0, 24)}… · authored by {version.authoredBy}</p>
-                {version.reviewedBy && <p className="mt-1 text-[10px] text-quicksilver-accent">Reviewed by {version.reviewedBy}{version.reviewNote ? ` · ${version.reviewNote}` : ''}</p>}
-                <div className="mt-3 flex flex-wrap gap-2"><button disabled={diffBusy || !publication.versions.some((item) => item.version < version.version)} onClick={() => compareWithPrevious(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[9px] uppercase text-quicksilver-signal disabled:opacity-40">{diffBusy ? 'Comparing…' : 'Compare prior version'}</button>
-                  <button disabled={!persistenceReady} onClick={() => forkVersionAsNextDraft(version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[9px] uppercase text-quicksilver-signal disabled:opacity-40">Edit as v{Math.max(version.version, ...publication.versions.map((item) => item.version)) + 1}</button>
-                  {version.status === 'draft' && <button disabled={publicationBusy} onClick={() => submitDraft(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[9px] uppercase text-quicksilver-signal disabled:opacity-40">Submit for review</button>}
-                  {version.status === 'in-review' && !version.reviewedBy && <button disabled={publicationBusy || reviewRationale.trim().length < 10} onClick={() => reviewVersion(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[9px] uppercase text-quicksilver-signal disabled:opacity-40">Review version</button>}
-                  {version.status === 'in-review' && version.reviewedBy && <button disabled={publicationBusy} onClick={() => publishVersion(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[9px] uppercase text-quicksilver-signal disabled:opacity-40">Publish version</button>}
-                  {version.status === 'deprecated' && <button disabled={publicationBusy} onClick={() => rollbackVersion(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[9px] uppercase text-quicksilver-signal disabled:opacity-40">Restore version</button>}
+                <div className="flex items-center justify-between gap-3"><p className="font-mono text-xs text-quicksilver-signal">v{version.version} · {version.status}</p>{version.status === 'published' && <span className="font-mono text-[11px] uppercase tracking-widest text-emerald-300">active</span>}</div>
+                <p className="mt-1 break-all font-mono text-[11px] text-quicksilver-accent">{version.digest.slice(0, 24)}… · authored by {version.authoredBy}</p>
+                {version.reviewedBy && <p className="mt-1 text-xs text-quicksilver-accent">Reviewed by {version.reviewedBy}{version.reviewNote ? ` · ${version.reviewNote}` : ''}</p>}
+                <div className="mt-3 flex flex-wrap gap-2"><button disabled={diffBusy || !publication.versions.some((item) => item.version < version.version)} onClick={() => compareWithPrevious(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[11px] uppercase text-quicksilver-signal disabled:opacity-40">{diffBusy ? 'Comparing…' : 'Compare prior version'}</button>
+                  <button disabled={!persistenceReady} onClick={() => forkVersionAsNextDraft(version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[11px] uppercase text-quicksilver-signal disabled:opacity-40">Edit as v{Math.max(version.version, ...publication.versions.map((item) => item.version)) + 1}</button>
+                  {version.status === 'draft' && <button disabled={publicationBusy} onClick={() => submitDraft(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[11px] uppercase text-quicksilver-signal disabled:opacity-40">Submit for review</button>}
+                  {version.status === 'in-review' && !version.reviewedBy && <button disabled={publicationBusy || reviewRationale.trim().length < 10} onClick={() => reviewVersion(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[11px] uppercase text-quicksilver-signal disabled:opacity-40">Review version</button>}
+                  {version.status === 'in-review' && version.reviewedBy && <button disabled={publicationBusy} onClick={() => publishVersion(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[11px] uppercase text-quicksilver-signal disabled:opacity-40">Publish version</button>}
+                  {version.status === 'deprecated' && <button disabled={publicationBusy} onClick={() => rollbackVersion(version.version)} className="rounded border border-quicksilver-border px-2 py-1 font-mono text-[11px] uppercase text-quicksilver-signal disabled:opacity-40">Restore version</button>}
                 </div>
               </article>)}
               {publication.versions.length === 0 && <p className="text-xs text-quicksilver-accent">No shared versions for this workflow yet.</p>}
             </div>
             </details>
-            {versionDiff && <section className="mt-4 rounded border border-quicksilver-accent/40 bg-quicksilver-bg p-3"><div className="flex items-center justify-between gap-2"><h3 className="font-mono text-[10px] uppercase tracking-widest">Version diff · v{versionDiff.fromVersion} → v{versionDiff.toVersion}</h3><button onClick={() => setVersionDiff(null)} className="text-[10px] text-quicksilver-accent">Clear</button></div><p className="mt-1 break-all font-mono text-[9px] text-quicksilver-accent">{versionDiff.fromDigest.slice(0, 16)}… → {versionDiff.toDigest.slice(0, 16)}…</p>{versionDiff.entryNodeChanged && <p className="mt-2 text-xs text-amber-200">Entry node changed.</p>}<ul className="mt-2 space-y-1 text-[10px] text-quicksilver-accent">{versionDiff.nodes.map((change) => <li key={`node-${change.id}`}>Node {change.change}: {change.id}{change.changedFields.length ? ` · ${change.changedFields.join(', ')}` : ''}</li>)}{versionDiff.edges.map((change) => <li key={`edge-${change.id}`}>Edge {change.change}: {change.id}{change.changedFields.length ? ` · ${change.changedFields.join(', ')}` : ''}</li>)}</ul>{versionDiff.riskChanges.length > 0 && <div className="mt-3 rounded border border-amber-800/60 p-2"><p className="font-mono text-[9px] uppercase tracking-widest text-amber-200">Safety-relevant changes</p><ul className="mt-1 space-y-1 text-[10px] text-amber-100">{versionDiff.riskChanges.map((change) => <li key={`${change.nodeId}-${change.field}`}>{change.nodeId} · {change.field}: {String(change.from)} → {String(change.to)}</li>)}</ul></div>}{versionDiff.nodes.length === 0 && versionDiff.edges.length === 0 && !versionDiff.entryNodeChanged && versionDiff.riskChanges.length === 0 && <p className="mt-2 text-xs text-emerald-200">No workflow graph changes detected.</p>}</section>}
-            {publication.audit.length > 0 && <details className="mt-4"><summary className="flex min-h-11 cursor-pointer items-center font-mono text-[10px] uppercase tracking-widest text-quicksilver-accent">Publication history ({publication.audit.length})</summary><ol className="mt-2 space-y-2 text-[10px] text-quicksilver-accent">{publication.audit.slice(0, 12).map((event, index) => <li key={`${event.event}-${event.version}-${event.at}-${index}`}>{new Date(event.at).toLocaleString()} · {event.event} v{event.version} · {event.actorId}{event.detail ? ` · ${event.detail}` : ''}</li>)}</ol></details>}
+            {versionDiff && <section className="mt-4 rounded border border-quicksilver-accent/40 bg-quicksilver-bg p-3"><div className="flex items-center justify-between gap-2"><h3 className="font-mono text-xs uppercase tracking-widest">Version diff · v{versionDiff.fromVersion} → v{versionDiff.toVersion}</h3><button onClick={() => setVersionDiff(null)} className="text-xs text-quicksilver-accent">Clear</button></div><p className="mt-1 break-all font-mono text-[11px] text-quicksilver-accent">{versionDiff.fromDigest.slice(0, 16)}… → {versionDiff.toDigest.slice(0, 16)}…</p>{versionDiff.entryNodeChanged && <p className="mt-2 text-xs text-amber-200">Entry node changed.</p>}<ul className="mt-2 space-y-1 text-xs text-quicksilver-accent">{versionDiff.nodes.map((change) => <li key={`node-${change.id}`}>Node {change.change}: {change.id}{change.changedFields.length ? ` · ${change.changedFields.join(', ')}` : ''}</li>)}{versionDiff.edges.map((change) => <li key={`edge-${change.id}`}>Edge {change.change}: {change.id}{change.changedFields.length ? ` · ${change.changedFields.join(', ')}` : ''}</li>)}</ul>{versionDiff.riskChanges.length > 0 && <div className="mt-3 rounded border border-amber-800/60 p-2"><p className="font-mono text-[11px] uppercase tracking-widest text-amber-200">Safety-relevant changes</p><ul className="mt-1 space-y-1 text-xs text-amber-100">{versionDiff.riskChanges.map((change) => <li key={`${change.nodeId}-${change.field}`}>{change.nodeId} · {change.field}: {String(change.from)} → {String(change.to)}</li>)}</ul></div>}{versionDiff.nodes.length === 0 && versionDiff.edges.length === 0 && !versionDiff.entryNodeChanged && versionDiff.riskChanges.length === 0 && <p className="mt-2 text-xs text-emerald-200">No workflow graph changes detected.</p>}</section>}
+            {publication.audit.length > 0 && <details className="mt-4"><summary className="flex min-h-11 cursor-pointer items-center font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Publication history ({publication.audit.length})</summary><ol className="mt-2 space-y-2 text-xs text-quicksilver-accent">{publication.audit.slice(0, 12).map((event, index) => <li key={`${event.event}-${event.version}-${event.at}-${index}`}>{new Date(event.at).toLocaleString()} · {event.event} v{event.version} · {event.actorId}{event.detail ? ` · ${event.detail}` : ''}</li>)}</ol></details>}
           </section>
           <section className="qs-panel"><h2 className="text-base font-semibold text-quicksilver-signal">Safety check</h2><p className="qs-helper mt-2">Validation checks graph structure, branches, step limits, evaluation, and supervisor approval requirements.</p><input ref={fileInput} type="file" accept=".json,application/json" onChange={importDraft} className="hidden" /><button onClick={() => fileInput.current?.click()} disabled={!persistenceReady} className="qs-action-secondary mb-2 w-full disabled:opacity-40">Import workflow JSON</button><button onClick={exportDraft} className="qs-action-secondary w-full">Export workflow draft</button><button onClick={validateDraft} disabled={validating} className="qs-action-primary mt-4 w-full disabled:opacity-40">{validating ? 'Checking…' : 'Validate workflow'}</button>{error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}{validation && <div className={`mt-4 rounded border p-3 ${validation.valid ? 'border-emerald-800 bg-emerald-950/20' : 'border-amber-800 bg-amber-950/20'}`}><p className="font-mono text-xs uppercase tracking-widest">{validation.valid ? 'Ready for review' : 'Needs changes'}</p>{validation.errors.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-quicksilver-accent">{validation.errors.map((item) => <li key={item}>{item}</li>)}</ul>}{validation.valid && <p className="mt-2 text-xs text-quicksilver-accent">Topological order: {validation.topologicalOrder.join(' → ')}</p>}</div>}</section>
-          <section className="qs-panel"><h2 className="text-base font-semibold text-quicksilver-signal">Run a published workflow</h2><p className="qs-helper mt-2">Running a workflow starts from the chat, so it is one conversation with one audit trail. Ask Quicksilver to run it and press the card it offers.</p><button type="button" onClick={() => window.dispatchEvent(new Event('quicksilver:open-chat'))} className="qs-action-secondary mt-4 w-full">Open the chat</button></section>          <details className="mt-4"><summary className="flex min-h-11 cursor-pointer items-center font-mono text-[10px] uppercase tracking-widest text-quicksilver-accent">Execution history ({executions.length})</summary>{executionHistoryError ? <p className="mt-2 text-xs text-amber-200">{executionHistoryError}</p> : <ol className="mt-2 space-y-2 text-[10px] text-quicksilver-accent">{executions.map((execution) => <li key={execution.runId}>{new Date(execution.completedAt).toLocaleString()} · v{execution.version} · {execution.status} · {execution.durationMs} ms · {execution.evaluationCount} evaluations · {execution.requestedBy}</li>)}</ol>}</details><section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Run preview</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Simulation only: agent results are placeholders. No model, live evaluator, tool, or supervisor approval is called, and no external action can run.</p><button onClick={previewWorkflow} disabled={!persistenceReady} className="mt-4 w-full rounded border border-quicksilver-quicksilver bg-quicksilver-quicksilver/5 px-4 py-3 font-mono text-xs uppercase tracking-widest text-quicksilver-signal hover:bg-quicksilver-quicksilver/15 disabled:opacity-40">Preview workflow path</button>{simulation?.graphKey === JSON.stringify(graph) && <div role="status" className="mt-4 rounded border border-quicksilver-border p-3"><p className="font-mono text-xs uppercase tracking-widest">Simulation · {simulation.result.status}</p>{simulation.result.error && <p className="mt-2 text-xs text-amber-200">{simulation.result.error}</p>}<ul className="mt-3 space-y-2 text-xs text-quicksilver-accent">{simulation.result.steps.map((step) => <li key={step.nodeId}><span className="font-mono">{nodes.find((node) => node.id === step.nodeId)?.label ?? step.nodeId}</span> · {step.status}{step.safetyDecision ? ` · ${step.safetyDecision}` : ''}{step.detail ? <span className="block">{step.detail}</span> : null}</li>)}</ul><p className="mt-3 text-[10px] leading-4 text-quicksilver-accent">A preview is not a live evaluation or approval. Tool steps stop before dispatch.</p></div>}</section>          <section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">What happens next</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Published versions can run through the gated read-only path and their release and run history is visible above. Hosted execution, team workspaces, scheduled deployment, and effectful tools remain in progress.</p></section>
+          <section className="qs-panel"><h2 className="text-base font-semibold text-quicksilver-signal">Run a published workflow</h2><p className="qs-helper mt-2">Running a workflow starts from the chat, so it is one conversation with one audit trail. Ask Quicksilver to run it and press the card it offers.</p><button type="button" onClick={() => window.dispatchEvent(new Event('quicksilver:open-chat'))} className="qs-action-secondary mt-4 w-full">Open the chat</button></section>          <details className="mt-4"><summary className="flex min-h-11 cursor-pointer items-center font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Execution history ({executions.length})</summary>{executionHistoryError ? <p className="mt-2 text-xs text-amber-200">{executionHistoryError}</p> : <ol className="mt-2 space-y-2 text-xs text-quicksilver-accent">{executions.map((execution) => <li key={execution.runId}>{new Date(execution.completedAt).toLocaleString()} · v{execution.version} · {execution.status} · {execution.durationMs} ms · {execution.evaluationCount} evaluations · {execution.requestedBy}</li>)}</ol>}</details><section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Run preview</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Simulation only: agent results are placeholders. No model, live evaluator, tool, or supervisor approval is called, and no external action can run.</p><button onClick={previewWorkflow} disabled={!persistenceReady} className="mt-4 w-full rounded border border-quicksilver-quicksilver bg-quicksilver-quicksilver/5 px-4 py-3 font-mono text-xs uppercase tracking-widest text-quicksilver-signal hover:bg-quicksilver-quicksilver/15 disabled:opacity-40">Preview workflow path</button>{simulation?.graphKey === JSON.stringify(graph) && <div role="status" className="mt-4 rounded border border-quicksilver-border p-3"><p className="font-mono text-xs uppercase tracking-widest">Simulation · {simulation.result.status}</p>{simulation.result.error && <p className="mt-2 text-xs text-amber-200">{simulation.result.error}</p>}<ul className="mt-3 space-y-2 text-xs text-quicksilver-accent">{simulation.result.steps.map((step) => <li key={step.nodeId}><span className="font-mono">{nodes.find((node) => node.id === step.nodeId)?.label ?? step.nodeId}</span> · {step.status}{step.safetyDecision ? ` · ${step.safetyDecision}` : ''}{step.detail ? <span className="block">{step.detail}</span> : null}</li>)}</ul><p className="mt-3 text-xs leading-4 text-quicksilver-accent">A preview is not a live evaluation or approval. Tool steps stop before dispatch.</p></div>}</section>          <section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">What happens next</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Published versions can run through the gated read-only path and their release and run history is visible above. Hosted execution, team workspaces, scheduled deployment, and effectful tools remain in progress.</p></section>
         </aside>
       </div>
     </main>
@@ -625,7 +742,7 @@ function SafetyGates({ config, onChange }: { config: NonNullable<WorkflowNode['c
 
 function ExecutionPolicyFields({ config, onChange, allowRetries = false }: { config: NonNullable<WorkflowNode['config']>; onChange: (patch: NonNullable<WorkflowNode['config']>) => void; allowRetries?: boolean }) {
   return <>
-    {allowRetries && <label className="text-xs text-quicksilver-accent">Agent attempts (including first)<input type="number" min={1} max={10} step={1} value={config.maxAttempts ?? 1} onChange={(event) => onChange({ maxAttempts: event.target.value ? Number(event.target.value) : undefined })} className="mt-1 w-full rounded border border-quicksilver-border bg-quicksilver-panel px-3 py-2 text-sm text-quicksilver-signal" /><span className="mt-1 block text-[10px]">Retries only apply to agent-handler failures. Tools are never retried automatically.</span></label>}
-    <label className="text-xs text-quicksilver-accent">Handler timeout (ms)<input type="number" min={1} max={300000} step={1000} placeholder="No timeout" value={config.timeoutMs ?? ''} onChange={(event) => onChange({ timeoutMs: event.target.value ? Number(event.target.value) : undefined })} className="mt-1 w-full rounded border border-quicksilver-border bg-quicksilver-panel px-3 py-2 text-sm text-quicksilver-signal" /><span className="mt-1 block text-[10px]">Handlers receive an abort signal; they must honor it to stop provider work.</span></label>
+    {allowRetries && <label className="text-xs text-quicksilver-accent">Agent attempts (including first)<input type="number" min={1} max={10} step={1} value={config.maxAttempts ?? 1} onChange={(event) => onChange({ maxAttempts: event.target.value ? Number(event.target.value) : undefined })} className="mt-1 w-full rounded border border-quicksilver-border bg-quicksilver-panel px-3 py-2 text-sm text-quicksilver-signal" /><span className="mt-1 block text-xs">Retries only apply to agent-handler failures. Tools are never retried automatically.</span></label>}
+    <label className="text-xs text-quicksilver-accent">Handler timeout (ms)<input type="number" min={1} max={300000} step={1000} placeholder="No timeout" value={config.timeoutMs ?? ''} onChange={(event) => onChange({ timeoutMs: event.target.value ? Number(event.target.value) : undefined })} className="mt-1 w-full rounded border border-quicksilver-border bg-quicksilver-panel px-3 py-2 text-sm text-quicksilver-signal" /><span className="mt-1 block text-xs">Handlers receive an abort signal; they must honor it to stop provider work.</span></label>
   </>
 }
