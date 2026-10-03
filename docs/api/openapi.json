@@ -726,6 +726,8 @@
     "/api/plan": {
       "post": {
         "operationId": "createPlan",
+        "summary": "Create a plan, optionally streaming its progress",
+        "description": "Returns the plan as JSON by default. Send `Accept: application/x-ndjson` to receive the same work as newline-delimited JSON: zero or more `step` lines (planner, kernel, reviewer, saved) written as each point is reached, then exactly one `result` line whose `body` is exactly the JSON the default response returns, or one `error` line with the HTTP status the default response would have used. Sign-in, rate-limit and validation failures happen before the stream opens and are ordinary JSON error responses with their own status. A step is `skipped` only when the route really skips it. Clients should ignore line types they do not know.",
         "tags": [
           "Planning"
         ],
@@ -2056,6 +2058,39 @@
           "persisted": { "type": "boolean", "description": "False when the trace spans could not be written; the response itself is still valid." }
         }
       },
+      "PlanStreamLine": {
+        "description": "One line of the NDJSON body of POST /api/plan. Lines of any other `type` are to be ignored.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["type", "step", "status", "at"],
+            "properties": {
+              "type": { "const": "step" },
+              "step": { "type": "string", "enum": ["planner", "kernel", "reviewer", "saved"] },
+              "status": { "type": "string", "enum": ["started", "done", "failed", "skipped"] },
+              "at": { "type": "integer", "description": "Milliseconds since the Unix epoch when the server reached this point." },
+              "detail": { "type": "string", "description": "A short plain note, such as \"2 of 3\" actions checked so far. The kernel and reviewer repeat `started` with a growing count." }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "body"],
+            "properties": {
+              "type": { "const": "result" },
+              "body": { "$ref": "#/components/schemas/PlanResponse" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["type", "status", "error"],
+            "properties": {
+              "type": { "const": "error" },
+              "status": { "type": "integer" },
+              "error": { "type": "object", "description": "The fields of the JSON error body the default response would have returned." }
+            }
+          }
+        ]
+      },
       "PlanResponse": {
         "type": "object",
         "required": ["decomposition", "reasoning", "decisions", "telemetry"],
@@ -2995,7 +3030,7 @@
       "TelemetryTracesResponse": { "description": "Recent trace span metadata, computed alerts and token totals.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TelemetryTraces" } } } },
       "CompanyEntityDirectoryResponse": { "description": "The company entity directory, first 500 entities by name.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CompanyEntityDirectory" } } } },
       "BrowserSessionResponse": { "description": "The signed-in human behind the current browser session.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BrowserSession" } } } },
-      "PlanResponse": { "description": "The plan, with one kernel-governed decision per candidate action. Resolved candidates are persisted as decision documents.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlanResponse" } } } },
+      "PlanResponse": { "description": "The plan, with one kernel-governed decision per candidate action. Resolved candidates are persisted as decision documents. With `Accept: application/x-ndjson` the body is a stream of PlanStreamLine objects, one per line.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlanResponse" } }, "application/x-ndjson": { "schema": { "$ref": "#/components/schemas/PlanStreamLine" } } } },
       "QueryResponse": { "description": "A structured answer from the query agent with its governance evaluation.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QueryResponse" } } } },
       "WorkflowVersionDiffResponse": { "description": "A field-level comparison of two verified workflow versions; config values are not returned.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkflowVersionDiff" } } } },
       "WorkflowExecutionsResponse": { "description": "Metadata-only execution history for one workflow.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkflowExecutions" } } } },

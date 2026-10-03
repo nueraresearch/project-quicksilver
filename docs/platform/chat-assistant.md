@@ -66,6 +66,14 @@ decision" works. The panel has Stop, Try again and New conversation, and a refus
 decision page has "Try again with this change", which opens the chat with the request filled in.
 `/planning` redirects to `/decisions`.
 
+Creating a plan takes several seconds, so the plan card shows its real steps as they finish: the
+planner drafts, the kernel checks each action, the independent reviewer reads each one, and the
+decisions are saved. The card sends `Accept: application/x-ndjson` and `POST /api/plan` answers
+with one line per step and a final line carrying the same JSON it returns otherwise (the line
+format is in `docs/api/openapi.json` and `apps/web/lib/plan-stream.ts`). Sign-in and rate-limit
+refusals still arrive as ordinary JSON before any step. A server that does not stream answers plain
+JSON and the card falls back to a single wait. Stop ends the request.
+
 ## What needs you
 
 `GET /api/inbox` computes what needs the signed-in person from records and from what they may do.
