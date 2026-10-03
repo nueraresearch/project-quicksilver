@@ -142,7 +142,7 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
 .app-nav-group__title {
   margin: 0 0 0.55rem 0.75rem;
   color: #8295aa;
-  font-size: 0.62rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   line-height: 1.2;
@@ -229,7 +229,7 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
   cursor: pointer;
 }
 .app-command-trigger:hover { border-color: rgb(105 201 193 / 0.35); background: rgb(105 201 193 / 0.07); color: var(--signal); }
-.app-command-trigger kbd, .app-command-hint kbd, .app-command-close { border: 1px solid #41536a; border-radius: 0.38rem; background: rgb(255 255 255 / 0.05); padding: 0.18rem 0.38rem; color: #aebdcd; font: 500 0.68rem/1.3 var(--font-sans); }
+.app-command-trigger kbd, .app-command-hint kbd, .app-command-close { border: 1px solid #41536a; border-radius: 0.38rem; background: rgb(255 255 255 / 0.05); padding: 0.18rem 0.38rem; color: #aebdcd; font: 500 0.6875rem/1.3 var(--font-sans); }
 .app-command-trigger--mobile { display: none; }
 .app-command-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: start center; overflow-y: auto; background: rgb(3 8 16 / 0.72); padding: min(14vh, 7rem) 1rem 1rem; -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
 .app-command-dialog { width: min(42rem, 100%); max-height: min(72vh, 42rem); overflow-y: auto; border: 1px solid #354861; border-radius: 1rem; background: #111c2e; padding: clamp(1rem, 3vw, 1.5rem); box-shadow: 0 28px 90px rgb(0 0 0 / 0.52); }
@@ -317,7 +317,7 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
 .qs-dashboard-section-heading h2 { margin: 0.25rem 0 0; color: var(--signal); font-size: 1.05rem; font-weight: 640; letter-spacing: -0.025em; }
 .qs-dashboard-section-heading > a { color: #a5e3dc; font-size: 0.76rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .qs-dashboard-section-heading > a:hover { color: white; text-decoration: underline; text-underline-offset: 3px; }
-.qs-dashboard-count { border: 1px solid #347d65; border-radius: 999px; background: #15372f; padding: 0.28rem 0.6rem; color: #a9e6cf; font-size: 0.68rem; white-space: nowrap; }
+.qs-dashboard-count { border: 1px solid #347d65; border-radius: 999px; background: #15372f; padding: 0.28rem 0.6rem; color: #a9e6cf; font-size: 0.6875rem; white-space: nowrap; }
 .qs-dashboard-empty { margin: 0; border: 1px dashed #3a4d62; border-radius: 0.72rem; background: rgb(8 17 30 / 0.38); padding: 1rem; color: var(--muted); font-size: 0.8rem; line-height: 1.55; }
 .qs-dashboard-errors { display: grid; gap: 0.5rem; }
 .qs-dashboard-errors p { margin: 0; border: 1px solid #8b6a2b; border-radius: 0.65rem; background: #302816; padding: 0.7rem 0.85rem; color: #f2d79a; font-size: 0.79rem; line-height: 1.5; }
@@ -344,7 +344,7 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
 .qs-dashboard-metric:last-child { border-block-end: 0; padding-block-end: 0; }
 .qs-dashboard-metric strong, .qs-dashboard-metric small { display: block; }
 .qs-dashboard-metric strong { color: #e0e8f1; font-size: 0.8rem; font-weight: 610; }
-.qs-dashboard-metric small { margin-block-start: 0.22rem; color: var(--muted); font-size: 0.68rem; line-height: 1.45; }
+.qs-dashboard-metric small { margin-block-start: 0.22rem; color: var(--muted); font-size: 0.6875rem; line-height: 1.45; }
 .qs-dashboard-metric > b { color: #b8e7e2; font-size: 1.05rem; font-weight: 650; text-align: end; font-variant-numeric: tabular-nums; }
 .qs-dashboard-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .qs-dashboard-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 0.65rem; border-block-end: 1px solid var(--border); padding: 0.72rem 0; }
@@ -352,8 +352,8 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
 .qs-dashboard-list li:last-child { border-block-end: 0; padding-block-end: 0; }
 .qs-dashboard-list li strong, .qs-dashboard-list li small { display: block; }
 .qs-dashboard-list li strong { color: #e0e8f1; font-size: 0.76rem; font-weight: 590; line-height: 1.45; overflow-wrap: anywhere; }
-.qs-dashboard-list li small { margin-block-start: 0.22rem; color: var(--muted); font-size: 0.67rem; line-height: 1.45; }
-.qs-dashboard-status { max-width: 8rem; border: 1px solid #465971; border-radius: 999px; background: #202e40; padding: 0.25rem 0.5rem; color: #c4d0dd; font-size: 0.64rem; font-weight: 600; line-height: 1.2; text-align: center; text-transform: capitalize; }
+.qs-dashboard-list li small { margin-block-start: 0.22rem; color: var(--muted); font-size: 0.6875rem; line-height: 1.45; }
+.qs-dashboard-status { max-width: 8rem; border: 1px solid #465971; border-radius: 999px; background: #202e40; padding: 0.25rem 0.5rem; color: #c4d0dd; font-size: 0.6875rem; font-weight: 600; line-height: 1.2; text-align: center; text-transform: capitalize; }
 .qs-dashboard-status--running, .qs-dashboard-status--approved, .qs-dashboard-status--executed, .qs-dashboard-status--completed, .qs-dashboard-status--scaled { border-color: #347d65; background: #15372f; color: #a9e6cf; }
 .qs-dashboard-status--awaiting-approval, .qs-dashboard-status--proposed, .qs-dashboard-status--held, .qs-dashboard-status--rollback-proposed { border-color: #8b6a2b; background: #3b2f18; color: #f2d79a; }
 .qs-dashboard-status--failed, .qs-dashboard-status--rejected, .qs-dashboard-status--blocked, .qs-dashboard-status--killed { border-color: #8d4b53; background: #3d2026; color: #f3b0b6; }
@@ -363,7 +363,7 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
 .qs-ledger-breakdown { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 0.8rem 0; }
 .qs-ledger-breakdown dt { color: var(--muted); font-size: 0.69rem; }
 .qs-ledger-breakdown dd { margin: 0.15rem 0 0; color: #e2e9f1; font-size: 0.87rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.qs-dashboard-disclaimer, .qs-dashboard-footnote { margin: 0; color: var(--muted); font-size: 0.68rem; line-height: 1.55; }
+.qs-dashboard-disclaimer, .qs-dashboard-footnote { margin: 0; color: var(--muted); font-size: 0.6875rem; line-height: 1.55; }
 .qs-dashboard-footnote { border-block-start: 1px solid var(--border); padding: 0.8rem 0.25rem 0; }
 
 @media (max-width: 74rem) {
@@ -397,7 +397,7 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
 
 /* Shared presentation primitives for consistent, task-focused feature pages. */
 .qs-page-heading { margin: 0; color: var(--signal); font-size: clamp(1.65rem, 3.2vw, 2.4rem); font-weight: 680; letter-spacing: -0.045em; line-height: 1.12; }
-.qs-eyebrow { margin: 0; color: #8bcfc8; font-size: 0.68rem; font-weight: 720; letter-spacing: 0.12em; line-height: 1.4; text-transform: uppercase; }
+.qs-eyebrow { margin: 0; color: #8bcfc8; font-size: 0.6875rem; font-weight: 720; letter-spacing: 0.12em; line-height: 1.4; text-transform: uppercase; }
 .qs-panel { min-width: 0; border: 1px solid var(--border); border-radius: 1rem; background: linear-gradient(155deg, rgb(23 37 58 / 0.88), rgb(17 28 46 / 0.94)); padding: clamp(1rem, 2.5vw, 1.5rem); box-shadow: 0 12px 30px rgb(0 0 0 / 0.12); }
 .qs-field { width: 100%; min-width: 0; border: 1px solid #354861; border-radius: 0.65rem; background: #0d1727; padding: 0.7rem 0.85rem; color: var(--signal); font: inherit; }
 .qs-field::placeholder { color: #8798aa; }
@@ -498,7 +498,7 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
     -webkit-backdrop-filter: blur(16px);
     backdrop-filter: blur(16px);
   }
-  .app-bottom-nav a, .app-bottom-nav button { display: grid; min-width: 0; min-height: 3.25rem; align-content: center; justify-items: center; gap: 0.18rem; border: 1px solid transparent; border-radius: 0.65rem; background: transparent; padding: 0.25rem 0.1rem; color: #a7b6c8; font: 550 0.63rem/1.1 var(--font-sans); text-decoration: none; cursor: pointer; }
+  .app-bottom-nav a, .app-bottom-nav button { display: grid; min-width: 0; min-height: 3.25rem; align-content: center; justify-items: center; gap: 0.18rem; border: 1px solid transparent; border-radius: 0.65rem; background: transparent; padding: 0.25rem 0.1rem; color: #a7b6c8; font: 550 0.6875rem/1.1 var(--font-sans); text-decoration: none; cursor: pointer; }
   .app-bottom-nav a > span:first-child, .app-bottom-nav button > span:first-child { color: #8ebdbb; font-size: 1.05rem; line-height: 1; }
   .app-bottom-nav a[aria-current='page'] { background: rgb(105 201 193 / 0.1); color: #d8f5f1; }
   .app-bottom-nav a[aria-current='page'] > span:first-child { color: #8be0d7; }
@@ -552,3 +552,11 @@ body:has(.app-topbar) > #main-content { min-height: 100dvh; margin-inline-start:
 .qs-risk[data-tone="mid"] { color: #f2cf74; }
 .qs-risk[data-tone="high"] { color: #ff9a8f; }
 .qs-risk[data-tone="unknown"] { color: #aebfd0; }
+
+/* Workflow editor: every control is at least 44px tall on phones. */
+@media (max-width: 640px) {
+  .qs-workflow-page button, .qs-workflow-page select, .qs-workflow-page input:not([type="checkbox"]):not([type="file"]), .qs-workflow-page summary { min-height: 2.75rem; }
+  .qs-workflow-page summary { display: flex; align-items: center; }
+  .qs-workflow-page label:has(> input[type="checkbox"]) { display: flex; min-height: 2.75rem; align-items: center; }
+  .qs-workflow-page input[type="checkbox"] { width: 1.25rem; height: 1.25rem; flex: none; }
+}

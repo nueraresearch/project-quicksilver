@@ -48,14 +48,14 @@
 .chatWorkspace { display: contents; }
 .panelExpanded .chatWorkspace { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr) 17rem; }
 .contextRail { min-width: 0; overflow-y: auto; border-inline-start: 1px solid #26384c; background: #0d1727; padding: 1.15rem 1rem; }
-.contextEyebrow { margin: 0; color: #8bcfc8; font-size: 0.64rem; font-weight: 720; letter-spacing: 0.12em; text-transform: uppercase; }
+.contextEyebrow { margin: 0; color: #8bcfc8; font-size: 0.6875rem; font-weight: 720; letter-spacing: 0.12em; text-transform: uppercase; }
 .contextRail h3 { margin: 0.55rem 0 0; color: #edf4fa; font-size: 1.05rem; font-weight: 660; letter-spacing: -0.025em; }
 .contextIntro { margin: 0.45rem 0 1rem; color: #a7b6c8; font-size: 0.76rem; line-height: 1.5; }
 .contextRail nav { display: grid; gap: 0.35rem; }
 .contextLink { display: grid; gap: 0.22rem; border: 1px solid transparent; border-radius: 0.65rem; padding: 0.65rem 0.7rem; color: #e2e9f1; text-decoration: none; }
 .contextLink:hover { border-color: rgb(105 201 193 / 0.25); background: rgb(105 201 193 / 0.07); }
 .contextLink > span { font-size: 0.78rem; font-weight: 620; }
-.contextLink small { color: #9eafc1; font-size: 0.66rem; line-height: 1.4; }
+.contextLink small { color: #9eafc1; font-size: 0.6875rem; line-height: 1.4; }
 
 .header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #26384c; background: #142237; padding: 1rem 1rem 0.9rem; }
 .identity { display: flex; min-width: 0; align-items: center; gap: 0.75rem; }
@@ -88,7 +88,7 @@
 .references p { margin: 0.4rem 0 0; font-size: 0.75rem; }
 .references p span { display: block; color: #9eafc1; font-size: 0.69rem; }
 .evaluation { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; }
-.evaluation span { border: 1px solid #354b61; border-radius: 999px; background: #0d1a2a; padding: 0.2rem 0.55rem; color: #acbdce; font-size: 0.64rem; }
+.evaluation span { border: 1px solid #354b61; border-radius: 999px; background: #0d1a2a; padding: 0.2rem 0.55rem; color: #acbdce; font-size: 0.6875rem; }
 .planMeta { margin: 0.55rem 0 0; color: #aebfd0; font-size: 0.74rem; }
 .planActions { display: grid; gap: 0.55rem; margin: 0.8rem 0; padding-inline-start: 1.3rem; }
 .planActions li { padding-inline-start: 0.1rem; }
@@ -102,10 +102,10 @@
 .modeSwitch button[aria-pressed="true"] { background: #28434c; color: #c8f4ed; }
 .modeSwitch button:focus-visible, .reviewPlan:focus-visible { outline: 2px solid #a8e4ff; outline-offset: 2px; }
 .modeSwitch button:disabled { cursor: wait; opacity: 0.65; }
-.agentSelectLabel { display: inline-flex; align-items: center; gap: 0.45rem; color: #9eafc1; font-size: 0.68rem; }
+.agentSelectLabel { display: inline-flex; align-items: center; gap: 0.45rem; color: #9eafc1; font-size: 0.6875rem; }
 .agentSelect { min-height: 2.2rem; max-width: 10rem; border: 1px solid #354a60; border-radius: 0.55rem; background: #111e30; padding: 0.35rem 0.55rem; color: #e7eef7; font: 550 0.7rem/1.2 var(--font-sans); }
 .agentSpecialty { color: #9eafc1; font-size: 0.72rem; }
-.agentRouting { margin-block-start: 0.3rem !important; color: #9eafc1; font-size: 0.68rem; }
+.agentRouting { margin-block-start: 0.3rem !important; color: #9eafc1; font-size: 0.6875rem; }
 .agentSummary { margin-block-start: 0.55rem !important; }
 .thinking { align-self: start; margin: 0; border-radius: 0.7rem; background: #142237; padding: 0.6rem 0.75rem; color: #b9c7d5; font-size: 0.75rem; }
 .error { margin: 0; border: 1px solid #74414c; border-radius: 0.7rem; background: #321d27; padding: 0.65rem 0.75rem; color: #ffd2d5; font-size: 0.75rem; line-height: 1.5; overflow-wrap: anywhere; }
@@ -118,7 +118,7 @@
 .form button { min-width: 3.75rem; min-height: 2.8rem; border: 1px solid transparent; border-radius: 0.7rem; background: #69c9c1; padding: 0.55rem 0.75rem; color: #0a2027; font: 650 0.78rem/1.2 var(--font-sans); cursor: pointer; }
 .form button:hover:not(:disabled) { background: #87dcd4; }
 .form button:disabled { opacity: 0.48; cursor: not-allowed; }
-.footerHint { margin: 0.55rem 0 0; color: #8093a8; font-size: 0.63rem; line-height: 1.4; text-align: center; }
+.footerHint { margin: 0.55rem 0 0; color: #8093a8; font-size: 0.6875rem; line-height: 1.4; text-align: center; }
 .signInPrompt { display: grid; justify-items: center; gap: 0.45rem; padding: 0.25rem 0; text-align: center; }
 .signInPrompt p { margin: 0; color: #c1cedb; font-size: 0.78rem; }
 .signInPrompt a { color: #8fd9d1; font-size: 0.78rem; font-weight: 650; text-underline-offset: 3px; }

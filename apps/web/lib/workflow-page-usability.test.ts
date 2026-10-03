@@ -21,6 +21,22 @@ test('workflow editor presents a clear, responsive editing workspace', () => {
   assert.doesNotMatch(page, /<main[^>]*overflow-x-scroll/)
 })
 
+test('workflow editor offers undo, redo, and starter templates', () => {
+  assert.match(page, /Ctrl or Cmd \+ Z/)
+  assert.match(page, /disabled=\{!undoable\}/)
+  assert.match(page, /disabled=\{!redoable\}/)
+  assert.match(page, /event\.shiftKey/)
+  assert.match(page, /WORKFLOW_TEMPLATES\.map/)
+  assert.match(page, /Replace your current draft\?/)
+  assert.match(page, /if \(unsavedChanges && !confirmed\)/)
+})
+
+test('workflow page has no text below 11px', () => {
+  assert.doesNotMatch(page, /text-\[(?:[0-9]|10)px\]/)
+  assert.doesNotMatch(page, /fontSize="(?:[0-9]|10)"/)
+  assert.match(page, /qs-workflow-page/)
+})
+
 test('workflow map fills the available canvas and remeasures at responsive breakpoints', () => {
   assert.match(page, /const diagramViewport = useRef<HTMLDivElement>\(null\)/)
   assert.match(page, /new ResizeObserver\(measure\)/)
