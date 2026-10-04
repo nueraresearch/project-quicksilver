@@ -1,6 +1,7 @@
 import './globals.css'
 import type { Metadata, Viewport } from 'next'
 import { AppNavigation } from '@/components/app-navigation'
+import { DemoBanner } from '@/components/demo-banner'
 import { AgentChatWidget } from '@/components/agent-chat-widget'
 
 // Render per request so each page gets the CSP nonce middleware.ts sets
@@ -23,11 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="min-h-screen bg-quicksilver-bg text-quicksilver-signal antialiased">
-        {(process.env.NEXT_PUBLIC_QUICKSILVER_DEMO_MODE ?? '').trim().toLowerCase() === 'on' && (
-          <div role="note" className="border-b border-quicksilver-border bg-quicksilver-panel px-4 py-2 text-center font-mono text-[11px] uppercase tracking-widest text-quicksilver-accent">
-            Public demo · synthetic company data only · resets regularly
-          </div>
-        )}
+        {(process.env.NEXT_PUBLIC_QUICKSILVER_DEMO_MODE ?? '').trim().toLowerCase() === 'on' && <DemoBanner />}
         <a className="app-skip-link" href="#main-content">Skip to main content</a>
         <AppNavigation />
         <div id="main-content" tabIndex={-1}>

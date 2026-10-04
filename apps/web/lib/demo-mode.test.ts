@@ -6,7 +6,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { DEMO_FORBIDDEN_VARIABLES, DEMO_PRINCIPALS, demoModeProblems, demoPrincipalForToken } from './demo-mode.ts'
+import { DEMO_CONTEXT_URL_VARIABLES, DEMO_FORBIDDEN_VARIABLES, DEMO_PRINCIPALS, demoModeProblems, demoPrincipalForToken } from './demo-mode.ts'
 import { checkRouteCaller, checkSupervisorCredential, checkWhoami, type CredentialEnv } from './nqc-approval.ts'
 
 const SAFE: CredentialEnv = {
@@ -34,6 +34,20 @@ test('demo mode refuses any real credential or development switch', () => {
     assert.equal(demoModeProblems({ ...SAFE, [name]: 'set' }).length, 1, name)
     assert.deepEqual(demoModeProblems({ ...SAFE, [name]: 'off' }), [], `${name}=off is fine`)
   }
+})
+
+test('a demo may only read Context endpoints made for it: the name must say demo', () => {
+  const org = 'https://api.sanity.io/v1/context/organizations/org123/mcp'
+  for (const name of DEMO_CONTEXT_URL_VARIABLES) {
+    assert.deepEqual(demoModeProblems({ ...SAFE, [name]: `${org}/nuera-quicksilver-demo-agent` }), [], `${name} demo endpoint`)
+    assert.deepEqual(demoModeProblems({ ...SAFE, [name]: `${org}/nuera-quicksilver-demo-kb?mode=knowledge_base&knowledgeBases=kb1` }), [], `${name} with a query string`)
+    for (const bad of ['nuera-quicksilver-agent', 'nuera-quicksilver-kb', 'quicksilver-agent']) {
+      assert.ok(demoModeProblems({ ...SAFE, [name]: `${org}/${bad}` }).some((p) => p.includes(name)), `${name} ${bad}`)
+    }
+    // a word in the path before the endpoint name does not count
+    assert.ok(demoModeProblems({ ...SAFE, [name]: `${org.replace('org123', 'demo-org')}/nuera-quicksilver-agent` }).some((p) => p.includes(name)))
+  }
+  assert.deepEqual(demoModeProblems({ NEXT_PUBLIC_QUICKSILVER_DEMO_MODE: undefined, SANITY_CONTEXT_MCP_URL: `${org}/nuera-quicksilver-agent` }), [], 'off: nothing to check')
 })
 
 test('a misconfigured demo fails closed: every credential check answers 503', () => {
