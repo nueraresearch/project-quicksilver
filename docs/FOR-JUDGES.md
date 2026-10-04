@@ -19,7 +19,7 @@ This page says what to look at, how to try it, and what has and has not been pro
 | Dataset | `production` is **private** and holds our own data. Judges use the public, synthetic dataset **`demo`**: [query it directly](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=*%5B_type%3D%3D%22policy%22%5D) (it answers once the `demo` dataset has been created and seeded; see `docs/platform/judge-demo.md`) |
 | Studio | https://project-quicksilver.sanity.studio (a Sanity login with project access is needed) |
 | Context MCP, live dataset | endpoint `nuera-quicksilver-agent` (GROQ mode: `groq_query`, `schema_explorer`, `initial_context`) |
-| Context MCP, knowledge base | endpoint `nuera-quicksilver-kb` over knowledge base `kbzyKoLrbQiu` (12 evidence and policy documents, 11 entries, read with `knowledge_base_read`) |
+| Context MCP, knowledge base | endpoint `nuera-quicksilver-kb` over knowledge base `kbzyKoLrbQiu` (12 evidence and policy documents, read with `knowledge_base_read`) |
 | Wiring | `packages/agent/src/mcp.ts` connects both endpoints and merges their tools; `packages/agent/src/assistant.ts` is the chat assistant |
 | Verification | `npm run verify:mcp` exercises both endpoints against the live project (needs a Context Viewer token, which is not published) |
 
