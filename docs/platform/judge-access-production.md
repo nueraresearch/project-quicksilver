@@ -9,8 +9,10 @@ agent proposes, and a human authorizes.
 - **Decisions already waiting.** An **agent** entity (for example `entity-engineering-agent`, role
   `agent-worker`) asks the planner for a few plans, so the decisions record that agent as the requester. A requester
   can never approve its own request, but the judge is a different principal, so they can read why and approve.
-- **No self-approval.** If the judge asks the chat for a plan themselves, they become the requester, and approving
-  it is refused with the reason shown. That is the separation of duties, shown live.
+- **No self-approval.** A requester can never approve its own request. A token with only `supervisor` cannot ask
+  for a plan at all (the plan route needs `decision:propose`, which the app names in its 403), so the judge approves
+  what the agent asked for. To let judges also ask for their own plan and see the refusal, add the `developer` role
+  to their token; that also lets them write workflow and agent drafts, so the video is the safer place to show it.
 
 ## Set it up (in your own shell; never paste a token into a chat)
 
@@ -42,6 +44,10 @@ agent proposes, and a human authorizes.
 
 ## What a judge token can do
 
-`supervisor` can approve, execute and roll back decisions, read the audit trail and review finance, and the site
-holds real credentials, so treat a published token as access to the production app. Give the judge only what the
-walkthrough needs, set a budget alert on the model account, and remove the entry when judging ends.
+Tested in `apps/web/lib/agent-requester-flow.test.ts`: the `supervisor` role can approve, read decisions and the
+audit trail, and ask the chat. The role also covers more than a walkthrough needs: execute (a simulation in this
+build) and roll back decisions, redrive runs, review finance, approve memory and routing changes, and review and
+publish drafts that someone else wrote. A published token is access to the production app, which holds real
+credentials, so: set a budget alert on the model account, publish the token only where the rules require it, and
+remove the entry and redeploy when judging ends. Built-in roles are all there is today: there is no role that can
+approve a decision and nothing else.
