@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const body = await readPublicationBody(request)
   if (!body.ok) return body.response
   const parsed = requestSchema.safeParse(body.body)
-  if (!parsed.success) return NextResponse.json({ error: 'Expected a displayName, description, and valid agent manifest.', issues: parsed.error.issues }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'Expected a displayName, description, and valid agent manifest.', code: 'invalid-request', issues: parsed.error.issues }, { status: 400 })
   try { return NextResponse.json(await createAgentDraft(parsed.data, caller.actor), { status: 201 }) }
   catch (error) { return publicationFailure(error, 'Could not save the agent definition draft.') }
 }

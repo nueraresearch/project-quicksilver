@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { SanityClient } from '@sanity/client'
 import { BUILT_IN_AGENT_MANIFESTS, validateAgentManifest, type AgentManifest } from '@quicksilver/kernel'
 import { getSanityClient } from './sanity-client.ts'
+import { capRows } from './list-bounds.ts'
 import { AgentCatalogFault, agentDefinitionDigest, assertAgentDigest, assertCanPublish, assertCanReview, assertCanSubmit, assertHumanAgentActor, assertValidAgentDefinition, type AgentLifecycle } from './agent-catalog-contract.ts'
 
 export type { AgentLifecycle } from './agent-catalog-contract.ts'
@@ -61,12 +62,19 @@ async function auditedPatch(client: SanityClient, doc: DefinitionDoc, patch: Rec
   return client.transaction().patch(doc._id, (item) => item.ifRevisionId(doc._rev).set(patch)).create(record).commit()
 }
 
-export async function listAgentCatalog(provided?: AgentCatalogDependencies, actorId?: string): Promise<{ agents: AgentDefinition[]; drafts: AgentDefinition[]; reviewQueue: AgentDefinition[]; audit: AgentCatalogAudit[] }> {
+// List caps. One extra row is fetched so `truncated` is true only when a cap actually cut something.
+const ACTIVE_LIMIT = 200
+const LIST_LIMIT = 100
+
+export async function listAgentCatalog(provided?: AgentCatalogDependencies, actorId?: string): Promise<{ agents: AgentDefinition[]; drafts: AgentDefinition[]; reviewQueue: AgentDefinition[]; audit: AgentCatalogAudit[]; truncated: boolean }> {
   const { client, tenant } = dependencies('read', provided)
-  const docs = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && lifecycle == "active"] | order(agentId asc, version desc)[0...200]${projection}`, { tenant })
+  const fetchedActive = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && lifecycle == "active"] | order(agentId asc, version desc)[0...${ACTIVE_LIMIT + 1}]${projection}`, { tenant })
   const heads = await client.fetch<HeadDoc[]>('*[_type == "agentPublicationHead" && tenantId == $tenant]{_id,_rev,_type,tenantId,agentId,activeVersion}', { tenant })
-  const pendingDocs = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && lifecycle == "review"] | order(createdAt asc)[0...100]${projection}`, { tenant })
-  const draftDocs = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && lifecycle == "draft"] | order(createdAt desc)[0...100]${projection}`, { tenant })
+  const fetchedPending = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && lifecycle == "review"] | order(createdAt asc)[0...${LIST_LIMIT + 1}]${projection}`, { tenant })
+  const fetchedDrafts = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && lifecycle == "draft"] | order(createdAt desc)[0...${LIST_LIMIT + 1}]${projection}`, { tenant })
+  const { rows: docs, truncated: activeCut } = capRows(fetchedActive, ACTIVE_LIMIT)
+  const { rows: pendingDocs, truncated: pendingCut } = capRows(fetchedPending, LIST_LIMIT)
+  const { rows: draftDocs, truncated: draftsCut } = capRows(fetchedDrafts, LIST_LIMIT)
   const latestPublished = new Map<string, AgentDefinition>()
   for (const doc of docs) if (!latestPublished.has(doc.agentId)) latestPublished.set(doc.agentId, mapDoc(doc))
   for (const [id, definition] of latestPublished) {
@@ -76,16 +84,19 @@ export async function listAgentCatalog(provided?: AgentCatalogDependencies, acto
     }
   }
   if (heads.some((head) => !latestPublished.has(head.agentId))) throw new AgentCatalogFault('An agent publication pointer does not resolve to one active definition.', 409)
-  const audits = await client.fetch<AuditDoc[]>('*[_type == "agentPublicationAudit" && tenantId == $tenant] | order(at desc)[0...100]{event,agentId,version,actorId,at,definitionDigest,detail}', { tenant })
+  const fetchedAudits = await client.fetch<AuditDoc[]>(`*[_type == "agentPublicationAudit" && tenantId == $tenant] | order(at desc)[0...${LIST_LIMIT + 1}]{event,agentId,version,actorId,at,definitionDigest,detail}`, { tenant })
+  const { rows: audits, truncated: auditCut } = capRows(fetchedAudits, LIST_LIMIT)
   const builtins: AgentDefinition[] = BUILT_IN_AGENT_MANIFESTS.map((manifest) => ({ agentId: manifest.id, displayName: manifest.id.split(':')[1].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), description: 'Built-in Nuera Quicksilver agent. Governed by the NQC Kernel.', version: manifest.version, manifest, digest: digest(manifest), authoredBy: 'Nuera Quicksilver', createdAt: 0, lifecycle: 'published', builtIn: true }))
-  return { agents: [...builtins, ...latestPublished.values()].sort((a, b) => a.agentId.localeCompare(b.agentId)), drafts: draftDocs.filter((doc) => !actorId || doc.authoredBy === actorId).map(mapDoc), reviewQueue: pendingDocs.map(mapDoc), audit: audits.map((entry) => ({ event: entry.event, agentId: entry.agentId, version: entry.version, actorId: entry.actorId, at: Date.parse(entry.at), digest: entry.definitionDigest, ...(entry.detail ? { detail: entry.detail } : {}) })) }
+  return { truncated: activeCut || pendingCut || draftsCut || auditCut, agents: [...builtins, ...latestPublished.values()].sort((a, b) => a.agentId.localeCompare(b.agentId)), drafts: draftDocs.filter((doc) => !actorId || doc.authoredBy === actorId).map(mapDoc), reviewQueue: pendingDocs.map(mapDoc), audit: audits.map((entry) => ({ event: entry.event, agentId: entry.agentId, version: entry.version, actorId: entry.actorId, at: Date.parse(entry.at), digest: entry.definitionDigest, ...(entry.detail ? { detail: entry.detail } : {}) })) }
 }
 
-export async function listAgentDefinitions(agentId: string, provided?: AgentCatalogDependencies): Promise<{ versions: AgentDefinition[]; audit: AgentCatalogAudit[] }> {
+export async function listAgentDefinitions(agentId: string, provided?: AgentCatalogDependencies): Promise<{ versions: AgentDefinition[]; audit: AgentCatalogAudit[]; truncated: boolean }> {
   const { client, tenant } = dependencies('read', provided)
-  const docs = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && agentId == $id] | order(version desc)[0...100]${projection}`, { tenant, id: agentId })
-  const events = await client.fetch<AuditDoc[]>('*[_type == "agentPublicationAudit" && tenantId == $tenant && agentId == $id] | order(at desc)[0...100]{event,agentId,version,actorId,at,definitionDigest,detail}', { tenant, id: agentId })
-  return { versions: docs.map(mapDoc), audit: events.map((e) => ({ event: e.event, agentId: e.agentId, version: e.version, actorId: e.actorId, at: Date.parse(e.at), digest: e.definitionDigest, ...(e.detail ? { detail: e.detail } : {}) })) }
+  const fetchedDocs = await client.fetch<DefinitionDoc[]>(`*[_type == "agentDefinition" && tenantId == $tenant && agentId == $id] | order(version desc)[0...${LIST_LIMIT + 1}]${projection}`, { tenant, id: agentId })
+  const fetchedEvents = await client.fetch<AuditDoc[]>(`*[_type == "agentPublicationAudit" && tenantId == $tenant && agentId == $id] | order(at desc)[0...${LIST_LIMIT + 1}]{event,agentId,version,actorId,at,definitionDigest,detail}`, { tenant, id: agentId })
+  const { rows: docs, truncated: versionsCut } = capRows(fetchedDocs, LIST_LIMIT)
+  const { rows: events, truncated: auditCut } = capRows(fetchedEvents, LIST_LIMIT)
+  return { truncated: versionsCut || auditCut, versions: docs.map(mapDoc), audit: events.map((e) => ({ event: e.event, agentId: e.agentId, version: e.version, actorId: e.actorId, at: Date.parse(e.at), digest: e.definitionDigest, ...(e.detail ? { detail: e.detail } : {}) })) }
 }
 
 export async function createAgentDraft(input: { displayName: string; description: string; manifest: AgentManifest }, actor: AgentActor, provided?: AgentCatalogDependencies): Promise<AgentDefinition> {

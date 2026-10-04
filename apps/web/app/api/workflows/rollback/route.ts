@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const body = await readPublicationBody(request)
   if (!body.ok) return body.response
   const parsed = requestSchema.safeParse(body.body)
-  if (!parsed.success) return NextResponse.json({ error: 'A workflowId and positive version are required.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'A workflowId and positive version are required.', code: 'invalid-request' }, { status: 400 })
   try {
     return NextResponse.json(await rollbackWorkflow(parsed.data.workflowId, parsed.data.version, caller.actor))
   } catch (error) {

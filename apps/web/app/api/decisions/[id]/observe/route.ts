@@ -16,6 +16,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { errorCode } from '@/lib/api-errors'
 import { safeErrorName } from '@/lib/safe-log'
 import { getSanityClient } from '@/lib/sanity-client'
 import { loadDecisionLifecycle } from '@/lib/process-engine'
@@ -27,16 +28,16 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params
-  if (!id) return NextResponse.json({ error: 'Missing decision id' }, { status: 400 })
+  if (!id) return NextResponse.json({ error: 'Missing decision id', code: 'invalid-request' }, { status: 400 })
 
   // A valid principal with decision:read or decision:propose, before any read or write.
   const caller = await authorizeDecisionRoute(req, 'observe')
-  if (!caller.ok) return NextResponse.json({ error: caller.reason }, { status: caller.status })
+  if (!caller.ok) return NextResponse.json({ error: caller.reason, code: errorCode(caller.status) }, { status: caller.status })
   const limited = takeWebRateLimit('write', caller.principalId)
   if (limited) return NextResponse.json(limited.body, { status: limited.status, headers: limited.headers })
 
   if (!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
-    return NextResponse.json({ error: 'Sanity not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Sanity not configured', code: 'internal-error' }, { status: 500 })
   }
 
   try {
@@ -54,7 +55,7 @@ export async function POST(
       { id },
     )
     if (!decision) {
-      return NextResponse.json({ error: 'Decision not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Decision not found', code: 'not-found' }, { status: 404 })
     }
 
     // Latest metric (any). Demo uses simulated single-metric world.
@@ -129,7 +130,7 @@ export async function POST(
   } catch (err) {
     console.error('[/api/decisions/[id]/observe]', safeErrorName(err))
     return NextResponse.json(
-      { error: 'Observe failed', detail: safeErrorName(err) },
+      { error: 'Observe failed', code: 'internal-error', detail: safeErrorName(err) },
       { status: 500 },
     )
   }

@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const fromVersion = z.coerce.number().int().positive().safeParse(query.get('from'))
   const toVersion = z.coerce.number().int().positive().safeParse(query.get('to'))
   if (!workflowId.success || !fromVersion.success || !toVersion.success) {
-    return NextResponse.json({ error: 'Provide a valid workflowId and positive from/to versions.' }, { status: 400 })
+    return NextResponse.json({ error: 'Provide a valid workflowId and positive from/to versions.', code: 'invalid-request' }, { status: 400 })
   }
   try {
     return NextResponse.json(await compareWorkflowVersions(workflowId.data, fromVersion.data, toVersion.data))

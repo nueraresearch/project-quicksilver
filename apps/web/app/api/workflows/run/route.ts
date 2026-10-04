@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import { errorCode } from '@/lib/api-errors'
 import { z } from 'zod'
 import { executeWorkflowGraph, validateWorkflowGraph, type NqcEvaluationResponse, type WorkflowGraph } from '@quicksilver/kernel'
 import { persistEvaluations } from '@/lib/evaluation-store'
@@ -27,24 +28,24 @@ export async function POST(request: Request) {
 
   // Off unless switched on, and never in production (A-10).
   if (process.env.QUICKSILVER_WORKFLOW_LIVE_RUNS !== 'on' || isProductionEnv(process.env)) {
-    return NextResponse.json({ error: 'Live workflow runs are disabled. Enable them only in a trusted development environment.' }, { status: 503 })
+    return NextResponse.json({ error: 'Live workflow runs are disabled. Enable them only in a trusted development environment.', code: 'unavailable' }, { status: 503 })
   }
-  if (!isLlmConfigured()) return NextResponse.json({ error: 'No model provider is configured for live workflow runs.' }, { status: 503 })
-  if (!process.env.SANITY_CONTEXT_MCP_URL || !process.env.SANITY_CONTEXT_TOKEN) return NextResponse.json({ error: 'Sanity Context MCP is not configured for read-only agent runs.' }, { status: 503 })
+  if (!isLlmConfigured()) return NextResponse.json({ error: 'No model provider is configured for live workflow runs.', code: 'unavailable' }, { status: 503 })
+  if (!process.env.SANITY_CONTEXT_MCP_URL || !process.env.SANITY_CONTEXT_TOKEN) return NextResponse.json({ error: 'Sanity Context MCP is not configured for read-only agent runs.', code: 'unavailable' }, { status: 503 })
 
   const contentLength = Number(request.headers.get('content-length') ?? 0)
-  if (contentLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.' }, { status: 413 })
+  if (contentLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.', code: 'payload-too-large' }, { status: 413 })
   const raw = await request.text()
-  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.' }, { status: 413 })
+  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.', code: 'payload-too-large' }, { status: 413 })
 
   let body: unknown
   try {
     body = JSON.parse(raw)
   } catch {
-    return NextResponse.json({ error: 'Request body must be valid JSON.' }, { status: 400 })
+    return NextResponse.json({ error: 'Request body must be valid JSON.', code: 'invalid-request' }, { status: 400 })
   }
   const parsed = requestSchema.safeParse(body)
-  if (!parsed.success) return NextResponse.json({ error: 'Provide a workflow graph and an input from 3 to 2,000 characters.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'Provide a workflow graph and an input from 3 to 2,000 characters.', code: 'invalid-request' }, { status: 400 })
 
   let graph: WorkflowGraph
   let pinned: { workflowId: string; version: number; digest: string } | undefined
@@ -52,27 +53,27 @@ export async function POST(request: Request) {
     try {
       const active = await getActivePublishedWorkflow(parsed.data.workflowId)
       if (parsed.data.version !== undefined && parsed.data.version !== active.version) {
-        return NextResponse.json({ error: 'Requested version is not the active published version.', activeVersion: active.version }, { status: 409 })
+        return NextResponse.json({ error: 'Requested version is not the active published version.', code: 'conflict', activeVersion: active.version }, { status: 409 })
       }
       graph = active.graph
       pinned = { workflowId: active.workflowId, version: active.version, digest: active.digest }
     } catch (error) {
-      if (error instanceof WorkflowPublicationFault) return NextResponse.json({ error: error.message }, { status: error.status })
+      if (error instanceof WorkflowPublicationFault) return NextResponse.json({ error: error.message, code: errorCode(error.status) }, { status: error.status })
       console.error('[workflow-run] published workflow lookup failed', error instanceof Error ? error.name : 'UnknownError')
-      return NextResponse.json({ error: 'Could not resolve the active published workflow.' }, { status: 500 })
+      return NextResponse.json({ error: 'Could not resolve the active published workflow.', code: 'internal-error' }, { status: 500 })
     }
   } else {
       graph = parsed.data.graph as unknown as WorkflowGraph
   }
   const graphValidation = validateWorkflowGraph(graph)
-  if (!graphValidation.valid) return NextResponse.json({ error: 'Workflow graph is invalid.', issues: graphValidation.errors }, { status: 422 })
+  if (!graphValidation.valid) return NextResponse.json({ error: 'Workflow graph is invalid.', code: 'unprocessable', issues: graphValidation.errors }, { status: 422 })
 
   const agentNodes = graph.nodes.filter((node) => node.kind === 'agent')
-  if (agentNodes.length > MAX_QUERY_AGENT_STEPS) return NextResponse.json({ error: `Live workflows are limited to ${MAX_QUERY_AGENT_STEPS} query-agent steps.` }, { status: 422 })
+  if (agentNodes.length > MAX_QUERY_AGENT_STEPS) return NextResponse.json({ error: `Live workflows are limited to ${MAX_QUERY_AGENT_STEPS} query-agent steps.`, code: 'unprocessable' }, { status: 422 })
   const unsupportedAgents = agentNodes.filter((node) => node.config?.agentId !== 'query')
-  if (unsupportedAgents.length) return NextResponse.json({ error: 'Live runs currently support read-only query agent steps only.', nodes: unsupportedAgents.map((node) => node.id) }, { status: 422 })
+  if (unsupportedAgents.length) return NextResponse.json({ error: 'Live runs currently support read-only query agent steps only.', code: 'unprocessable', nodes: unsupportedAgents.map((node) => node.id) }, { status: 422 })
   const highImpactAgents = agentNodes.filter((node) => node.config?.impact === 'high' || node.config?.impact === 'critical')
-  if (highImpactAgents.length) return NextResponse.json({ error: 'Live read-only query steps cannot be marked high or critical impact.', nodes: highImpactAgents.map((node) => node.id) }, { status: 422 })
+  if (highImpactAgents.length) return NextResponse.json({ error: 'Live read-only query steps cannot be marked high or critical impact.', code: 'unprocessable', nodes: highImpactAgents.map((node) => node.id) }, { status: 422 })
 
   const agentResults = new Map<string, GovernedNueraAgentResult<QueryAgentOutput>>()
   const agentTimings = new Map<string, { startedAt: number; durationMs: number }>()
@@ -132,7 +133,7 @@ export async function POST(request: Request) {
       }).catch((historyError) => console.error('[workflow-run] failed-run history write failed', historyError instanceof Error ? historyError.name : 'UnknownError'))
     }
     console.error('[workflow-run] execution failed', error instanceof Error ? error.name : 'UnknownError')
-    return NextResponse.json({ error: 'Workflow execution failed.', telemetry: { traceId, persisted: telemetry.persisted } }, { status: 500 })
+    return NextResponse.json({ error: 'Workflow execution failed.', code: 'internal-error', telemetry: { traceId, persisted: telemetry.persisted } }, { status: 500 })
   }
 
   const audit = await persistEvaluations(
