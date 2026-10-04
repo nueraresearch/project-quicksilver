@@ -167,6 +167,15 @@
 .offerText { width: 100%; min-height: 4.2rem; resize: vertical; border: 1px solid #354a60; border-radius: 0.6rem; background: #111e30; padding: 0.55rem 0.65rem; color: #e7eef7; font: 400 0.8rem/1.4 var(--font-sans); }
 .offerButton, .retry { min-height: 2.75rem; border: 1px solid #3f8f86; border-radius: 0.6rem; background: #1d5a56; padding: 0.5rem 0.9rem; color: #eafaf6; font: 650 0.8rem/1 var(--font-sans); cursor: pointer; }
 .offerButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.offerActions { display: flex; gap: 0.5rem; }
+.offerStop { min-height: 2.75rem; border: 1px solid #4b6176; border-radius: 0.6rem; background: transparent; padding: 0.5rem 0.9rem; color: #d3e0ec; font: 650 0.8rem/1 var(--font-sans); cursor: pointer; }
+.offerStop:focus-visible { outline: 3px solid #a8e4ff; outline-offset: 2px; }
+.planProgress ol { display: grid; gap: 0.35rem; margin: 0; padding: 0; list-style: none; font-size: 0.8rem; line-height: 1.35; color: #b9c7d5; }
+.planProgress li { display: flex; gap: 0.5rem; align-items: baseline; }
+.planProgress li[data-status='waiting'] { color: #8497a9; }
+.planProgress li[data-status='started'], .planProgress li[data-status='done'] { color: #eafaf6; }
+.planProgress li[data-status='failed'] { color: #ffb4a8; }
+.planMark { flex: 0 0 1rem; text-align: center; color: #7fd3c6; }
 .retry { min-height: 2.25rem; padding: 0.3rem 0.7rem; margin-left: 0.3rem; }
 .offerButton:focus-visible, .retry:focus-visible, .offerText:focus-visible { outline: 3px solid #a8e4ff; outline-offset: 2px; }
 
