@@ -34,6 +34,8 @@ It is a platform, not a single screen. What is in the repository, and covered by
   deployed), and a **parity matrix** that lists every requirement with its status and, for the ones that
   can't pass yet, what they need.
 
+![Agents propose, a kernel authorizes, a different human approves; every step is recorded in Sanity](https://raw.githubusercontent.com/nueraresearch/project-quicksilver/main/docs/images/architecture.png)
+
 The console is how a person uses it. You talk to one chat. It reads your decisions, policies, evidence,
 workflows and spend, and tells you what it found and where. When you ask for work ("cut delivery delays by a
 week"), it doesn't do it. It offers a card with the request written out, which you can edit. Nothing happens
