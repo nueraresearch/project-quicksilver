@@ -72,7 +72,7 @@ export default function SignInPage() {
           <p>{access.token ? 'You are using an access token in this tab.' : 'You are signed in with your organisation account.'}</p>
           <p><Link className="qs-action-primary" href={returnTo}>Continue</Link></p>
         </section>
-      ) : (
+      ) : DEMO && status !== null && !status.signInAvailable ? null : (
         <section className="qs-panel space-y-3" aria-labelledby="signin-org">
           <h2 id="signin-org" className="text-lg font-semibold">Your organisation account</h2>
           {status === null ? <p role="status">Checking how sign-in works here…</p> : status.signInAvailable ? (
@@ -88,12 +88,17 @@ export default function SignInPage() {
 
       {DEMO && !access?.signedIn && (
         <section className="qs-panel space-y-3" aria-labelledby="signin-demo">
-          <h2 id="signin-demo" className="text-lg font-semibold">Demo accounts</h2>
-          <p>This is a public demo with synthetic data. Plan as one person, sign out, then approve as the other: separation of duties means neither can do both.</p>
+          <h2 id="signin-demo" className="text-lg font-semibold">Try it as a judge</h2>
+          <p>This is a public demo with synthetic company data. No account is needed: pick a person below. The demo shows separation of duties, so it takes two people.</p>
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>Start as <strong>Marcus Webb</strong>. Ask the chat to plan something, or ask it what the company&rsquo;s policies say, then open <strong>What I looked at</strong> under its answer.</li>
+            <li>Press <strong>Create plan</strong> on the card it offers. The plan is saved as a decision that needs approval.</li>
+            <li>Use <strong>Switch to Sarah Chen</strong> in the bar at the top. She is the one who can approve it, and Marcus cannot.</li>
+          </ol>
           <p className="flex flex-wrap gap-2">
-            {DEMO_PRINCIPALS.map((person) => (
-              <button key={person.id} type="button" className="qs-action-secondary" onClick={() => void useToken(person.token)} disabled={busy}>
-                {person.displayName}, {person.title}
+            {DEMO_PRINCIPALS.map((person, index) => (
+              <button key={person.id} type="button" className={index === 0 ? 'qs-action-primary' : 'qs-action-secondary'} onClick={() => void useToken(person.token)} disabled={busy}>
+                {index === 0 ? 'Start as ' : ''}{person.displayName}, {person.title} ({person.purpose})
               </button>
             ))}
           </p>

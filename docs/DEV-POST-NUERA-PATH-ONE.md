@@ -78,17 +78,16 @@ The full list is the [parity matrix](https://github.com/nueraresearch/project-qu
 
 ## Try it
 
-[FILL: live URL and how a judge signs in, or a walkthrough video link]
+[FILL: URL of the demo deployment]. No account is needed: open **Sign in**, press **Start as Marcus Webb**, ask the chat something and open **What I looked at**, press **Create plan** on the card it offers, then use **Switch to Sarah Chen** in the top bar to approve it. Everything in the demo is synthetic, and it runs on its own dataset and Context endpoints, separate from ours.
 
 ---
 
 <!--
 BEFORE PUBLISHING (delete this block):
-1. Live URL and judge access: the production site uses Google sign-in with an allowlist. Either add a
-   judge account to the allowlist and put its sign-in here, or decide on a read-only "try as a judge"
-   path (needs a code change and a decision about exposing data), or link a walkthrough video.
-2. Judge-readable data: the dedicated project's production dataset is private. Judges need the project ID
-   (given) plus either a public demo dataset of synthetic data or a video. Do not make production public.
+1. Live URL: deploy the judge demo (docs/platform/judge-demo.md), check it with the five steps in section 5
+   of that runbook, and put its URL here and in docs/FOR-JUDGES.md. Run `npm run demo:reset -- --confirm` first.
+2. Judge-readable data: the public dataset is `demo` (synthetic). Give its query URL in docs/FOR-JUDGES.md.
+   Production stays private; never make it public.
 3. Confirm the Context endpoints and knowledge base still answer (npm run verify:mcp) and that the
    example question in docs/FOR-JUDGES.md matches your seeded data.
 4. Check every [FILL] and the repo URL (README links nuerainc/project-quicksilver; this repo is at
