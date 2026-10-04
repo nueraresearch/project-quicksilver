@@ -89,11 +89,11 @@ export default function SignInPage() {
       {DEMO && !access?.signedIn && (
         <section className="qs-panel space-y-3" aria-labelledby="signin-demo">
           <h2 id="signin-demo" className="text-lg font-semibold">Try it as a judge</h2>
-          <p>This is a public demo with synthetic company data. No account is needed: pick a person below. The demo shows separation of duties, so it takes two people.</p>
+          <p>This is a public demo with synthetic company data. No account is needed: pick an account below. The demo shows agents proposing and humans authorizing, and the one who asks and the one who approves must be different, so it uses two accounts.</p>
           <ol className="list-decimal space-y-1 pl-5">
             <li>Start as <strong>Marcus Webb</strong>. Ask the chat to plan something, or ask it what the company&rsquo;s policies say, then open <strong>What I looked at</strong> under its answer.</li>
-            <li>Press <strong>Create plan</strong> on the card it offers. The plan is saved as a decision that needs approval.</li>
-            <li>Use <strong>Switch to Sarah Chen</strong> in the bar at the top. She is the one who can approve it, and Marcus cannot.</li>
+            <li>Press <strong>Create plan</strong> on the card it offers. The planner agent drafts it and it is saved as a decision that needs approval, recording Marcus as the requester and the planner as the proposer.</li>
+            <li>Use <strong>Switch to Sarah Chen</strong> in the bar at the top. She is a different account from the requester and the proposer, so she can approve it. Marcus and the planner cannot.</li>
           </ol>
           <p className="flex flex-wrap gap-2">
             {DEMO_PRINCIPALS.map((person, index) => (

@@ -34,7 +34,7 @@ code refuses to read that project's endpoints (`assertNotLegacyContextEndpoint`)
   (the app refuses to start in demo mode if it could reach anything private).
   1. As **Marcus Webb** (plans and requests): ask the chat about the company's policies, then open **What I looked at**
      under the answer. Ask it to plan something and press **Create plan** on the card it offers.
-  2. Press **Switch to Sarah Chen** in the bar at the top. She is the only one who can approve; Marcus cannot, and she
+  2. Press **Switch to Sarah Chen** in the bar at the top. She is the only one who can approve: the decision records Marcus as the requester and the planner agent (`nuera-quicksilver:planner`) as the proposer, and the approve route refuses anyone who is the requester, the proposer, or would carry the action out. Marcus cannot approve, and she
      cannot propose. Open the decision, read why, and approve it. Download its audit trail.
   The demo resets regularly, so a decision you made may be gone later. The runbook for it is
   [`platform/judge-demo.md`](./platform/judge-demo.md).
