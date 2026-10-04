@@ -21,6 +21,11 @@
  *      or route-to-human) and records it in processHistory.
  *   7. Return plan + kernel decisions + reviewer notes, each with its `decisionDocId`
  *
+ * Progress: with `Accept: application/x-ndjson` the same work is streamed as
+ * step lines (planner, kernel, reviewer, saved) and one final result or error
+ * line (see lib/plan-stream.ts). Every check before the work starts, including
+ * sign-in and the rate limit, still answers with plain JSON and its own status.
+ *
  * Response shape:
  *   {
  *     decomposition: { ... },
@@ -52,6 +57,7 @@ import { getSanityClient } from '@/lib/sanity-client'
 import { z } from 'zod'
 import { decisionActionFingerprint, policySnapshotVersion } from '@/lib/nqc-approval'
 import { guardWebRoute } from '@/lib/route-guard'
+import { PLAN_NDJSON, countDetail, encodePlanLine, type PlanStepName, type PlanStepStatus } from '@/lib/plan-stream'
 import {
   executeGovernedAgent,
   isLlmConfigured,
@@ -304,27 +310,81 @@ export async function POST(req: Request) {
     )
   }
 
+  if (!(req.headers.get('accept') ?? '').toLowerCase().includes(PLAN_NDJSON)) {
+    const outcome = await executePlan({ objective, requester, signal: req.signal }, () => {})
+    return NextResponse.json(outcome.body, { status: outcome.status })
+  }
+
+  // Streamed: each step line is written when that point in the work is really
+  // reached, then exactly one result or error line ends the body.
+  const encoder = new TextEncoder()
+  return new Response(new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const write = (line: Parameters<typeof encodePlanLine>[0]) => {
+        // A reader that has gone away must not turn into an unhandled error.
+        try { controller.enqueue(encoder.encode(encodePlanLine(line))) } catch { /* closed */ }
+      }
+      const outcome = await executePlan({ objective, requester, signal: req.signal }, (step, status, detail) => {
+        write({ type: 'step', step, status, at: Date.now(), ...(detail ? { detail } : {}) })
+      })
+      write(outcome.status === 200
+        ? { type: 'result', body: outcome.body }
+        : { type: 'error', status: outcome.status, error: outcome.body as Record<string, unknown> })
+      try { controller.close() } catch { /* closed */ }
+    },
+  }), { status: 200, headers: { 'content-type': `${PLAN_NDJSON}; charset=utf-8`, 'cache-control': 'no-store', 'x-accel-buffering': 'no' } })
+}
+
+type PlanRequester = Extract<Awaited<ReturnType<typeof guardWebRoute>>, { ok: true }>
+type PlanOutcome = { status: number; body: unknown }
+type EmitStep = (step: PlanStepName, status: PlanStepStatus, detail?: string) => void
+
+/** The work behind POST /api/plan. It never throws: a failure is an outcome with its status, so both response modes share one path. */
+async function executePlan(
+  { objective, requester, signal }: { objective: string; requester: PlanRequester; signal: AbortSignal },
+  emit: EmitStep,
+): Promise<PlanOutcome> {
   const traceId = randomUUID()
   const requestSpanId = randomUUID()
   const traceStartedAt = Date.now()
+  // Steps that have started and not finished, so a failure marks the right ones.
+  const open = new Set<PlanStepName>()
+  const step = (name: PlanStepName, status: PlanStepStatus, detail?: string) => {
+    if (status === 'started') open.add(name)
+    else open.delete(name)
+    emit(name, status, detail)
+  }
   try {
     const client = getSanityClient('write')
     // The planner runs on the standard agent contract, so its output is evaluated
     // by the Quicksilver Engine before any candidate action reaches the kernel.
+    step('planner', 'started')
     const plannerRun = await executeGovernedAgent(plannerQuicksilverAgent, {
       agentId: plannerQuicksilverAgent.id,
       taskType: 'planning',
       input: { objective },
       impactLevel: 'moderate',
-      signal: req.signal,
+      signal,
     })
     const plannerCompletedAt = Date.now()
+    const total = plannerRun.output.candidateActions.length
+    step('planner', 'done', `${total} ${total === 1 ? 'action' : 'actions'}`)
     const plannerSpanId = randomUUID()
     const plan = plannerRun.output
     const now = new Date().toISOString()
     const runId = Date.now().toString(36)
 
-    // Run each candidate action through the kernel.
+    // Run each candidate action through the kernel. Counts below are of actions
+    // the stage really ran for: one whose actor or capability did not resolve
+    // never reaches the kernel or the reviewer.
+    let kernelChecked = 0
+    let reviewed = 0
+    if (total === 0) {
+      step('kernel', 'skipped', 'The planner proposed no actions')
+      step('reviewer', 'skipped', 'The planner proposed no actions')
+    } else {
+      step('kernel', 'started', countDetail(0, total))
+    }
     const results = await Promise.all(
       plan.candidateActions.map(async (action, i) => {
         const refs = await resolveAction(client, action as ProposedAction)
@@ -384,6 +444,8 @@ export async function POST(req: Request) {
           })
           // A planner run the engine escalated can only tighten each action's outcome.
           const governed = applyUpstreamEscalation(perAction, plannerRun.evaluation, 'The planner run')
+          kernelChecked += 1
+          step('kernel', 'started', countDetail(kernelChecked, total))
           decision = governed.decision
           evaluation = governed.evaluation
           safetyDecision = governed.safetyDecision
@@ -396,6 +458,7 @@ export async function POST(req: Request) {
           // block the plan response, so reviewProposedAction() always
           // resolves (see its own fallback) rather than throwing.
           const reviewerStartedAt = Date.now()
+          step('reviewer', 'started', countDetail(reviewed, total))
           const reviewerRun = await executeGovernedAgent(reviewerQuicksilverAgent, {
             agentId: reviewerQuicksilverAgent.id,
             taskType: 'evaluation',
@@ -413,6 +476,8 @@ export async function POST(req: Request) {
             },
           })
           review = reviewerRun.output
+          reviewed += 1
+          step('reviewer', 'started', countDetail(reviewed, total))
           reviewModel = { modelId: reviewerRun.modelId, usage: reviewerRun.usage, startedAt: reviewerStartedAt, durationMs: Date.now() - reviewerStartedAt }
 
           doc = buildDecisionDoc({
@@ -441,10 +506,17 @@ export async function POST(req: Request) {
       }),
     )
 
+    if (total > 0) {
+      step('kernel', 'done', countDetail(kernelChecked, total))
+      step('reviewer', 'done', countDetail(reviewed, total))
+    }
+
     // Process engine (feature-flagged): let the Decision Lifecycle process
     // definition pick each decision's first state, instead of the hard-coded
     // "rejected or awaiting-approval" above. Low-risk actions the kernel marks
     // execute-autonomously are auto-approved here, with no human click.
+    const hasDocs = results.some((r) => r.doc)
+    if (hasDocs) step('saved', 'started')
     const lifecycle = await loadDecisionLifecycle(client)
     const processByDoc = new Map<string, unknown>()
     for (const r of results) {
@@ -491,6 +563,11 @@ export async function POST(req: Request) {
       const tx = client.transaction()
       for (const d of docs) tx.create(d)
       await tx.commit()
+      step('saved', 'done', `${docs.length} ${docs.length === 1 ? 'decision' : 'decisions'}`)
+    } else if (total > 0) {
+      step('saved', 'skipped', 'No action could be matched to company records')
+    } else {
+      step('saved', 'skipped', 'Nothing to save')
     }
 
     const decisions = results.map((r) => ({
@@ -569,21 +646,25 @@ export async function POST(req: Request) {
       ...decisionSpans,
     ]
     const telemetry = await persistTraceSpans(traceSpans)
-    return NextResponse.json({
-      decomposition: plan.decomposition,
-      reasoning: plan.reasoning,
-      decisions,
-      telemetry: { traceId, persisted: telemetry.persisted },
-    })
+    return {
+      status: 200,
+      body: {
+        decomposition: plan.decomposition,
+        reasoning: plan.reasoning,
+        decisions,
+        telemetry: { traceId, persisted: telemetry.persisted },
+      },
+    }
   } catch (err) {
     console.error('[/api/plan]', safeErrorName(err))
+    for (const name of [...open]) step(name, 'failed')
     const telemetry = await persistTraceSpans([{
       traceId, spanId: requestSpanId, source: 'plan', kind: 'request', name: 'plan.request', status: 'error',
       startedAt: traceStartedAt, durationMs: Date.now() - traceStartedAt, requestedBy: requester.principalId,
     }])
-    return NextResponse.json(
-      { error: 'Plan failed', detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } },
-      { status: 500 },
-    )
+    return {
+      status: 500,
+      body: { error: 'Plan failed', detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } },
+    }
   }
 }
