@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { DEMO_OBJECTIVES, validateDemoObjectives } from '../seed/demo-objectives.ts'
-import { assertSafeBaseUrl, isWaitingForApproval, plannedDecisions } from './demo-decisions.ts'
+import { assertSafeBaseUrl, isWaitingForApproval, plannedDecisions, requesterFor } from './demo-decisions.ts'
 
 test('the demo objectives are valid', () => {
   assert.deepEqual(validateDemoObjectives(), [])
@@ -47,4 +47,21 @@ test('only proposed or awaiting-approval decisions count as waiting', () => {
   assert.equal(isWaitingForApproval({ ...base, status: 'awaiting-approval' }), true)
   assert.equal(isWaitingForApproval({ ...base, status: 'refused' }), false)
   assert.equal(isWaitingForApproval({ ...base, status: null }), false)
+})
+
+test('the requester is the demo person unless a token variable is named', () => {
+  const demo = { displayName: 'Marcus Webb', token: 'public-demo-token' }
+  assert.deepEqual(requesterFor(undefined, {}, demo), { label: 'Marcus Webb', token: 'public-demo-token' })
+})
+
+test('a named token variable is read from the environment and never echoed in the label', () => {
+  const demo = { displayName: 'Marcus Webb', token: 'public-demo-token' }
+  const token = `qs_${'a'.repeat(43)}`
+  const result = requesterFor('QUICKSILVER_AGENT_TOKEN', { QUICKSILVER_AGENT_TOKEN: `  ${token}  ` }, demo)
+  assert.equal(result.token, token)
+  assert.ok(!result.label.includes(token))
+  assert.throws(() => requesterFor('QUICKSILVER_AGENT_TOKEN', {}, demo), /not set/)
+  assert.throws(() => requesterFor('QUICKSILVER_AGENT_TOKEN', { QUICKSILVER_AGENT_TOKEN: 'short' }, demo), /access token/)
+  assert.throws(() => requesterFor('QUICKSILVER_AGENT_TOKEN', { QUICKSILVER_AGENT_TOKEN: `${token} ${token}` }, demo), /access token/)
+  assert.throws(() => requesterFor('not a name; rm -rf', {}, demo), /environment variable name/)
 })
