@@ -11,15 +11,14 @@ PostgreSQL – Flexible Server** as the managed Postgres. This is the closest
 Azure analog to the Render option below (least operations work; the
 platform handles TLS, restarts and a managed Postgres), and it runs the
 repo's existing `deploy/Dockerfile.host` image as-is rather than requiring a
-different build. An Azure deploy template (the `render.yaml` equivalent)
-has not been written yet — that is the next piece of hosting work once the
-specific App Service plan/tier is picked.
+different build. The Azure deploy template (the `render.yaml` equivalent) is
+`deploy/azure/main.bicep`; see [Azure](azure-deploy.md). It compiles but has never been applied.
 
 ## Choose one
 
 | Option | Files | Good for | Rough cost |
 |---|---|---|---|
-| Azure App Service (Web App for Containers) + Azure Database for PostgreSQL | *template not yet written* | **Chosen path.** Least operations work on free Azure credits; managed Postgres, TLS and restarts | Covered by Azure free credits initially; check current App Service + Flexible Server tier prices before they run out |
+| Azure App Service (Web App for Containers) + Azure Database for PostgreSQL | `deploy/azure/main.bicep` (compiled, never applied) | **Chosen path.** Least operations work on free Azure credits; managed Postgres, TLS and restarts | Covered by Azure free credits initially; check current App Service + Flexible Server tier prices before they run out |
 | Render (managed) | `deploy/render.yaml` | Documented fallback; not the current plan | A starter web service, a small Postgres and a 1 GB disk; check Render's current prices |
 | Any small VPS | `deploy/docker-compose.yml` + `deploy/docker-compose.public.yml` | Full control; Caddy handles TLS | A small VPS |
 | Founder's computer (today) | `deploy/quicksilver.local.example.json` | Onboard pilot | None; no public webhooks |

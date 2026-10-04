@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const caller = await guardWebRoute(request, 'agents/definitions')
   if (!caller.ok) return publicationRefusal(caller)
   const id = new URL(request.url).searchParams.get('agentId')
-  if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'A namespaced agentId is required.' }, { status: 400 })
+  if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'A namespaced agentId is required.', code: 'invalid-request' }, { status: 400 })
   try { return NextResponse.json(await listAgentDefinitions(id!)) }
   catch (error) { return publicationFailure(error, 'Could not load agent versions.') }
 }

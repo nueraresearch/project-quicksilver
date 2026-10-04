@@ -19,10 +19,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!caller.ok) return publicationRefusal(caller)
 
   const { id } = await params
-  if (!ID.test(id)) return NextResponse.json({ error: 'That is not a decision id.' }, { status: 400 })
+  if (!ID.test(id)) return NextResponse.json({ error: 'That is not a decision id.', code: 'invalid-request' }, { status: 400 })
   try {
     const doc = await getSanityClient('read').fetch<Record<string, unknown> | null>(DECISION_DETAIL_QUERY, { id })
-    if (!doc) return NextResponse.json({ error: 'Decision not found.' }, { status: 404, headers: { 'cache-control': 'no-store' } })
+    if (!doc) return NextResponse.json({ error: 'Decision not found.', code: 'not-found' }, { status: 404, headers: { 'cache-control': 'no-store' } })
     const { _id, policyIds, ...rest } = doc as Record<string, unknown> & { _id: string; policyIds?: string[] | null; selectedAction?: string | null; policySnapshotVersion?: string | null; riskLevel?: number | null; requiredApproval?: boolean | null; status?: string | null }
     // What an approval covers, and whether the policies it was planned under have since changed:
     // the same two facts the approve route checks, so the page can show a button only when it can work.
@@ -39,6 +39,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     console.error('[decisions] detail failed', error instanceof Error ? error.name : 'UnknownError')
-    return NextResponse.json({ error: 'Could not load this decision. Check the configured Quicksilver read data source.' }, { status: 503, headers: { 'cache-control': 'no-store' } })
+    return NextResponse.json({ error: 'Could not load this decision. Check the configured Quicksilver read data source.', code: 'unavailable' }, { status: 503, headers: { 'cache-control': 'no-store' } })
   }
 }

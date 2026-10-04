@@ -21,6 +21,7 @@ const API_PATH = '/api/entities'
 export default function EntitiesPage() {
   const [entities, setEntities] = useState<EntityRecord[]>([])
   const [total, setTotal] = useState(0)
+  const [truncated, setTruncated] = useState(false)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,11 +41,12 @@ export default function EntitiesPage() {
           if (response.status === 401) { if (current) setNeedsSignIn(true); throw new Error(authFailureMessage(401, 'entities') ?? 'Sign in to view company records.') }
           throw new Error(body.error ?? 'Could not load company records.')
         }
-        return body as { total: number; entities: EntityRecord[] }
+        return body as { total: number; entities: EntityRecord[]; truncated?: boolean }
       })
       .then((body) => {
         if (!current) return
         setTotal(body.total)
+        setTruncated(body.truncated === true)
         setEntities(body.entities)
       })
       .catch((cause) => { if (current) setError((cause as Error).message) })
@@ -72,6 +74,7 @@ export default function EntitiesPage() {
           <label className="qs-field"><span>Search company records</span><input type="search" value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Name, team, capability…" /></label>
         </div>
 
+        {!error && !loading && truncated && <p className="qs-helper" role="status">Showing the first {entities.length} of {total} records; more exist. Search covers only the records shown.</p>}
         {error && <div className="qs-data-card" role="alert"><p>{error}</p>{needsSignIn && <Link className="qs-action-secondary" href="/sign-in?returnTo=%2Fentities">Sign in</Link>}</div>}
         {!error && loading && <p className="qs-helper" role="status">Loading the authorized company directory…</p>}
         {!error && !loading && visible.length === 0 && <p className="qs-helper">{entities.length ? 'No records match this search.' : 'No entity records were found in the configured company dataset.'}</p>}

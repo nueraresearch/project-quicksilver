@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const body = await readPublicationBody(request)
   if (!body.ok) return body.response
   const parsed = requestSchema.safeParse(body.body)
-  if (!parsed.success) return NextResponse.json({ error: 'A workflowId, positive version, and 10–500 character review rationale are required.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'A workflowId, positive version, and 10–500 character review rationale are required.', code: 'invalid-request' }, { status: 400 })
   try {
     return NextResponse.json(await reviewWorkflow(parsed.data.workflowId, parsed.data.version, caller.actor, parsed.data.note))
   } catch (error) {

@@ -14,10 +14,10 @@ export async function GET(request: Request) {
   const workflowId = workflowIdSchema.safeParse(url.searchParams.get('workflowId'))
   const requestedLimit = Number(url.searchParams.get('limit') ?? '25')
   if (!workflowId.success || !Number.isInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
-    return NextResponse.json({ error: 'Provide a valid workflowId and a limit from 1 to 100.' }, { status: 400 })
+    return NextResponse.json({ error: 'Provide a valid workflowId and a limit from 1 to 100.', code: 'invalid-request' }, { status: 400 })
   }
   try {
-    return NextResponse.json({ executions: await listWorkflowExecutions(workflowId.data, requestedLimit) })
+    return NextResponse.json(await listWorkflowExecutions(workflowId.data, requestedLimit))
   } catch (error) {
     return publicationFailure(error, 'Could not load workflow execution history.')
   }

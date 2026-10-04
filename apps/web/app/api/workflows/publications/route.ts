@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const caller = await guardWebRoute(request, 'workflows/publications')
   if (!caller.ok) return publicationRefusal(caller)
   const workflowId = workflowIdSchema.safeParse(new URL(request.url).searchParams.get('workflowId'))
-  if (!workflowId.success) return NextResponse.json({ error: 'A valid workflowId query parameter is required.' }, { status: 400 })
+  if (!workflowId.success) return NextResponse.json({ error: 'A valid workflowId query parameter is required.', code: 'invalid-request' }, { status: 400 })
   try {
     return NextResponse.json(await listWorkflowPublications(workflowId.data))
   } catch (error) {

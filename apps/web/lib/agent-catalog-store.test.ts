@@ -21,8 +21,8 @@ class MemorySanity {
       if (query.includes('order(agentId asc')) docs.sort((a, b) => a.agentId.localeCompare(b.agentId) || b.version - a.version)
       else docs.sort((a, b) => b.version - a.version)
       if (query.includes('[0...1]')) docs = docs.slice(0, 1)
-      if (query.includes('[0...100]')) docs = docs.slice(0, 100)
-      if (query.includes('[0...200]')) docs = docs.slice(0, 200)
+      const cap = /\[0\.\.\.(\d+)\]/.exec(query)
+      if (cap) docs = docs.slice(0, Number(cap[1]))
       if (query.includes('[0]')) return (docs[0] ?? null) as T
       if (query.includes('{version}')) return docs.map(({ version }) => ({ version })) as T
       return docs as T
@@ -36,7 +36,9 @@ class MemorySanity {
     if (query.includes('_type == "agentPublicationAudit"')) {
       docs = docs.filter((doc) => doc._type === 'agentPublicationAudit')
       if (params.id) docs = docs.filter((doc) => doc.agentId === params.id)
-      return docs.sort((a, b) => b.at.localeCompare(a.at)) as T
+      const cap = /\[0\.\.\.(\d+)\]/.exec(query)
+      docs.sort((a, b) => b.at.localeCompare(a.at))
+      return (cap ? docs.slice(0, Number(cap[1])) : docs) as T
     }
     throw new Error(`Unhandled test query: ${query}`)
   }
@@ -134,4 +136,38 @@ test('agent catalog fails closed when stored definition content no longer matche
   const stored = [...client.docs.values()].find((doc) => doc._type === 'agentDefinition')!
   stored.description = 'Modified outside the audited catalog.'
   await assert.rejects(listAgentDefinitions(draft.agentId, deps), (error: unknown) => error instanceof AgentCatalogFault && error.status === 409)
+})
+
+async function seedDrafts(deps: AgentCatalogDependencies, count: number) {
+  for (let n = 0; n < count; n++) {
+    await createAgentDraft({ displayName: `Agent ${n}`, description: 'Reviews policy and compliance tasks.', manifest: { ...manifest(), id: `nuera-quicksilver:agent-${n}` } }, actor('author-1'), deps)
+  }
+}
+
+test('the catalog and a definition history report truncated only when a cap actually cut rows', async () => {
+  const empty = setup()
+  assert.equal((await listAgentCatalog(empty.deps)).truncated, false)
+
+  const exact = setup()
+  await seedDrafts(exact.deps, 100)
+  const atCap = await listAgentCatalog(exact.deps)
+  assert.equal(atCap.drafts.length, 100)
+  assert.equal(atCap.audit.length, 100)
+  assert.equal(atCap.truncated, false, 'exactly 100 drafts and 100 audit events fit the caps')
+
+  const over = setup()
+  await seedDrafts(over.deps, 101)
+  const cut = await listAgentCatalog(over.deps)
+  assert.equal(cut.drafts.length, 100)
+  assert.equal(cut.audit.length, 100)
+  assert.equal(cut.truncated, true)
+  assert.equal((await listAgentCatalog(over.deps, 'someone-else')).truncated, true, 'the author filter does not hide that the cap cut rows')
+
+  const { deps } = setup()
+  const first = await createAgentDraft({ displayName: 'Compliance Agent', description: 'Reviews policy and compliance tasks.', manifest: manifest() }, actor('author-1'), deps)
+  assert.equal((await listAgentDefinitions(first.agentId, deps)).truncated, false)
+  for (let n = 0; n < 100; n++) await createAgentDraft({ displayName: 'Compliance Agent', description: 'Reviews policy and compliance tasks.', manifest: manifest() }, actor('author-1'), deps)
+  const history = await listAgentDefinitions(first.agentId, deps)
+  assert.equal(history.versions.length, 100)
+  assert.equal(history.truncated, true, '101 versions exist and 100 are returned')
 })

@@ -178,6 +178,7 @@ export function processStatus(load: LifecycleLoad) {
 export function refusal(decision: TransitionDecision, definition: ProcessDefinition) {
   return {
     error: `The ${definition.name} process (v${definition.version}) does not allow this: ${decision.reasons.join(' ')}`,
+    code: 'conflict' as const,
     process: { engine: 'on' as const, from: decision.from, to: decision.to, reasons: decision.reasons },
   }
 }
@@ -185,6 +186,7 @@ export function refusal(decision: TransitionDecision, definition: ProcessDefinit
 export function invalidDefinitionBody(load: Extract<LifecycleLoad, { kind: 'invalid' }>) {
   return {
     error: `Process definition "${load.definition.name}" is invalid, so the kernel will not move any decision until it is fixed in Studio: ${load.errors.join(' ')}`,
+    code: 'conflict' as const,
     process: processStatus(load),
   }
 }
