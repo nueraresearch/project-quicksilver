@@ -69,6 +69,39 @@ check, so a tool that declares itself destructive or non-read-only is refused.
 **Knowledge base.** I built a knowledge base from the `evidence` and `policy` documents (12 documents). Sanity's pipeline flags contradictions between entries; I left the seeded ones unresolved on
 purpose, because a company's real evidence disagrees with itself and an agent should have to deal with that.
 
+### The contradiction is the interesting part
+
+Here is the actual seeded disagreement, straight out of the public `demo` dataset. Six evidence documents
+form two linked pairs, and **in both pairs the higher-confidence claim is the one arguing against acting**:
+
+| Claim | Confidence | Contradicts |
+|---|---|---|
+| CNC 2's controller parameter is drifting 4.7%; a 5% increase would restore spec | 0.78 | ↓ |
+| The August 2025 anomaly was a **worn hydraulic seal**, not drift — fixed for $4,200 in 48h | **0.92** | ↑ back |
+| Always verify simulated impact and run a controlled test before deploying | **0.95** | ↓ |
+| When downtime escalates, tune aggressively and skip engineering review | 0.60 | ↑ back |
+
+Two more documents don't contradict anything, and that is the point:
+
+- **Maintenance Report #847** (0.85) independently reports hydraulic pressure anomalies on CNC 2 and
+  *recommends investigation*. It corroborates the mechanical explanation without disagreeing with anyone,
+  so it never appears in a contradiction search — and it is the second vote for "don't touch the parameter."
+- **Vendor Bulletin — Firmware 4.2.1** (0.70) offers a fix for controller drift that doesn't require
+  changing a production parameter at all. Nobody contradicts it, so nothing in the data points at it.
+
+To answer *"should we adjust the controller parameter?"* an agent has to walk `contradicts[]` in **both**
+directions, weigh confidence, notice the corroboration that isn't a contradiction, find the untested
+alternative that isn't flagged by anyone, and then adjudicate three policies that share the scope
+`production.parameter_changes` — where the **highest-priority** policy (7) says `allow` up to risk 2 and
+the two below it (5 and 3) say `require-approval`.
+
+That last one is a trap I set deliberately. The intuitive answers are "the strictest rule wins" or
+"priority 7 wins and it allows this." Both are wrong, and the kernel says why in one line of its own
+source: **priority can never silently loosen a restriction.** So the priority-7 `allow` does not quietly
+override the two `require-approval` policies below it — the kernel still routes the action to a human.
+An agent that guesses gets the wrong answer for a right-sounding reason, and a policy author cannot
+launder a relaxation through a priority number.
+
 ### Could a keyword search have done this?
 
 This is the question I kept asking, and it is the one the brief asks. For most of what Quicksilver answers,

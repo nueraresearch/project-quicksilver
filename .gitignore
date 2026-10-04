@@ -26,3 +26,4 @@ deploy/quicksilver.host.json
 data/
 .vercel
 .env*
+packages/agent/kb-capture.json
