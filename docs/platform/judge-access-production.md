@@ -39,6 +39,19 @@ agent proposes, and a human authorizes.
    npm run demo:seed-decisions -- --base-url https://project-quicksilver.vercel.app --token-env QUICKSILVER_AGENT_TOKEN --confirm
    ```
 
+   Then check the whole setup with one command. It tests both tokens, the tenant match, the waiting decisions, the
+   audit export and the public dataset, and prints PASS, WARN or FAIL for each. It never prints a token. Add `--chat`
+   to ask the chat one question (one model call):
+
+   ```powershell
+   $env:JUDGE_TOKEN = "<the judge token>"
+   $env:AGENT_TOKEN = "<the agent token>"
+   npm run demo:preflight -- --base-url https://project-quicksilver.vercel.app --judge-env JUDGE_TOKEN --agent-env AGENT_TOKEN --chat
+   ```
+
+   Run it before you record and again before you post. Each approval uses up one waiting decision, so seed more
+   (the seeding command adds more each time it runs) if the preflight warns that few are left.
+
 4. Check it in a private window: paste the judge token on `/sign-in`, open the decisions waiting for approval, read
    why, approve one, and download its audit trail.
 
