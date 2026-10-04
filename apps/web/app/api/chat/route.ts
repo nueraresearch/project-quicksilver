@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { safeErrorName } from '@/lib/safe-log'
-import { APP_TOOL_NAMES, askAssistant, buildAppTools, estimateModelCostUsd } from '@quicksilver/agent'
+import { APP_TOOL_NAMES, askAssistant, buildAppTools, describeSources, estimateModelCostUsd } from '@quicksilver/agent'
 import { evaluateNqcRequest } from '@quicksilver/kernel'
 import { appFetchFor } from '@/lib/chat-app-fetch'
 import { PAGE_HINT } from '@/lib/chat-request'
@@ -48,7 +48,8 @@ export async function POST(req: Request) {
       modelId: result.modelId,
       agentOutput: JSON.stringify({ answer: result.answer, links: result.links }),
       context: result.toolCalls.map((call) => call.name),
-      toolCalls: result.toolCalls,
+      // The detail of a call is for the person reading the answer; it never goes into the evaluation record.
+      toolCalls: result.toolCalls.map(({ detail: _detail, ...call }) => call),
       impactLevel: 'low',
     })
     const audit = await persistEvaluations([{
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
       offers: result.offers,
       confidence: result.confidence,
       toolsUsed: [...new Set(result.toolCalls.map((call) => call.name))],
+      sources: describeSources(result.toolCalls, APP_TOOL_NAMES),
       audit: { persisted: audit.persisted, evaluationRecordIds: audit.ids, ...(audit.error ? { error: audit.error } : {}) },
       telemetry: { traceId, persisted: telemetry.persisted },
       nqc: { reasoningScore: governance.reasoningScore, hallucinationRisk: governance.hallucinationRisk, brittleness: governance.brittleness, issues: governance.issues, corrections: governance.corrections, safetyDecision: governance.safetyDecision },
