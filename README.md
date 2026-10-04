@@ -217,7 +217,7 @@ stateDiagram-v2
 
 ## Trying it
 
-Nuera Quicksilver has **no hosted demo**. Run it locally (see [Run it locally](#run-it-locally)); then:
+The live app is https://project-quicksilver.vercel.app. It signs the team in through single sign-on, so judges use an access token instead; the [judge guide](./docs/FOR-JUDGES.md) explains how. To run it yourself, see [Run it locally](#run-it-locally); then:
 
 1. Open the console at `http://localhost:3000`. The objective is pre-filled.
 2. Click **Send to Quicksilver**. A real plan takes about a minute.
@@ -225,9 +225,9 @@ Nuera Quicksilver has **no hosted demo**. Run it locally (see [Run it locally](#
 4. **Approve** a card, **Execute** it (a simulation: nothing outside the console changes; real effects use [approved actions](./docs/platform/approved-actions.md)) and **Observe** the metric. If it moves the wrong way, **propose a rollback**.
 5. Open `/decisions` to see every transition, who took it (kernel, human or executor) and when. Open `/workflows` for the draft workflow builder.
 
-Local runs need a configured Sanity project and model credentials. The live demo
-at quicksilver-seven.vercel.app belongs to the
-[challenge submission](https://github.com/nuerainc/quicksilver-sanity-challenge), not to this repository.
+Local runs need a configured Sanity project and model credentials. The earlier challenge build, with its own
+demo, lives in a separate repository:
+[nuerainc/quicksilver-sanity-challenge](https://github.com/nuerainc/quicksilver-sanity-challenge).
 
 ## Tests
 
@@ -283,12 +283,14 @@ The challenge-era stress test found real bugs: a risk formula that scored nearly
 project-quicksilver/
 ├── apps/
 │   ├── web/            Next.js app: CEO console, Decision log, API routes
-│   │   └── app/api/    plan · query · decisions/[id]/{action,execute,observe,rollback,resume}
+│   │   └── app/api/    plan · query · decisions/[id]/{action,audit,execute,observe,rollback,resume}
 │   └── studio/         Nuera Quicksilver Studio: core schemas, graph schema, guarded seed scripts
 ├── packages/
 │   ├── kernel/         Deterministic authority, NQC, workflows, run runtime (no LLM)
 │   ├── agent/          Planner, reviewer, query agent, MCP bindings, model roles
 │   ├── host/           Single-tenant host: worker, schedules, webhooks, API, vault, logs, metrics
+│   ├── aura/           Aura intent layer: objective to decision graph, no authority
+│   ├── operator/       Operator: the governed agent runtime (tools, sandbox, approvals, audit)
 │   ├── sdk/            Internal TypeScript API client
 │   ├── sdk-python/     Internal Python SDK and `qs` CLI foundation
 │   └── sdk-go/         Internal Go SDK foundation
