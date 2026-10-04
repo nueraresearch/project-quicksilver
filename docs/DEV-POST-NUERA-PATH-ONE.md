@@ -1,7 +1,7 @@
 ---
 title: "Nuera Quicksilver: an agent that reads your company through Sanity Context, and can't approve its own work"
 tags: sanitychallenge, devchallenge, ai, typescript
-cover_image: [FILL: cover image URL]
+cover_image: https://raw.githubusercontent.com/nueraresearch/project-quicksilver/main/docs/images/cover.png
 ---
 
 *This is my entry for Path One of the Sanity Challenge. Code: https://github.com/nueraresearch/project-quicksilver (MIT).
@@ -108,7 +108,8 @@ You can inspect the data yourself: the public, synthetic `demo` dataset in proje
 
 <!--
 BEFORE PUBLISHING (delete this block):
-1. Fill the video link (here and in docs/FOR-JUDGES.md) and the cover image URL; check no [FILL] remains.
+1. Fill the video link (here and in docs/FOR-JUDGES.md); check no [FILL] remains. The cover image and the diagram load from
+   the repository, so check they show once the docs PR is merged.
 2. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,
    and the needs-you list.
 3. Confirm the public `demo` dataset answers: the query link in docs/FOR-JUDGES.md.
