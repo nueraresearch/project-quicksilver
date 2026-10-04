@@ -1,0 +1,45 @@
+# Builds the host image and rolls the Azure host to it. Manual only: nothing deploys on a push.
+# Needs a one-time setup (docs/platform/azure-deploy.md): an Entra app registration with a federated
+# credential for this repository, and these repository VARIABLES (not secrets): AZURE_CLIENT_ID,
+# AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, AZURE_REGISTRY_NAME, AZURE_HOST_APP_NAME.
+name: Deploy host to Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag to build and deploy (for example the short commit id)
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: azure-host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build the image in the registry
+        run: az acr build --registry "${{ vars.AZURE_REGISTRY_NAME }}" --image "quicksilver-host:${{ inputs.tag }}" --file deploy/Dockerfile.host .
+      - name: Point the host at the new image
+        run: |
+          az webapp config container set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_HOST_APP_NAME }}" \
+            --container-image-name "${{ vars.AZURE_REGISTRY_NAME }}.azurecr.io/quicksilver-host:${{ inputs.tag }}"
+      - name: Check health
+        run: |
+          host=$(az webapp show --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --name "${{ vars.AZURE_HOST_APP_NAME }}" --query defaultHostName -o tsv)
+          for i in $(seq 1 30); do
+            if curl -fsS "https://$host/healthz" > /dev/null; then echo "healthy"; exit 0; fi
+            sleep 10
+          done
+          echo "host did not become healthy" >&2
+          exit 1
