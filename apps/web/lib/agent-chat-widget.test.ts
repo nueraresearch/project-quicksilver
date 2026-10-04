@@ -69,3 +69,14 @@ test('chat launcher and transcript have accessible, session-scoped controls', ()
   assert.match(styles, /@media \(max-height: 32rem\)/)
   assert.match(styles, /env\(safe-area-inset-bottom\)/)
 })
+
+test('an answer lists its sources: Sanity Context reads are told apart from the app’s own pages, with what each call asked for', () => {
+  assert.match(widget, /function Sources\(/)
+  assert.match(widget, /Read through Sanity Context, as you; nothing was written\./)
+  assert.match(widget, /SOURCE_BADGE/)
+  assert.match(widget, /source\.detail && <code/)
+  const route = readFileSync(new URL('../app/api/chat/route.ts', import.meta.url), 'utf8')
+  assert.match(route, /sources: describeSources\(result\.toolCalls, APP_TOOL_NAMES\)/)
+  // the detail of a call is for the reader only: it is stripped before the evaluation record
+  assert.match(route, /toolCalls: result\.toolCalls\.map\(\(\{ detail: _detail, \.\.\.call \}\) => call\)/)
+})

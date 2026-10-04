@@ -49,6 +49,14 @@ Company-model questions go through the Sanity Context tools, as before.
 - Whether the Sanity dataset behind the company-model tools includes decision documents is not
   assumed: decisions come from the app tools.
 
+## Sources under every answer
+
+Each answer lists what it was built from: knowledge-base entries and live dataset queries read through
+the Context MCP endpoints, and the app's own pages. A Sanity entry shows the GROQ query or entry id the
+assistant asked for (bounded to 240 characters, and never a field that looks like a credential). This is
+for the person reading the answer: it is returned with the response and is not stored in traces or
+evaluation records, which keep tool names only.
+
 ## One chat, with cards for work
 
 There are no Ask, Plan or Work modes. Every turn goes to the assistant. When the person describes

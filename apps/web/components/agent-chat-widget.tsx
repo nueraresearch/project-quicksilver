@@ -7,7 +7,7 @@ import { authFailureMessage, consoleHeaders, resolveConsoleAccess } from '@/lib/
 import { chatTurnRequest, offerRequest, pageHint } from '@/lib/chat-request'
 import { loadChat, saveChat } from '@/lib/chat-store'
 import { PLAN_NDJSON, createPlanLineDecoder, planProgress, type PlanProgressItem, type PlanStreamLine } from '@/lib/plan-stream'
-import type { AssistantOffer, BusinessAgentKey } from '@quicksilver/agent'
+import type { AnswerSource, AssistantOffer, BusinessAgentKey } from '@quicksilver/agent'
 import { usePathname } from 'next/navigation'
 import { signInPageHref } from '@/lib/session-control'
 import { AttentionList } from '@/components/attention-list'
@@ -21,6 +21,7 @@ type QueryResponse = {
   offers?: AssistantOffer[]
   confidence: number
   toolsUsed?: string[]
+  sources?: AnswerSource[]
   audit?: { persisted: boolean; evaluationRecordIds: string[] }
   nqc?: { reasoningScore: number; hallucinationRisk: string; brittleness: string; safetyDecision: string; issues: string[] }
 }
@@ -458,10 +459,27 @@ async function readPlanStream(body: ReadableStream<Uint8Array>, onProgress: (ite
   return final
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  get_my_access: 'your access', list_decisions: 'decisions', get_decision: 'a decision', get_business_overview: 'the overview',
-  get_finance_summary: 'the money ledger', get_workflow_activity: 'workflow activity', get_trace_summary: 'traces',
-  list_agent_catalog: 'the agent catalog', list_company_entities: 'company records', list_workflow_versions: 'workflow versions', get_workflow_runs: 'workflow runs',
+const SOURCE_BADGE: Record<AnswerSource['kind'], string> = {
+  'knowledge-base': 'Knowledge base', 'dataset-query': 'Dataset query', schema: 'Schema', app: 'This app', other: 'Company data',
+}
+
+/** Where an answer came from: Sanity Context endpoints (knowledge base, live dataset queries) and the app's own pages. */
+function Sources({ sources }: { sources: AnswerSource[] }) {
+  const sanity = sources.filter((source) => source.kind !== 'app')
+  return (
+    <details className={styles.references}>
+      <summary>What I looked at ({sources.length})</summary>
+      {sanity.length > 0 && <p className={styles.agentRouting}>Read through Sanity Context, as you; nothing was written.</p>}
+      <ul className={styles.sources}>
+        {sources.map((source, index) => (
+          <li key={`${source.tool}-${index}`}>
+            <span className={styles.sourceBadge} data-kind={source.kind}>{SOURCE_BADGE[source.kind]}</span> {source.label}{!source.succeeded && ' (did not return)'}
+            {source.detail && <code className={styles.sourceDetail}>{source.detail}</code>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
 }
 
 /** Only pages of this app: the server already filters, and this is the second check. */
@@ -470,7 +488,6 @@ const isLocalLink = (href: string) => href.startsWith('/') && !href.startsWith('
 function QueryAnswer({ result, onNavigate }: { result: QueryResponse; onNavigate?: () => void }) {
   const paragraphs = result.answer.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean)
   const links = (result.links ?? []).filter((link) => isLocalLink(link.href))
-  const looked = [...new Set((result.toolsUsed ?? []).map((name) => TOOL_LABELS[name] ?? 'company data'))]
   return (
     <div className={styles.answer}>
       {paragraphs.length ? paragraphs.map((part, index) => <p key={`${index}-${part.slice(0, 20)}`}>{part}</p>) : <p>No answer was found for this question.</p>}
@@ -478,7 +495,7 @@ function QueryAnswer({ result, onNavigate }: { result: QueryResponse; onNavigate
       {links.length > 0 && (
         <p className={styles.chatLinks}>{links.map((link) => <Link key={link.href} className={styles.reviewPlan} href={link.href}>{link.label} <span aria-hidden="true">→</span></Link>)}</p>
       )}
-      {looked.length > 0 && <details className={styles.references}><summary>What I looked at</summary><p>{looked.join(', ')}</p></details>}
+      {(result.sources?.length ?? 0) > 0 && <Sources sources={result.sources!} />}
       <div className={styles.evaluation}>
         <span>{Math.round(result.confidence * 100)}% confidence</span>
         {result.nqc && <span>NQC · {result.nqc.safetyDecision}</span>}
