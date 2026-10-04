@@ -9,7 +9,7 @@ The machine-readable contract is [openapi.json](openapi.json) (OpenAPI 3.1.0). I
 - **What is enforced.** The web regression suite (`apps/web/lib/app-routes.test.ts`) fails when the exported method and path inventory drifts from `openapi.json`, when an operation ID is missing, when a write operation lacks a request body schema, when a local `$ref` does not resolve, and when any operation's success response is the generic placeholder. It does not compare response schemas against live handler output, so a schema can still lag the code; the handler is authoritative and the schema should be corrected in the same change.
 - **Optional and nullable fields.** Where a code path omits a field, the schema leaves it out of `required` (for example the `process` object on decision responses, which exists only when the process engine ran). Clients must tolerate absent optional fields and must ignore fields they do not know: response objects are not closed to additions, so additive fields can appear in any release.
 - **Machine-readable changes.** There is no changelog of API changes separate from the repository history. Review the diff of `docs/api/openapi.json` between releases.
-- **Not promised.** A 1.0.0 stability promise, a deprecation window, and an SDK compatibility policy do not exist. Whether and when to make the 1.0.0 promise is a product-owner decision; this document does not make it and nothing here should be read as implying it. Publishing a 1.0.0 contract would additionally need a compatibility review of every schema and a decision on the error-code and conflict gaps listed at the end of this file.
+- **Not promised.** A 1.0.0 stability promise, a deprecation window, and an SDK compatibility policy do not exist. Whether and when to make the 1.0.0 promise is a product-owner decision; this document does not make it and nothing here should be read as implying it. Publishing a 1.0.0 contract would additionally need a compatibility review of every schema and a decision on the remaining error-code, conflict and pagination gaps listed at the end of this file.
 
 ## Authentication, tenancy and rate limits
 
@@ -19,11 +19,11 @@ The machine-readable contract is [openapi.json](openapi.json) (OpenAPI 3.1.0). I
 
 ## Errors
 
-Errors are JSON objects with an `error` string. That is the only field present on every error. Other fields appear on some responses:
+Errors are JSON objects with an `error` string. `error` is on every error response. `code` is on every error response from the decision, workflow, agent and company-data (`/api/entities`) routes and from the shared route guard; the other routes (`/api/plan`, `/api/query`, `/api/chat`, `/api/inbox`, `/api/whoami`, `/api/monitoring/*`, `/api/dashboard/*`, `/api/auth/*`) still send `error` alone on their own validation and load failures. Other fields appear on some responses:
 
 | Field | Where it appears |
 | --- | --- |
-| `code` | Refusals from the shared route guard (`unauthenticated`, `forbidden`, `unavailable`, `rate-limited`, `principal-kind-unavailable`). Not present on the decision routes' own auth refusals or on handler-level errors. |
+| `code` | A stable machine-readable value, listed below. Present on every error from the decision, workflow, agent and company-data routes; absent on the routes named above. |
 | `needs` | 403 from the shared route guard: the permissions the route requires. |
 | `retryAfterSeconds` | 429 body. The same value is in the `Retry-After` header. |
 | `issues` | Some 400 and 422 validation failures: the schema issues (decision routes) or the graph validator's errors (workflow routes). |
@@ -33,7 +33,26 @@ Errors are JSON objects with an `error` string. That is the only field present o
 | `telemetry` | 500 from plan, query and workflow run: the trace id and whether spans were written. |
 | `activeVersion` | 409 from a live workflow run that pinned a version that is not the active one. |
 
-The `Error` schema in `openapi.json` describes these as optional properties and allows additional ones. The `error` text is for people; match on the status code and, where present, `code`, not on message wording, which may change.
+The `Error` schema in `openapi.json` describes these as optional properties and allows additional ones. The `error` text is for people; match on `code` (or the status code), not on message wording, which may change.
+
+### Error codes
+
+The code follows the HTTP status, so a client can branch on it without reading the message. Status codes and existing messages did not change when `code` was added.
+
+| `code` | Status | Meaning |
+| --- | --- | --- |
+| `invalid-request` | 400 | Malformed JSON, a failed validation, an out-of-range query parameter, or an action the current state does not accept on the engine-off execute path. |
+| `unauthenticated` | 401 | No valid credential or browser session. |
+| `forbidden` | 403 | Authenticated but not allowed (permission, principal kind, tenant, separation of duties, fault injection disabled). |
+| `not-found` | 404 | The decision, workflow version or agent definition does not exist for this tenant. |
+| `conflict` | 409 | A state or concurrency conflict. This includes a lost datastore revision race on a workflow or agent lifecycle write ("changed concurrently; refresh and retry"). |
+| `payload-too-large` | 413 | The body exceeds 256 KiB. |
+| `unprocessable` | 422 | Well-formed content that cannot run (`POST /api/workflows/run`). |
+| `rate-limited` | 429 | The per-principal rate limit was exceeded. |
+| `internal-error` | 500 | The handler failed; detail stays in server logs. |
+| `unavailable` | 503 | A dependency or feature the request needs is unavailable. |
+
+The shared route guard can also send `principal-kind-unavailable` (503) when it cannot determine the caller's principal kind.
 
 ### Status codes
 
@@ -67,7 +86,7 @@ A 409 always means "do not blindly retry the same request": re-read the resource
   - publishing and rollback make the head and version changes in one datastore transaction, so a version is never active without the head pointing at it, and the previous active version is deprecated in the same transaction.
 - **Agent publication** (`agents/drafts`, `drafts/submit`, `review`, `publish`, `rollback`). The same author/reviewer separation and human-actor rules apply, plus: built-in agent definitions cannot be replaced (409), only an archived version can be a rollback source, and a datastore conflict while creating a draft, a rollback draft or publishing is reported as 409 ("created concurrently" or "changed concurrently; refresh and retry").
 - **Live workflow run.** A request that pins a `version` other than the active published one returns 409 with `activeVersion`.
-- **Known gap.** The workflow lifecycle routes and the agent submit and review routes write with a datastore revision check, but a lost race there is not translated: it currently surfaces as a generic 500, not 409. Treat a 500 on these routes as "state unknown": re-read the publications or catalog before retrying. This is not a designed behavior and may change to 409.
+- **Lost revision races.** Every workflow and agent lifecycle write (`drafts`, `drafts/submit`, `review`, `publish`, `rollback`) checks the stored revision of the documents it changes. If another writer moves a document between the server's read and its write, the response is a 409 with `code: "conflict"` ("changed concurrently; refresh and retry"), the same on the workflow and agent routes. A 500 on these routes is a different failure (datastore or configuration); read the publications or catalog before retrying it.
 - **No conditional requests.** There are no `ETag`, `If-Match` or `If-None-Match` headers anywhere in the API, and no client-supplied revision parameter. Conflict detection is server-side only.
 
 ## Pagination and list bounds
@@ -75,21 +94,21 @@ A 409 always means "do not blindly retry the same request": re-read the resource
 Only `GET /api/decisions` is paginated.
 
 - **`GET /api/decisions`.** Query parameters: `status` (up to four of `proposed`, `awaiting-approval`, `approved`, `executed`, `failed`, `rejected`, `rollback-proposed`, `rolled-back`, comma separated), `limit` (whole number 1 to 50, default 25) and `before` (a date-time string of at most 40 characters). Results are ordered newest first by `createdAt` (falling back to the document creation time). The response carries `hasMore`, which is true when at least one more row exists beyond `limit`, and `counts` for every status across all decisions, independent of the filter. To fetch the next page, pass the `createdAt` of the last row received as `before`. There is no opaque cursor and no total count for the filtered set. Because the cursor is a timestamp, decisions created with the identical timestamp as the cursor row can be skipped between pages, and rows created or changed while paging are not reflected consistently; the list is a view, not a snapshot. An out-of-range `limit`, an unknown or extra `status`, or an unparseable `before` is a 400.
-- **Unpaginated, fixed bound.** These return at most a fixed number of the newest or first rows and accept no cursor. The server silently truncates; apart from `entities`, the response does not say so.
+- **Unpaginated, fixed bound.** These return at most a fixed number of the newest or first rows and accept no cursor. The workflow, agent and company-data lists below carry `truncated: boolean`, which is true only when the cap actually cut the result (the server fetches one row past the cap to know). A list that holds exactly the cap is not truncated. The two monitoring lists and the inbox and dashboard samples do not carry the flag.
 
 | Route | Bound |
 | --- | --- |
 | `GET /api/monitoring/workflows` | `limit` 1 to 100 (default 100), newest first, tenant-wide. |
 | `GET /api/monitoring/traces` | `limit` 1 to 500 (default 200), newest spans first. Alerts and totals are computed over the returned sample only. |
-| `GET /api/workflows/executions` | Requires `workflowId`; `limit` 1 to 100 (default 25), newest first. |
-| `GET /api/workflows/publications` | Requires `workflowId`; the newest 100 versions and the newest 100 audit events. Not adjustable. |
-| `GET /api/entities` | The first 500 entities ordered by name; `total` is the full count, so a client can detect truncation by comparing it with `entities.length`. Not adjustable. |
-| `GET /api/agents/catalog` | Up to 200 active definitions, 100 awaiting review, 100 drafts and 100 audit events. Not adjustable. |
-| `GET /api/agents/definitions` | Requires an agent id; the newest 100 versions and 100 audit events. Not adjustable. |
+| `GET /api/workflows/executions` | Requires `workflowId`; `limit` 1 to 100 (default 25), newest first. `truncated` is true when more runs exist than `limit`. |
+| `GET /api/workflows/publications` | Requires `workflowId`; the newest 100 versions and the newest 100 audit events. Not adjustable. `truncated` is true when either list was cut. |
+| `GET /api/entities` | The first 500 entities ordered by name; `total` is the full count. `truncated` is true when more than 500 exist. Not adjustable. |
+| `GET /api/agents/catalog` | Up to 200 active definitions, 100 awaiting review, 100 drafts and 100 audit events. Not adjustable. `truncated` is true when any of those caps cut rows (including drafts hidden from other authors, which are filtered after the cap). |
+| `GET /api/agents/definitions` | Requires an agent id; the newest 100 versions and 100 audit events. Not adjustable. `truncated` is true when either was cut. |
 | `GET /api/inbox` | Draws on the newest 60 decisions and the other sources' own bounded samples. Not adjustable. |
 | `GET /api/dashboard/overview` | The latest 8 decisions, metrics and experiments. Not adjustable. |
 
-A malformed or out-of-range `limit` is a 400 on the routes that accept one; it is never silently clamped. A workflow with more than 100 versions or audit events has its older history unreachable through the API today.
+A malformed or out-of-range `limit` is a 400 on the routes that accept one; it is never silently clamped. A workflow with more than 100 versions or audit events, or an agent with more than 100 versions, now reports `truncated: true`, but its older history is still unreachable through the API.
 
 ## Idempotency and retry safety
 
@@ -102,7 +121,7 @@ There are no idempotency keys and no request IDs. A retried request is a new req
 | `POST /api/decisions/{id}/action` | A repeat of an approve or reject after it succeeded is refused with 409 (the decision has left `awaiting-approval`), so it cannot approve twice. Because the 409 does not replay the first result, after a timeout read the decision before concluding anything. `request-evidence` is not idempotent: every accepted call prepends another note to the reasoning summary. |
 | `POST /api/decisions/{id}/execute` | A repeat after success is refused (409, or 400 when the process engine is off) because the decision is no longer `approved`. The simulated outcome is deterministic per decision id. The decision update, the metric record and (for a rollback decision) the parent update are separate writes, not one transaction: a 500 can leave the decision already `executed` with its metric record missing. Read the decision before retrying. |
 | `POST /api/decisions/{id}/resume` | A repeat is refused with 409 once the decision has left its initial state. |
-| `POST /api/decisions/{id}/rollback` | With the process engine on, the original decision moves to `rollback-proposed`, so a repeat is refused unless a failed rollback may be retried. With the engine off there is no guard: every call creates another rollback decision (`decision-rollback-<id>-<timestamp>`). Not safe to retry blindly. |
+| `POST /api/decisions/{id}/rollback` | With the process engine on, the original decision moves to `rollback-proposed`, so a repeat is refused unless a failed rollback may be retried. With the engine off, a decision that already has a rollback in `proposed`, `awaiting-approval` or `approved` is not given another one: the call returns 200 with the existing `rollbackDecisionId` and `alreadyProposed: true`. Once that rollback is finished (executed, rejected or failed) a new one can be proposed. Safe to retry. |
 | `POST /api/plan` | Not safe. Every call runs the planner and reviewer models, spends tokens, and persists new decision documents. Retrying after a timeout can leave duplicate pending decisions; list `GET /api/decisions` first. |
 | `POST /api/query` | Not side-effect free: each call runs a model and writes an evaluation record and trace spans. The answer is not deterministic. |
 | `POST /api/workflows/drafts` | The `workflowId` and `graph.version` come from the body, so a repeat after success is a 409 (already exists), not a duplicate. |
@@ -128,10 +147,10 @@ The business overview uses authenticated `GET /api/dashboard/overview` for decis
 
 - **Stability:** no 1.0.0 promise, deprecation window or SDK compatibility policy exists; see the versioning policy above. These are product-owner decisions.
 - **Schema fidelity:** response schemas are written from the handlers but are not verified against live responses by a test. Some kernel-internal structures are described loosely on purpose (the capability graph finding and the risk arithmetic in `/api/plan` are open objects), and the live workflow run response still varies with runtime outcomes.
-- **Error contract:** `error` is the only guaranteed error field, and not every route returns `code`. A lost datastore revision race on workflow lifecycle writes returns 500 where 409 would be expected. Error wording is not stable.
+- **Error contract:** `error` is the only error field guaranteed on every route. `code` is guaranteed on the decision, workflow, agent and company-data routes only; plan, query, chat, inbox, whoami, monitoring, dashboard and auth routes do not send it yet. Error wording is not stable.
 - **Conflict semantics:** there is no client-supplied revision, `ETag` or conditional request. The decision fingerprint is the only caller-visible precondition.
-- **Pagination:** only `/api/decisions` pages. Other lists truncate silently at the bounds above, and workflow history older than 100 versions is not reachable.
-- **Idempotency:** no idempotency keys; retry safety is a by-product of state guards, as listed above, and several writes (plan, agent draft creation, engine-off rollback) are not safe to repeat.
+- **Pagination:** only `/api/decisions` pages. Other lists stop at the bounds above; the workflow, agent and company-data lists say so with `truncated`, but history beyond the bounds (for example workflow versions older than the newest 100) is not reachable, and the monitoring lists do not carry the flag.
+- **Idempotency:** no idempotency keys; retry safety is a by-product of state guards, as listed above, and several writes (plan, agent draft creation) are not safe to repeat. Decision execute is still not atomic (see its row above).
 - **Rate limits** are per process, not global.
 
 `openapi.json` intentionally lists the current exported HTTP methods and reusable common schemas. It is not a claim of complete behavioral or API stability. Update it alongside every route addition, removal, or method change; the regression test fails if the method and path inventory diverges.

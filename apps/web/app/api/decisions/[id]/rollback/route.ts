@@ -13,12 +13,14 @@
  */
 
 import { NextResponse } from 'next/server'
+import { errorCode } from '@/lib/api-errors'
 import { safeErrorName } from '@/lib/safe-log'
 import { getSanityClient } from '@/lib/sanity-client'
 import { z } from 'zod'
 import { authorizeTransition, nextAutomaticTransition } from '@quicksilver/kernel'
 import { verifySupervisorCredential } from '@/lib/nqc-approval'
 import { takeWebRateLimit } from '@/lib/route-guard'
+import { proposeLegacyRollback } from '@/lib/rollback-proposal'
 import {
   KERNEL_ACTOR,
   commitTransition,
@@ -46,7 +48,7 @@ export async function POST(
   // The supervisor credential before the body is read (A-3), then the
   // per-principal write limit (A-5).
   const supervisor = await verifySupervisorCredential(req, 'decision:rollback')
-  if (!supervisor.ok) return NextResponse.json({ error: supervisor.reason }, { status: supervisor.status })
+  if (!supervisor.ok) return NextResponse.json({ error: supervisor.reason, code: errorCode(supervisor.status) }, { status: supervisor.status })
   const limited = takeWebRateLimit('write', supervisor.supervisorId)
   if (limited) return NextResponse.json(limited.body, { status: limited.status, headers: limited.headers })
 
@@ -58,12 +60,12 @@ export async function POST(
   }
   const parsed = Body.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Validation failed', issues: parsed.error.issues }, { status: 400 })
+    return NextResponse.json({ error: 'Validation failed', code: 'invalid-request', issues: parsed.error.issues }, { status: 400 })
   }
   const { summary } = parsed.data
 
   if (!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
-    return NextResponse.json({ error: 'Sanity not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Sanity not configured', code: 'internal-error' }, { status: 500 })
   }
 
   try {
@@ -84,14 +86,14 @@ export async function POST(
       { id },
     )
     if (!original) {
-      return NextResponse.json({ error: 'Decision not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Decision not found', code: 'not-found' }, { status: 404 })
     }
     const supervisorEntity = await client.fetch<{ entityType: string } | null>(
       '*[_type == "entity" && _id == $id][0]{ entityType }',
       { id: supervisor.supervisorId },
     )
     if (supervisorEntity?.entityType !== 'human') {
-      return NextResponse.json({ error: 'Configured supervisor must resolve to a human entity.' }, { status: 403 })
+      return NextResponse.json({ error: 'Configured supervisor must resolve to a human entity.', code: 'forbidden' }, { status: 403 })
     }
 
     // ── Process engine path ────────────────────────────────────────────────
@@ -122,7 +124,7 @@ export async function POST(
         await commitTransition(client, original._id, original._rev, definition, step, actor, now)
       } catch (err) {
         if (isRevisionConflict(err)) {
-          return NextResponse.json({ error: 'This decision changed while you were acting on it. Reload and try again.' }, { status: 409 })
+          return NextResponse.json({ error: 'This decision changed while you were acting on it. Reload and try again.', code: 'conflict' }, { status: 409 })
         }
         throw err
       }
@@ -169,36 +171,17 @@ export async function POST(
     }
 
     // ── Legacy path (engine off, or definition not seeded yet) ─────────────
-
-    // Hyphens, not dots -- Sanity treats a leading "drafts." as a special
-    // document-id prefix, and mixing dots into an ordinary runtime id invites
-    // confusion (or worse) with that convention. Every other generated id in
-    // this codebase (decision-plan-<run>-<i>, etc.) already uses hyphens.
-    const rollbackId = `decision-rollback-${id}-${Date.now()}`
-    await client.create({
-      _id: rollbackId,
-      _type: 'decision',
-      question: `Roll back: ${original.selectedAction}`,
-      context: [{ _type: 'reference', _ref: original._id, _key: original._id }],
-      candidateActions: [],
-      selectedAction: summary ?? `Roll back: ${original.selectedAction}`,
-      reasoningSummary:
-        'Closed-loop recovery: monitoring detected metric deviation in the wrong direction. High-confidence evidence (Historical Incident #17) suggests the underlying cause is mechanical (worn seal), not parameter drift. Rolling back the parameter change is the first corrective action.',
-      evidence: [],
-      constraints: [],
-      policyChecks: original.policyChecks ?? [],
-      policySnapshotVersion: original.policySnapshotVersion,
-      riskLevel: 2,
-      requiredApproval: true,
-      status: 'awaiting-approval',
-      createdAt: new Date().toISOString(),
-    })
-
-    return NextResponse.json({ rollbackDecisionId: rollbackId, parentDecisionId: id })
+    // A decision with a pending rollback gets that rollback back (200, alreadyProposed) instead of another copy.
+    const proposal = await proposeLegacyRollback(client, original, summary, Date.now())
+    return NextResponse.json(
+      proposal.alreadyProposed
+        ? proposal
+        : { rollbackDecisionId: proposal.rollbackDecisionId, parentDecisionId: proposal.parentDecisionId },
+    )
   } catch (err) {
     console.error('[/api/decisions/[id]/rollback]', safeErrorName(err))
     return NextResponse.json(
-      { error: 'Rollback failed', detail: safeErrorName(err) },
+      { error: 'Rollback failed', code: 'internal-error', detail: safeErrorName(err) },
       { status: 500 },
     )
   }

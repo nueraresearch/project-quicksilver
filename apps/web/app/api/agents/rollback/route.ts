@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   const body = await readPublicationBody(request)
   if (!body.ok) return body.response
   const parsed = requestSchema.safeParse(body.body)
-  if (!parsed.success) return NextResponse.json({ error: 'A namespaced agentId and positive sourceVersion are required.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'A namespaced agentId and positive sourceVersion are required.', code: 'invalid-request' }, { status: 400 })
   try { return NextResponse.json(await createAgentRollbackDraft(parsed.data.agentId, parsed.data.sourceVersion, caller.actor), { status: 201 }) }
   catch (error) { return publicationFailure(error, 'Could not create an agent rollback draft.') }
 }

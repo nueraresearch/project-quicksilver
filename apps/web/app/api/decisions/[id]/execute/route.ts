@@ -30,6 +30,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { errorCode } from '@/lib/api-errors'
 import { safeErrorName } from '@/lib/safe-log'
 import { getSanityClient } from '@/lib/sanity-client'
 import { authorizeDecisionRoute, currentPolicySnapshotVersion, evaluateDecisionExecutionGate, type DecisionApprovalRecord } from '@/lib/nqc-approval'
@@ -141,12 +142,12 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params
-  if (!id) return NextResponse.json({ error: 'Missing decision id' }, { status: 400 })
+  if (!id) return NextResponse.json({ error: 'Missing decision id', code: 'invalid-request' }, { status: 400 })
 
   // Authenticate before any read or write: only a human with decision:execute
   // may execute, and that principal is recorded as the executor.
   const executor = await authorizeDecisionRoute(req, 'execute')
-  if (!executor.ok) return NextResponse.json({ error: executor.reason }, { status: executor.status })
+  if (!executor.ok) return NextResponse.json({ error: executor.reason, code: errorCode(executor.status) }, { status: executor.status })
   const limited = takeWebRateLimit('write', executor.principalId)
   if (limited) return NextResponse.json(limited.body, { status: limited.status, headers: limited.headers })
 
@@ -158,15 +159,15 @@ export async function POST(
   }
   const parsedBody = Body.safeParse(body ?? {})
   if (!parsedBody.success) {
-    return NextResponse.json({ error: 'Validation failed', issues: parsedBody.error.issues }, { status: 400 })
+    return NextResponse.json({ error: 'Validation failed', code: 'invalid-request', issues: parsedBody.error.issues }, { status: 400 })
   }
   const inject = parsedBody.data?.inject
   if (inject && !faultInjectionAllowed()) {
-    return NextResponse.json({ error: 'Fault injection is disabled (QUICKSILVER_ALLOW_FAULT_INJECTION is not on, or NODE_ENV is production).' }, { status: 403 })
+    return NextResponse.json({ error: 'Fault injection is disabled (QUICKSILVER_ALLOW_FAULT_INJECTION is not on, or NODE_ENV is production).', code: 'forbidden' }, { status: 403 })
   }
 
   if (!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
-    return NextResponse.json({ error: 'Sanity not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Sanity not configured', code: 'internal-error' }, { status: 500 })
   }
 
   try {
@@ -191,7 +192,7 @@ export async function POST(
       { id },
     )
     if (!decision) {
-      return NextResponse.json({ error: 'Decision not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Decision not found', code: 'not-found' }, { status: 404 })
     }
 
     const policyIds = [...new Set(decision.policyIds ?? [])].sort()
@@ -213,7 +214,7 @@ export async function POST(
         : executionGate.reason === 'policy-changed'
           ? 'Policy versions changed or were not recorded for this decision. Request a fresh plan.'
           : 'A current supervisor approval for this exact action and policy version is required.'
-      return NextResponse.json({ error }, { status: 409 })
+      return NextResponse.json({ error, code: 'conflict' }, { status: 409 })
     }
     const { approvalRequired, actionFingerprint } = executionGate
     const approval = decision.approvalRecord
@@ -223,14 +224,14 @@ export async function POST(
         { id: approval!.supervisorId },
       )
       if (supervisor?.entityType !== 'human') {
-        return NextResponse.json({ error: 'The recorded approver is no longer an active human entity.' }, { status: 409 })
+        return NextResponse.json({ error: 'The recorded approver is no longer an active human entity.', code: 'conflict' }, { status: 409 })
       }
       const currentPolicies = await client.fetch<Array<{ _id: string; approvalRequirementIds?: string[] }>>(
         '*[_type == "policy" && _id in $ids]{ _id, "approvalRequirementIds": approvalRequirements[]._ref }',
         { ids: policyIds },
       )
       if (currentPolicies.length !== policyIds.length || currentPolicies.some((policy) => (policy.approvalRequirementIds?.length ?? 0) > 0 && !policy.approvalRequirementIds?.includes(approval!.supervisorId!))) {
-        return NextResponse.json({ error: 'The recorded supervisor is not authorized by the current policies.' }, { status: 409 })
+        return NextResponse.json({ error: 'The recorded supervisor is not authorized by the current policies.', code: 'conflict' }, { status: 409 })
       }
     }
 
@@ -266,7 +267,7 @@ export async function POST(
         })
       } catch (err) {
         if (isRevisionConflict(err)) {
-          return NextResponse.json({ error: 'This decision changed while it was being executed. Reload and try again.' }, { status: 409 })
+          return NextResponse.json({ error: 'This decision changed while it was being executed. Reload and try again.', code: 'conflict' }, { status: 409 })
         }
         throw err
       }
@@ -303,13 +304,13 @@ export async function POST(
     // ── Legacy path (engine off, or definition not seeded yet) ─────────────
     if (decision.status !== 'approved') {
       return NextResponse.json(
-        { error: `Decision is in status "${decision.status}"; must be approved to execute` },
+        { error: `Decision is in status "${decision.status}"; must be approved to execute`, code: 'invalid-request' },
         { status: 400 },
       )
     }
 
     if (inject) {
-      return NextResponse.json({ error: 'Fault injection needs the process engine (QUICKSILVER_PROCESS_ENGINE=on).' }, { status: 409 })
+      return NextResponse.json({ error: 'Fault injection needs the process engine (QUICKSILVER_PROCESS_ENGINE=on).', code: 'conflict' }, { status: 409 })
     }
     const startedAt = new Date().toISOString()
     const outcome = simulateExecution(decision._id, decision.selectedAction)
@@ -351,7 +352,7 @@ export async function POST(
   } catch (err) {
     console.error('[/api/decisions/[id]/execute]', safeErrorName(err))
     return NextResponse.json(
-      { error: 'Execution failed', detail: safeErrorName(err) },
+      { error: 'Execution failed', code: 'internal-error', detail: safeErrorName(err) },
       { status: 500 },
     )
   }

@@ -27,6 +27,7 @@ export const DecisionActionBody = z.object({
 /** The 403 body when separation of duties refuses an approval. */
 export interface SeparationRefusalBody {
   error: 'Separation of duties'
+  code: 'forbidden'
   reasons: string[]
   conflicts: string[]
   /**
@@ -51,6 +52,7 @@ export function separationRefusal(
   const available = !!soleOperatorId && soleOperatorId.trim() === approverId.trim() && result.conflicts.length > 0
   return {
     error: 'Separation of duties',
+    code: 'forbidden',
     reasons: result.reasons,
     conflicts: result.conflicts,
     soleOperatorOverride: { available, minJustificationLength: MIN_SOLE_OPERATOR_JUSTIFICATION },

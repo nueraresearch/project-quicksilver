@@ -17,6 +17,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { errorCode } from '@/lib/api-errors'
 import { safeErrorName } from '@/lib/safe-log'
 import { getSanityClient } from '@/lib/sanity-client'
 import { randomUUID } from 'node:crypto'
@@ -45,13 +46,13 @@ export async function POST(
 ) {
   const { id } = await ctx.params
   if (!id) {
-    return NextResponse.json({ error: 'Missing decision id' }, { status: 400 })
+    return NextResponse.json({ error: 'Missing decision id', code: 'invalid-request' }, { status: 400 })
   }
 
   // The supervisor credential before the body is read (A-3), then the
   // per-principal write limit (A-5).
   const supervisor = await verifySupervisorCredential(req)
-  if (!supervisor.ok) return NextResponse.json({ error: supervisor.reason }, { status: supervisor.status })
+  if (!supervisor.ok) return NextResponse.json({ error: supervisor.reason, code: errorCode(supervisor.status) }, { status: supervisor.status })
   const limited = takeWebRateLimit('write', supervisor.supervisorId)
   if (limited) return NextResponse.json(limited.body, { status: limited.status, headers: limited.headers })
 
@@ -59,16 +60,16 @@ export async function POST(
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid JSON body', code: 'invalid-request' }, { status: 400 })
   }
   const parsed = ActionBody.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Validation failed', issues: parsed.error.issues }, { status: 400 })
+    return NextResponse.json({ error: 'Validation failed', code: 'invalid-request', issues: parsed.error.issues }, { status: 400 })
   }
   const { action, comment, expectedActionFingerprint } = parsed.data
 
   if (!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
-    return NextResponse.json({ error: 'Sanity not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Sanity not configured', code: 'internal-error' }, { status: 500 })
   }
 
   try {
@@ -95,7 +96,7 @@ export async function POST(
       { id },
     )
     if (!existing) {
-      return NextResponse.json({ error: 'Decision not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Decision not found', code: 'not-found' }, { status: 404 })
     }
 
     const supervisorEntity = await client.fetch<{ _id: string; entityType: string } | null>(
@@ -103,7 +104,7 @@ export async function POST(
       { id: supervisor.supervisorId },
     )
     if (supervisorEntity?.entityType !== 'human') {
-      return NextResponse.json({ error: 'Configured supervisor must resolve to a human entity.' }, { status: 403 })
+      return NextResponse.json({ error: 'Configured supervisor must resolve to a human entity.', code: 'forbidden' }, { status: 403 })
     }
     const policyIds = [...new Set(existing.policyIds ?? [])].sort()
     if (action === 'approve') {
@@ -112,14 +113,14 @@ export async function POST(
         { ids: policyIds },
       )
       if (policies.length !== policyIds.length) {
-        return NextResponse.json({ error: 'A policy used by this decision is missing; request a fresh plan.' }, { status: 409 })
+        return NextResponse.json({ error: 'A policy used by this decision is missing; request a fresh plan.', code: 'conflict' }, { status: 409 })
       }
       if (policies.some((policy) => (policy.approvalRequirementIds?.length ?? 0) > 0 && !policy.approvalRequirementIds?.includes(supervisor.supervisorId))) {
-        return NextResponse.json({ error: 'The configured supervisor is not authorized by every applicable policy.' }, { status: 403 })
+        return NextResponse.json({ error: 'The configured supervisor is not authorized by every applicable policy.', code: 'forbidden' }, { status: 403 })
       }
       const livePolicyVersion = await currentPolicySnapshotVersion(client, policyIds)
       if (!existing.policySnapshotVersion || livePolicyVersion !== existing.policySnapshotVersion) {
-        return NextResponse.json({ error: 'Policy versions changed or were not recorded for this decision. Request a fresh plan.' }, { status: 409 })
+        return NextResponse.json({ error: 'Policy versions changed or were not recorded for this decision. Request a fresh plan.', code: 'conflict' }, { status: 409 })
       }
       const currentActionFingerprint = existing.selectedAction && existing.policySnapshotVersion
         ? decisionActionFingerprint({
@@ -131,7 +132,7 @@ export async function POST(
           })
         : null
       if (!approvalFingerprintWasReviewed(expectedActionFingerprint, currentActionFingerprint)) {
-        return NextResponse.json({ error: 'This action or policy snapshot differs from the version you reviewed. Reload the plan before approving.' }, { status: 409 })
+        return NextResponse.json({ error: 'This action or policy snapshot differs from the version you reviewed. Reload the plan before approving.', code: 'conflict' }, { status: 409 })
       }
     }
     // Separation of duties: nobody approves what they requested, proposed, or would carry out,
@@ -152,7 +153,7 @@ export async function POST(
       return NextResponse.json(separationRefusal(separation, supervisor.supervisorId, soleOperatorId()), { status: 403 })
     }
     if (action === 'approve' && existing.safetyDecision === 'BLOCK') {
-      return NextResponse.json({ error: 'The NQC Kernel blocked this decision; it cannot be approved.' }, { status: 409 })
+      return NextResponse.json({ error: 'The NQC Kernel blocked this decision; it cannot be approved.', code: 'conflict' }, { status: 409 })
     }
 
     const grantedAt = new Date().toISOString()
@@ -202,7 +203,7 @@ export async function POST(
         await commitTransition(client, id, existing._rev, definition, step, actor, now, extra)
       } catch (err) {
         if (isRevisionConflict(err)) {
-          return NextResponse.json({ error: 'This decision changed while you were acting on it. Reload and try again.' }, { status: 409 })
+          return NextResponse.json({ error: 'This decision changed while you were acting on it. Reload and try again.', code: 'conflict' }, { status: 409 })
         }
         throw err
       }
@@ -225,7 +226,7 @@ export async function POST(
     // it can't be approved afterwards, and an executed decision can't be re-approved.
     if (existing.status !== 'awaiting-approval' && existing.status !== 'proposed') {
       return NextResponse.json(
-        { error: `Decision is "${existing.status}"; only awaiting-approval decisions can be acted on.` },
+        { error: `Decision is "${existing.status}"; only awaiting-approval decisions can be acted on.`, code: 'conflict' },
         { status: 409 },
       )
     }
@@ -265,7 +266,7 @@ export async function POST(
         .commit()
     } catch (err) {
       if (isRevisionConflict(err)) {
-        return NextResponse.json({ error: 'This decision changed while you were acting on it. Reload and try again.' }, { status: 409 })
+        return NextResponse.json({ error: 'This decision changed while you were acting on it. Reload and try again.', code: 'conflict' }, { status: 409 })
       }
       throw err
     }
@@ -282,7 +283,7 @@ export async function POST(
   } catch (err) {
     console.error('[/api/decisions/[id]/action]', safeErrorName(err))
     return NextResponse.json(
-      { error: 'Action failed', detail: safeErrorName(err) },
+      { error: 'Action failed', code: 'internal-error', detail: safeErrorName(err) },
       { status: 500 },
     )
   }
