@@ -5,7 +5,7 @@ cover_image: [FILL: cover image URL]
 ---
 
 *This is my entry for Path One of the Sanity Challenge. Code: https://github.com/nueraresearch/project-quicksilver (MIT).
-Sanity project ID: `f87t11g1`. Judge guide: [`docs/FOR-JUDGES.md`](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/FOR-JUDGES.md).*
+Sanity project ID: `f87t11g1`. Walkthrough video: [FILL: video link]. Judge guide: [`docs/FOR-JUDGES.md`](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/FOR-JUDGES.md).*
 
 ## What I built
 
@@ -77,21 +77,19 @@ The full list is the [parity matrix](https://github.com/nueraresearch/project-qu
 
 ## Try it
 
-https://quicksilver-seven.vercel.app. No account is needed: open **Sign in**, press **Start as Marcus Webb**, ask the chat something and open **What I looked at**, press **Create plan** on the card it offers, then use **Switch to Sarah Chen** in the top bar to approve it. The decision records Marcus as the requester and the planner agent as the proposer, and the approve route refuses both, so agents propose and a different human authorizes. Everything in the demo is synthetic, and it runs on its own dataset and Context endpoints, separate from ours.
+The walkthrough video (about 3 minutes) shows the full flow on the live app: **[FILL: video link]**.
+
+The app is at https://project-quicksilver.vercel.app and signs people in through our organization's single sign-on, so it is not open to the public. The video is the demo. In it I ask the chat about our policies and open **What I looked at**, ask for work and press **Create plan** on the card it offers, read why the kernel answered as it did, and approve the decision as a different person from the one who requested it. The decision records the requester and the planner agent as proposer, and the approve route refuses both, so agents propose and a different human authorizes.
+
+You can inspect the data yourself: the public, synthetic `demo` dataset in project `f87t11g1` has the same schema and the same evidence and policy documents as the app. The `production` dataset behind the live app is private.
 
 ---
 
 <!--
 BEFORE PUBLISHING (delete this block):
-1. Live URL: deploy the judge demo (docs/platform/judge-demo.md), check it with the five steps in section 5
-   of that runbook, and put its URL here and in docs/FOR-JUDGES.md. Run `npm run demo:reset -- --confirm` first.
-2. Judge-readable data: the public dataset is `demo` (synthetic). Give its query URL in docs/FOR-JUDGES.md.
-   Production stays private; never make it public.
-3. Confirm the Context endpoints and knowledge base still answer (npm run verify:mcp) and that the
-   example question in docs/FOR-JUDGES.md matches your seeded data.
-4. Check every [FILL] and the repo URL (README links nuerainc/project-quicksilver; this repo is at
-   nueraresearch/project-quicksilver).
-5. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,
+1. Fill the video link (here and in docs/FOR-JUDGES.md) and the cover image URL; check no [FILL] remains.
+2. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,
    and the needs-you list.
-6. Post with the #sanitychallenge tag by October 4, 2026, 11:59 PM PDT.
+3. Confirm the public `demo` dataset answers: the query link in docs/FOR-JUDGES.md.
+4. Post with the #sanitychallenge tag by October 4, 2026, 11:59 PM PDT.
 -->

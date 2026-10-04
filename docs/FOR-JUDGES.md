@@ -16,7 +16,7 @@ This page says what to look at, how to try it, and what has and has not been pro
 | Field | Value |
 |---|---|
 | Project | `Nuera Quicksilver`, project ID **`f87t11g1`** (organization: Nuera Ag Tech) |
-| Dataset | `production` is **private** and holds our own data. Judges use the public, synthetic dataset **`demo`**: [query it directly](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=*%5B_type%3D%3D%22policy%22%5D) (it answers once the `demo` dataset has been created and seeded; see `docs/platform/judge-demo.md`) |
+| Dataset | The app runs on the `production` dataset, which is **private**. Judges can inspect the public, synthetic dataset **`demo`** in the same project: [query it directly](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=*%5B_type%3D%3D%22policy%22%5D). It uses the same schema and the same evidence and policy documents as production, with no personal or customer data. |
 | Studio | https://project-quicksilver.sanity.studio (a Sanity login with project access is needed) |
 | Context MCP, live dataset | endpoint `nuera-quicksilver-agent` (GROQ mode: `groq_query`, `schema_explorer`, `initial_context`) |
 | Context MCP, knowledge base | endpoint `nuera-quicksilver-kb` over knowledge base `kbzyKoLrbQiu` (12 evidence and policy documents, read with `knowledge_base_read`) |
@@ -29,15 +29,12 @@ code refuses to read that project's endpoints (`assertNotLegacyContextEndpoint`)
 
 ## Try it
 
-- **Live demo:** **https://quicksilver-seven.vercel.app**. No account is needed. Open **Sign in**, then **Start as Marcus Webb**. Everything
-  in it is synthetic, and it is a separate deployment from our own, with its own dataset and its own Context endpoints
-  (the app refuses to start in demo mode if it could reach anything private).
-  1. As **Marcus Webb** (plans and requests): ask the chat about the company's policies, then open **What I looked at**
-     under the answer. Ask it to plan something and press **Create plan** on the card it offers.
-  2. Press **Switch to Sarah Chen** in the bar at the top. She is the only one who can approve: the decision records Marcus as the requester and the planner agent (`nuera-quicksilver:planner`) as the proposer, and the approve route refuses anyone who is the requester, the proposer, or would carry the action out. Marcus cannot approve, and she
-     cannot propose. Open the decision, read why, and approve it. Download its audit trail.
-  A few decisions are already waiting for approval so you can start at step 2 (they are made by the real planner; see [`platform/demo-decisions.md`](./platform/demo-decisions.md)). The demo resets regularly, so a decision you made may be gone later. The runbook for it is
-  [`platform/judge-demo.md`](./platform/judge-demo.md).
+- **Walkthrough video:** **[FILL: video link]** (about 3 minutes). It shows the whole flow on the live app, so you do not need to sign in to see it.
+- **Live app:** https://project-quicksilver.vercel.app. Sign-in uses our organization's single sign-on, so the app is not open to the public. The video is the demo. What it shows:
+  1. In the chat, a question about the company's policies, with **What I looked at** open under the answer: the sources and queries it read through Sanity Context.
+  2. A request for work. The assistant offers a card, and nothing is created until the person presses **Create plan**.
+  3. The decision page: why the kernel answered as it did, and what would change the answer.
+  4. Approval. The decision records one person as the requester and the planner agent (`nuera-quicksilver:planner`) as the proposer, and the approve route refuses both, so a different human has to authorize it. The audit trail downloads as JSON with a digest.
 - **Without credentials:** `npm install && npm run verify` runs typecheck and every suite (over 1,100
   tests) with no secrets. `npm run dev` starts the console; the pages work against a configured
   Sanity project (see [`docs/platform/sanity-isolation.md`](./platform/sanity-isolation.md)).
