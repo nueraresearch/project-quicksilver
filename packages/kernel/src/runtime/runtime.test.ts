@@ -370,17 +370,24 @@ test('Worker: cancellation requested mid-run aborts the handler signal and ends 
   const { queue } = setup({ leaseMs: 60 })
   await queue.enqueue({ graph: agentGraph(), input: 1, tenantId: 't' })
   let sawAbort = false
+  let markStarted!: () => void
+  const handlerStarted = new Promise<void>((resolve) => { markStarted = resolve })
   const worker = new WorkflowRunWorker({
     queue, workerId: 'w', heartbeatMs: 10,
     resolveHandlers: () => handlers({
-      runAgent: (_node, ctx) => new Promise((resolve) => {
+      runAgent: (_node, ctx) => {
         ctx.signal?.addEventListener('abort', () => { sawAbort = true })
-        setTimeout(() => resolve('late'), 400)
-      }),
+        markStarted()
+        return new Promise((resolve) => {
+          setTimeout(() => resolve('late'), 400)
+        })
+      },
     }),
   })
   const pending = worker.runOnce()
-  await new Promise((r) => setTimeout(r, 20))
+  // Cancel only once the handler is actually in flight, so the abort is observed.
+  // A fixed sleep here races the worker under load and fails intermittently.
+  await handlerStarted
   await queue.cancel('run-1', 'ops@acme', 'operator stop')
   const run = await pending
   assert.equal(run?.status, 'cancelled')

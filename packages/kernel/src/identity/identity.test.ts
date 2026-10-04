@@ -71,6 +71,23 @@ test('RBAC: agents never gain authority, even if a role would grant it', () => {
   }
 })
 
+test('RBAC: only a human may hold authority — a service principal is refused too', () => {
+  const access = new AccessController()
+  const service: Principal = { id: 'svc:settlements', kind: 'service', tenantId: 'acme', roles: ['supervisor'] }
+  for (const permission of AUTHORITY_PERMISSIONS) {
+    const decision = access.authorize(service, permission, acme)
+    assert.equal(decision.allowed, false, permission)
+    assert.ok(
+      decision.reasons.some((r) => r.includes('Only a human supervisor may hold authority permissions')),
+      `${permission}: expected the human-only reason, got ${JSON.stringify(decision.reasons)}`,
+    )
+  }
+  // The role would have granted it; the kind is what refuses.
+  assert.ok(BUILT_IN_ROLES.some((r) => r.id === 'supervisor' && r.permissions.includes('decision:approve')))
+  assert.equal(access.effectivePermissions(service).has('decision:approve'), false)
+  assert.equal(access.authorize(ana, 'decision:approve', acme).allowed, true, 'a human supervisor still may')
+})
+
 test('RBAC: dedicated agent catalog permissions follow least privilege', () => {
   const access = new AccessController()
   const auditor: Principal = { id: 'user:audit@acme.com', kind: 'human', tenantId: 'acme', roles: ['auditor'] }
