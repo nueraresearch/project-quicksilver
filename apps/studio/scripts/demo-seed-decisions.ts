@@ -9,13 +9,20 @@
  *   npm run demo:seed-decisions -- --base-url https://<demo site> --confirm    # does it
  *   ... --only skip-inspection        # one objective
  *
- * It uses only the public demo token, which a deployment accepts only in demo mode, so pointing it at a
- * production site fails with 401 and changes nothing. It spends model calls on the demo deployment (one
- * plan per objective) and creates decisions there: run it once after `npm run demo:reset`, not repeatedly.
+ * By default it uses only the public demo token, which a deployment accepts only in demo mode, so pointing
+ * it at a production site fails with 401 and changes nothing. To seed a real site instead, ask as an agent:
+ *
+ *   npm run principal:token -- entity-engineering-agent --kind agent     # once; put the entry in QUICKSILVER_PRINCIPALS
+ *   $env:QUICKSILVER_AGENT_TOKEN = "<the token it printed>"              # your own shell only
+ *   npm run demo:seed-decisions -- --base-url https://<site> --token-env QUICKSILVER_AGENT_TOKEN --confirm
+ *
+ * The decisions then record the agent entity as the requester, so any human with the approval role can
+ * approve them (a requester can never approve their own). It spends model calls on that deployment (one
+ * plan per objective) and creates decisions there: run it once, not repeatedly.
  */
 import { DEMO_PRINCIPALS } from '../../web/lib/demo-mode.ts'
 import { DEMO_OBJECTIVES, validateDemoObjectives } from '../seed/demo-objectives.ts'
-import { assertSafeBaseUrl, isWaitingForApproval, plannedDecisions } from '../lib/demo-decisions.ts'
+import { assertSafeBaseUrl, isWaitingForApproval, plannedDecisions, requesterFor } from '../lib/demo-decisions.ts'
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name)
@@ -35,10 +42,11 @@ async function main(): Promise<void> {
   const list = only ? DEMO_OBJECTIVES.filter((o) => o.id === only) : DEMO_OBJECTIVES
   if (!list.length) throw new Error(`No objective "${only}". Choices: ${DEMO_OBJECTIVES.map((o) => o.id).join(', ')}`)
 
-  const requester = DEMO_PRINCIPALS.find((p) => p.id === 'entity-marcus-webb')
-  if (!requester) throw new Error('The demo requester is missing from demo-mode.ts.')
+  const demo = DEMO_PRINCIPALS.find((p) => p.id === 'entity-marcus-webb')
+  if (!demo) throw new Error('The demo requester is missing from demo-mode.ts.')
+  const requester = requesterFor(arg('--token-env'), process.env, demo)
 
-  console.log(`Demo decisions for ${base.origin} as ${requester.displayName} (${confirm ? 'LIVE RUN' : 'DRY RUN, add --confirm'})\n`)
+  console.log(`Decisions for ${base.origin} as ${requester.label} (${confirm ? 'LIVE RUN' : 'DRY RUN, add --confirm'})\n`)
   let waiting = 0
   for (const item of list) {
     console.log(`- ${item.id}: ${item.shows}`)
