@@ -37,18 +37,27 @@ if (problems.length) {
 }
 
 const { client, config } = requireStudioSanityClient('write')
-console.log(`Demo reset: ${config.projectId}/${config.dataset} (${confirm ? 'LIVE RUN' : 'DRY RUN, add -- --confirm'})`)
 
-const ids = await client.fetch<string[]>('*[_type == "evaluationRecord"]._id')
-console.log(`Evaluation records to delete: ${ids.length}`)
-if (confirm && ids.length) {
-  for (let i = 0; i < ids.length; i += 100) {
-    const tx = client.transaction()
-    for (const id of ids.slice(i, i + 100)) tx.delete(id)
-    await tx.commit()
+// This package compiles scripts as CommonJS, which has no top-level await.
+async function main(): Promise<void> {
+  console.log(`Demo reset: ${config.projectId}/${config.dataset} (${confirm ? 'LIVE RUN' : 'DRY RUN, add -- --confirm'})`)
+
+  const ids = await client.fetch<string[]>('*[_type == "evaluationRecord"]._id')
+  console.log(`Evaluation records to delete: ${ids.length}`)
+  if (confirm && ids.length) {
+    for (let i = 0; i < ids.length; i += 100) {
+      const tx = client.transaction()
+      for (const id of ids.slice(i, i + 100)) tx.delete(id)
+      await tx.commit()
+    }
   }
+
+  const args = ['run', 'reset:history', '--', '--skip-backup', ...(confirm ? ['--confirm'] : [])]
+  const r = spawnSync('npm', args, { cwd: studioDir, stdio: 'inherit', shell: true })
+  process.exit(r.status ?? 1)
 }
 
-const args = ['run', 'reset:history', '--', '--skip-backup', ...(confirm ? ['--confirm'] : [])]
-const r = spawnSync('npm', args, { cwd: studioDir, stdio: 'inherit', shell: true })
-process.exit(r.status ?? 1)
+main().catch((error) => {
+  console.error(`Demo reset failed: ${error instanceof Error ? error.name : 'UnknownError'}.`)
+  process.exit(1)
+})
