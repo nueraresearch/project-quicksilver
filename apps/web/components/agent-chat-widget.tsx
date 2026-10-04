@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { authFailureMessage, consoleHeaders, resolveConsoleAccess } from '@/lib/console-auth'
 import { chatTurnRequest, offerRequest, pageHint } from '@/lib/chat-request'
 import { loadChat, saveChat } from '@/lib/chat-store'
+import { PLAN_NDJSON, createPlanLineDecoder, planProgress, type PlanProgressItem, type PlanStreamLine } from '@/lib/plan-stream'
 import type { AnswerSource, AssistantOffer, BusinessAgentKey } from '@quicksilver/agent'
 import { usePathname } from 'next/navigation'
 import { signInPageHref } from '@/lib/session-control'
@@ -181,24 +182,36 @@ export function AgentChatWidget() {
   function ask(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void send(question.trim()) }
 
   /** Pressing a card is the person's act: the app's own route runs as them, with the text they saw and may have edited. */
-  async function runOffer(messageId: string, index: number, offer: AssistantOffer, text: string): Promise<string | null> {
+  async function runOffer(messageId: string, index: number, offer: AssistantOffer, text: string, onProgress: (items: PlanProgressItem[]) => void, signal: AbortSignal): Promise<string | null> {
     const access = await resolveConsoleAccess()
     if (!access.signedIn) { setTokenPresent(false); return 'Sign in again to continue.' }
     const request = offerRequest(offer, text)
     try {
       const response = await fetch(request.path, {
         method: 'POST',
-        headers: consoleHeaders(request.path, access.token, { 'content-type': 'application/json' }),
+        // A plan asks for its steps as they finish; a server that does not know how answers plain JSON.
+        headers: consoleHeaders(request.path, access.token, { 'content-type': 'application/json', ...(offer.kind === 'plan' ? { accept: PLAN_NDJSON } : {}) }),
         body: JSON.stringify(request.body),
         cache: 'no-store',
+        signal,
       })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) return authFailureMessage(response.status, offer.kind === 'plan' ? 'plan' : offer.kind === 'specialist' ? 'agents/run' : 'workflows/run', payload.error, payload.retryAfterSeconds) ?? payload.error ?? payload.detail ?? 'That did not work.'
+      let status = response.status
+      let payload: Record<string, any>
+      if (response.ok && offer.kind === 'plan' && response.body && (response.headers.get('content-type') ?? '').includes(PLAN_NDJSON)) {
+        const final = await readPlanStream(response.body, onProgress)
+        if (!final) return 'The plan stopped before it finished. Check Decisions before trying again.'
+        status = final.type === 'error' ? final.status : 200
+        payload = (final.type === 'error' ? final.error : final.body) as Record<string, any>
+      } else payload = await response.json().catch(() => ({}))
+      if (status >= 400) return authFailureMessage(status, offer.kind === 'plan' ? 'plan' : offer.kind === 'specialist' ? 'agents/run' : 'workflows/run', payload.error, payload.retryAfterSeconds) ?? payload.error ?? payload.detail ?? 'That did not work.'
       const result: OfferResult = offer.kind === 'plan' ? { plan: payload as PlanChatResponse } : offer.kind === 'specialist' ? { agent: payload as BusinessAgentResponse } : { workflow: payload as WorkflowRunResponse }
       setMessages((current) => current.map((item) => item.id === messageId ? { ...item, offerResults: { ...item.offerResults, [index]: result } } : item))
       if (offer.kind === 'plan') inboxStore().refresh()
       return null
-    } catch { return 'Could not reach the server.' }
+    } catch (cause) {
+      if ((cause as Error).name === 'AbortError') return 'Stopped. If a decision was already saved, it is in Decisions.'
+      return 'Could not reach the server.'
+    }
   }
 
   return (
@@ -246,7 +259,7 @@ export function AgentChatWidget() {
                     const done = message.offerResults?.[index]
                     return done
                       ? <OfferOutcome key={index} result={done} />
-                      : <OfferCard key={index} offer={offer} blockedReason={offer.kind === 'plan' && cannotPlan ? 'Planning needs decision:propose, which your account does not have.' : null} onRun={(text) => runOffer(message.id, index, offer, text)} />
+                      : <OfferCard key={index} offer={offer} blockedReason={offer.kind === 'plan' && cannotPlan ? 'Planning needs decision:propose, which your account does not have.' : null} onRun={(text, onProgress, signal) => runOffer(message.id, index, offer, text, onProgress, signal)} />
                   })}
                 </article>
               ))
@@ -332,10 +345,15 @@ const OFFER_COPY: Record<AssistantOffer['kind'], { title: (offer: AssistantOffer
 }
 
 /** A model-suggested action, shown in full and editable. It is only a suggestion until the person presses the button. */
-function OfferCard({ offer, blockedReason, onRun }: { offer: AssistantOffer; blockedReason: string | null; onRun: (text: string) => Promise<string | null> }) {
+function OfferCard({ offer, blockedReason, onRun }: { offer: AssistantOffer; blockedReason: string | null; onRun: (text: string, onProgress: (items: PlanProgressItem[]) => void, signal: AbortSignal) => Promise<string | null> }) {
   const initial = offer.kind === 'workflow' ? offer.input : offer.objective
   const [text, setText] = useState(initial)
   const [running, setRunning] = useState(false)
+  const [progress, setProgress] = useState<PlanProgressItem[] | null>(null)
+  const controllerRef = useRef<AbortController | null>(null)
+  const actionsRef = useRef<HTMLDivElement>(null)
+  // The checklist grows below the fold of a short chat; keep it and Stop in view.
+  useEffect(() => { if (progress) actionsRef.current?.scrollIntoView({ block: 'nearest' }) }, [progress])
   const [problem, setProblem] = useState<string | null>(null)
   const copy = OFFER_COPY[offer.kind]
   const tooShort = text.trim().length < 3
@@ -347,7 +365,23 @@ function OfferCard({ offer, blockedReason, onRun }: { offer: AssistantOffer; blo
       <p className={styles.agentRouting}>{copy.note}</p>
       {blockedReason && <p className={styles.agentRouting}>{blockedReason}</p>}
       {problem && <p className={styles.error} role="alert">{problem}</p>}
-      <button type="button" className={styles.offerButton} disabled={running || tooShort || !!blockedReason} onClick={async () => { setRunning(true); setProblem(null); const failed = await onRun(text.trim()); setRunning(false); if (failed) setProblem(failed) }}>{running ? 'Working…' : copy.button}</button>
+      {running && offer.kind === 'plan' && (
+        <div className={styles.planProgress} role="status" aria-live="polite" aria-label="Planning progress">
+          <ol>{(progress ?? planProgress([])).map((item) => <li key={item.step} data-status={item.status}><span className={styles.planMark} aria-hidden="true">{item.status === 'done' ? '✓' : item.status === 'failed' ? '!' : item.status === 'started' ? '…' : item.status === 'skipped' ? '–' : '○'}</span>{item.label}</li>)}</ol>
+        </div>
+      )}
+      <div className={styles.offerActions} ref={actionsRef}>
+        <button type="button" className={styles.offerButton} disabled={running || tooShort || !!blockedReason} onClick={async () => {
+          const controller = new AbortController()
+          controllerRef.current = controller
+          setRunning(true); setProblem(null); setProgress(offer.kind === 'plan' ? planProgress([]) : null)
+          const failed = await onRun(text.trim(), setProgress, controller.signal)
+          controllerRef.current = null
+          setRunning(false); setProgress(null)
+          if (failed) setProblem(failed)
+        }}>{running ? 'Working…' : copy.button}</button>
+        {running && <button type="button" className={styles.offerStop} onClick={() => controllerRef.current?.abort()}>Stop</button>}
+      </div>
     </div>
   )
 }
@@ -400,6 +434,29 @@ function PlanAnswer({ result }: { result: PlanChatResponse }) {
       <div className={styles.evaluation}><span>NQC-governed</span><span>Approval remains a separate human decision</span></div>
     </div>
   )
+}
+
+/** Reads the step lines as they arrive, reporting the checklist after each one, and returns the final result or error line. */
+async function readPlanStream(body: ReadableStream<Uint8Array>, onProgress: (items: PlanProgressItem[]) => void): Promise<Extract<PlanStreamLine, { type: 'result' | 'error' }> | null> {
+  const reader = body.getReader()
+  const text = new TextDecoder()
+  const decoder = createPlanLineDecoder()
+  const seen: PlanStreamLine[] = []
+  let final: Extract<PlanStreamLine, { type: 'result' | 'error' }> | null = null
+  const take = (lines: PlanStreamLine[]) => {
+    for (const line of lines) {
+      if (line.type === 'step') { seen.push(line); onProgress(planProgress(seen)) }
+      else if (!final) final = line
+    }
+  }
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    take(decoder.push(text.decode(value, { stream: true })))
+  }
+  take(decoder.push(text.decode()))
+  take(decoder.flush())
+  return final
 }
 
 const SOURCE_BADGE: Record<AnswerSource['kind'], string> = {
