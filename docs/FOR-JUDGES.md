@@ -41,12 +41,14 @@ These run against the public, synthetic `demo` dataset in project `f87t11g1`, wi
 
 ## Try it
 
-- **Walkthrough video:** **[FILL: video link]** (about 3 minutes). It shows the whole flow on the live app, so you do not need to sign in to see it.
-- **Live app:** https://project-quicksilver.vercel.app. Sign-in uses our organization's single sign-on, so the app is not open to the public. The video is the demo. What it shows:
-  1. In the chat, a question about the company's policies, with **What I looked at** open under the answer: the sources and queries it read through Sanity Context.
-  2. A request for work. The assistant offers a card, and nothing is created until the person presses **Create plan**.
-  3. The decision page: why the kernel answered as it did, and what would change the answer.
-  4. Approval. The decision records one person as the requester and the planner agent (`nuera-quicksilver:planner`) as the proposer, and the approve route refuses both, so a different human has to authorize it. The audit trail downloads as JSON with a digest.
+- **Live app, with an access token:** https://project-quicksilver.vercel.app. The app signs our own people in through single sign-on, so judges use an access token instead: **[FILL: judge access token]**.
+  1. Open `/sign-in`, choose **Use an access token instead**, and paste the token. You are signed in as a human with the `supervisor` role.
+  2. Open **Decisions**. Several are already waiting for approval. An agent entity (the Engineering Agent) asked the planner for each one, so it is recorded as the requester and the planner (`nuera-quicksilver:planner`) as the proposer.
+  3. Open one and read why the kernel answered as it did, and what would change the answer. Approve it. The approve route refuses the requester and the proposer, so a human who is neither has to authorize it, which is you. Then download its audit trail (JSON, with a digest).
+  4. Ask the chat about the company's policies and open **What I looked at**: the sources and queries it read through Sanity Context.
+
+  This token cannot ask for a plan of its own (that needs a different permission), so planning is in the video. Everything you do is recorded under this token's entity, in the real deployment.
+- **Walkthrough video:** **[FILL: video link]** (about 3 minutes). It shows the whole flow, including asking for a plan and the refusal when the same person tries to approve their own request.
 - **Without credentials:** `npm install && npm run verify` runs typecheck and every suite (over 1,100
   tests) with no secrets. `npm run dev` starts the console; the pages work against a configured
   Sanity project (see [`docs/platform/sanity-isolation.md`](./platform/sanity-isolation.md)).

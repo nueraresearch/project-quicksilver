@@ -100,7 +100,7 @@ The full list is the [parity matrix](https://github.com/nueraresearch/project-qu
 
 The walkthrough video (about 3 minutes) shows the full flow on the live app: **[FILL: video link]**.
 
-The app is at https://project-quicksilver.vercel.app and signs people in through our organization's single sign-on, so it is not open to the public. The video is the demo. In it I ask the chat about our policies and open **What I looked at**, ask for work and press **Create plan** on the card it offers, read why the kernel answered as it did, and approve the decision as a different person from the one who requested it. The decision records the requester and the planner agent as proposer, and the approve route refuses both, so agents propose and a different human authorizes.
+You can also use the app yourself at https://project-quicksilver.vercel.app. It signs our own people in through single sign-on, so judges use an access token instead: **[FILL: judge access token]**. Open `/sign-in`, choose **Use an access token instead**, and paste it. Several decisions are already waiting for approval: an agent asked the planner for each one, so the agent is recorded as the requester. Open one, read why the kernel answered as it did, and approve it. The approve route refuses the requester and the proposer, so a human who is neither has to authorize it, and that is you. Then download the audit trail. The token can't ask for a plan of its own, so planning is in the video.
 
 You can inspect the data yourself: the public, synthetic `demo` dataset in project `f87t11g1` has the same schema and the same evidence and policy documents as the app. The judge guide has five ready-made queries (policies, the evidence that contradicts itself, people and agents, capabilities and who may use them). The `production` dataset behind the live app is private.
 
@@ -108,6 +108,9 @@ You can inspect the data yourself: the public, synthetic `demo` dataset in proje
 
 <!--
 BEFORE PUBLISHING (delete this block):
+0. Judge access: follow docs/platform/judge-access-production.md (two tokens, add them to QUICKSILVER_PRINCIPALS,
+   seed the waiting decisions, test in a private window). Paste the judge token where [FILL: judge access token]
+   appears, in this post and in docs/FOR-JUDGES.md, and remove the entry after judging.
 1. Fill the video link (here and in docs/FOR-JUDGES.md); check no [FILL] remains. The cover image and the diagram load from
    the repository, so check they show once the docs PR is merged.
 2. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,

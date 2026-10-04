@@ -1,7 +1,9 @@
 # Walkthrough video: script and shot list (about 3 minutes)
 
-Record on the live app (https://project-quicksilver.vercel.app). Approving needs a second person: sign in as
-the requester, then as an approver with a different account (two browser profiles make the switch quick).
+Record on the live app (https://project-quicksilver.vercel.app). Approving needs someone other than the requester:
+sign in as the requester, then as an approver with a different account or token (two browser profiles make the
+switch quick). For your own recording you can make a requester token with `npm run principal:token -- <entity id>
+developer` (see docs/platform/judge-access-production.md); keep it out of the published docs.
 Hide anything private before recording: other people's names, emails, and real company figures you do not
 want public. Do a dry run first: a model drafts the plans, so what appears on screen can differ from this
 script. Say what you see, not what is written here.
