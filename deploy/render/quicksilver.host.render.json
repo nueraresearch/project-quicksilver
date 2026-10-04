@@ -1,0 +1,10 @@
+{
+  "tenantId": "brodi",
+  "http": { "host": "0.0.0.0", "port": 8787, "metricsPublic": false },
+  "store": { "kind": "postgres", "urlEnv": "DATABASE_URL" },
+  "vault": { "path": "/data/vault.json", "keyEnv": "QUICKSILVER_VAULT_KEY" },
+  "worker": { "id": "host-1", "concurrency": 1, "pollIntervalMs": 2000 },
+  "queue": { "defaultMaxAttempts": 3, "maxRunningPerTenant": 2 },
+  "execution": { "maxAgentSteps": 3, "allowedAgents": ["query"] },
+  "log": { "level": "info" }
+}
