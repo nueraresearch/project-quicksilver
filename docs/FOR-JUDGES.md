@@ -29,7 +29,7 @@ code refuses to read that project's endpoints (`assertNotLegacyContextEndpoint`)
 
 ## Try it
 
-- **Live demo:** **[FILL: URL of the demo deployment]**. No account is needed. Open **Sign in**, then **Start as Marcus Webb**. Everything
+- **Live demo:** **https://quicksilver-seven.vercel.app**. No account is needed. Open **Sign in**, then **Start as Marcus Webb**. Everything
   in it is synthetic, and it is a separate deployment from our own, with its own dataset and its own Context endpoints
   (the app refuses to start in demo mode if it could reach anything private).
   1. As **Marcus Webb** (plans and requests): ask the chat about the company's policies, then open **What I looked at**

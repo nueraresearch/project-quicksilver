@@ -78,7 +78,7 @@ The full list is the [parity matrix](https://github.com/nueraresearch/project-qu
 
 ## Try it
 
-[FILL: URL of the demo deployment]. No account is needed: open **Sign in**, press **Start as Marcus Webb**, ask the chat something and open **What I looked at**, press **Create plan** on the card it offers, then use **Switch to Sarah Chen** in the top bar to approve it. Everything in the demo is synthetic, and it runs on its own dataset and Context endpoints, separate from ours.
+https://quicksilver-seven.vercel.app. No account is needed: open **Sign in**, press **Start as Marcus Webb**, ask the chat something and open **What I looked at**, press **Create plan** on the card it offers, then use **Switch to Sarah Chen** in the top bar to approve it. Everything in the demo is synthetic, and it runs on its own dataset and Context endpoints, separate from ours.
 
 ---
 
