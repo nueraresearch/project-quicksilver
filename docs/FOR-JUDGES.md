@@ -27,6 +27,18 @@ The endpoints and the knowledge base were created in this project on 2026-09-25 
 [`BUILD-LOG.md`](../BUILD-LOG.md)). This project is separate from our earlier challenge entry, and the
 code refuses to read that project's endpoints (`assertNotLegacyContextEndpoint`).
 
+## Query the public dataset yourself
+
+These run against the public, synthetic `demo` dataset in project `f87t11g1`, with no token. They are the same kinds of read the chat assistant makes through Sanity Context.
+
+| Query | What it shows |
+|---|---|
+| [What is in the dataset](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=%7B%22policies%22%3Acount%28%2A%5B_type%3D%3D%22policy%22%5D%29%2C%22evidence%22%3Acount%28%2A%5B_type%3D%3D%22evidence%22%5D%29%2C%22entities%22%3Acount%28%2A%5B_type%3D%3D%22entity%22%5D%29%2C%22capabilities%22%3Acount%28%2A%5B_type%3D%3D%22capability%22%5D%29%2C%22decisions%22%3Acount%28%2A%5B_type%3D%3D%22decision%22%5D%29%7D) | How many documents of each kind |
+| [Policies, highest priority first](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=%2A%5B_type%3D%3D%22policy%22%5D%7Corder%28priority%20desc%29%7Bname%2Cscope%2Cpriority%2Ceffect%2CmaxRiskLevel%7D) | The rules the kernel applies, with scope and effect |
+| [Evidence that contradicts other evidence](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=%2A%5B_type%3D%3D%22evidence%22%20%26%26%20count%28contradicts%29%3E0%5D%7Btitle%2Cclaim%2Cconfidence%2C%22contradicts%22%3Acontradicts%5B%5D-%3Etitle%7D) | The disagreements we seeded on purpose; an agent has to deal with them |
+| [People, agents and systems](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=%2A%5B_type%3D%3D%22entity%22%5D%7Corder%28entityType%20asc%29%7Bname%2CentityType%2C%22department%22%3Adepartment-%3Ename%2C%22reportsTo%22%3AreportsTo-%3Ename%7D) | One `entity` shape for all of them, with department and who they report to |
+| [Capabilities and who may use them](https://f87t11g1.apicdn.sanity.io/v2024-10-01/data/query/demo?query=%2A%5B_type%3D%3D%22capability%22%5D%7Corder%28riskLevel%20desc%29%7Bname%2CriskLevel%2C%22authorized%22%3AauthorizedEntities%5B%5D-%3Ename%7D) | Risk level 0 to 5 and the entities authorized for each |
+
 ## Try it
 
 - **Walkthrough video:** **[FILL: video link]** (about 3 minutes). It shows the whole flow on the live app, so you do not need to sign in to see it.

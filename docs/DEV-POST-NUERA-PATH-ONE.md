@@ -100,7 +100,7 @@ The walkthrough video (about 3 minutes) shows the full flow on the live app: **[
 
 The app is at https://project-quicksilver.vercel.app and signs people in through our organization's single sign-on, so it is not open to the public. The video is the demo. In it I ask the chat about our policies and open **What I looked at**, ask for work and press **Create plan** on the card it offers, read why the kernel answered as it did, and approve the decision as a different person from the one who requested it. The decision records the requester and the planner agent as proposer, and the approve route refuses both, so agents propose and a different human authorizes.
 
-You can inspect the data yourself: the public, synthetic `demo` dataset in project `f87t11g1` has the same schema and the same evidence and policy documents as the app. The `production` dataset behind the live app is private.
+You can inspect the data yourself: the public, synthetic `demo` dataset in project `f87t11g1` has the same schema and the same evidence and policy documents as the app. The judge guide has five ready-made queries (policies, the evidence that contradicts itself, people and agents, capabilities and who may use them). The `production` dataset behind the live app is private.
 
 ---
 
