@@ -140,16 +140,26 @@ test('gateway: approvals happen in the chat, bound to the call; no answer means 
 
 test('gateway: messages during a run wait their turn', async () => {
   let release!: () => void
+  let markHeld!: () => void
+  const slowHeld = new Promise<void>((resolve) => { markHeld = resolve })
   const order: string[] = []
   const { pairing, a, gw } = await setup(async (r) => {
     order.push(r.message.text)
-    if (r.message.text === 'slow') await new Promise<void>((res) => { release = res })
+    if (r.message.text === 'slow') {
+      // Assign `release` before signalling, so a waiter that resumes here can rely on it.
+      const held = new Promise<void>((res) => { release = res })
+      markHeld()
+      await held
+    }
     return { reply: 'ok' }
   })
   a.say('u1', await pairing.createCode('entity-founder'))
   await gw.idle()
   a.say('u1', 'slow')
-  await gw.idle(); await tick()
+  await gw.idle()
+  // Wait for the 'slow' turn to actually be in flight, rather than sleeping a fixed
+  // span and hoping the handler got scheduled first.
+  await slowHeld
   a.say('u1', 'next')
   await gw.idle()
   // 'slow' is still held, so the last reply is the queued 'next' — that ordering is the point.
