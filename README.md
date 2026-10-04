@@ -12,7 +12,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Sanity](https://img.shields.io/badge/Sanity-Content_Lake_%2B_Context_MCP-F03E2F?logo=sanity&logoColor=white)
 ![AI SDK 6](https://img.shields.io/badge/AI_SDK-6-000000?logo=vercel&logoColor=white)
-![CI](https://github.com/nuerainc/project-quicksilver/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/nueraresearch/project-quicksilver/actions/workflows/ci.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
 [**Docs**](./docs/README.md) ·
@@ -25,14 +25,16 @@
 
 </div>
 
-> **Which repository is this?**
->
-> | Repository | What it is |
-> |---|---|
-> | **[nuerainc/project-quicksilver](https://github.com/nuerainc/project-quicksilver)** (this repo) | **Nuera Quicksilver**, the ongoing cognitive and automation platform. It is under active development, is not deployed, and has no live demo. |
-> | **[nuerainc/quicksilver-sanity-challenge](https://github.com/nuerainc/quicksilver-sanity-challenge)** | **Quicksilver**, our Sanity Challenge 2026 submission. It holds the live demo, the challenge Studio, and the DEV posts, and it stays as it was submitted. |
->
-> Project Quicksilver was inspired by our Sanity Challenge submission and started from its codebase. See [Origins](#origins).
+> **Which repository is this?** This is **Nuera Quicksilver**, the platform from Nuera RDL and our entry for the
+> Sanity Challenge 2026 (Path One). The live app is https://project-quicksilver.vercel.app; it signs in through
+> organization single sign-on, so the walkthrough video and the public, synthetic `demo` dataset are the way in
+> for judges. Start with the [judge guide](./docs/FOR-JUDGES.md). It grew out of an earlier challenge build, see
+> [Origins](#origins).
+
+<p align="center">
+  <img src="docs/images/architecture.png" alt="Agents propose, a kernel authorizes, a different human approves; every step is recorded in Sanity" width="900">
+</p>
+
 > **Current build status:** Nuera Quicksilver keeps the tested decision-governance foundation it inherited from the challenge build as its regression baseline. NQC evaluation and governance, tool contracts, a draft workflow builder, and an in-process graph runner are implemented foundations. Quicksilver Engine also provides a bounded, provider-neutral final-answer stress harness for multi-step arithmetic and logic traps; it does not request or retain private chain-of-thought. The editor visualizes graph connections and exposes agent retry and handler timeout settings. The runner supports opt-in bounded concurrency for independent low/moderate-impact agent steps; the read-only query route caps this at three. The read-only query worker uses a shared governed-agent contract and returns its full NQC evaluation response. Workflow drafts autosave locally, support validated JSON import/export, and can run an opt-in read-only query-agent path through NQC evaluation. Workflow tools remain blocked. A durable run queue and worker (`@quicksilver/kernel/runtime`) now provide idempotent admission, backpressure, leases, cancellation, retries, and a dead-letter queue, with in-memory, journaled-file, or PostgreSQL storage; cron schedules and signed webhooks can start runs. A single-tenant host process (`@quicksilver/host`) now runs the worker pool, schedules and signed webhooks from configuration, with a bearer-token management API, an encrypted secrets vault, structured logs and Prometheus metrics. Kernel RBAC (tenant isolation, deny-by-default roles, no authority for agents) guards queue operations, the host API and, when configured, per-person supervisor credentials. Decision approvals enforce separation of duties, with an audited sole-operator override, and every query and workflow evaluation is stored as an `evaluationRecord`. Internal TypeScript and dependency-free Python/Go SDK foundations cover workflow validation, safe preview, and opt-in read-only runs; none is published as a stable public API. A first declarative Nuera Quicksilver Agent catalog now supports versioned draft/review/publish governance with dedicated catalog RBAC and rollback-to-draft; it does not install executable plugins or change runtime dispatch. SSO/accounts UI, multi-tenant hosting, distributed traces, model/cost dashboards, runtime agent registration, and a marketplace remain unimplemented.
 >
 > Canonical product docs: [Product definition](./docs/NUERA-QUICKSILVER-PRODUCT.md) · [Documentation index](./docs/README.md) · [NQC Kernel](./docs/nqc/README.md) · [Platform](./docs/platform/README.md) · [Spec coverage](./docs/NUERA-QUICKSILVER-SPEC-COVERAGE.md) · [Roadmap](./docs/NUERA-QUICKSILVER-ROADMAP.md)

@@ -1,25 +1,45 @@
 ---
 title: "Nuera Quicksilver: an agent that reads your company through Sanity Context, and can't approve its own work"
 tags: sanitychallenge, devchallenge, ai, typescript
-cover_image: [FILL: cover image URL]
+cover_image: https://raw.githubusercontent.com/nueraresearch/project-quicksilver/main/docs/images/cover.png
 ---
 
 *This is my entry for Path One of the Sanity Challenge. Code: https://github.com/nueraresearch/project-quicksilver (MIT).
-Sanity project ID: `f87t11g1`. Judge guide: [`docs/FOR-JUDGES.md`](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/FOR-JUDGES.md).*
+Sanity project ID: `f87t11g1`. Walkthrough video: [FILL: video link]. Judge guide: [`docs/FOR-JUDGES.md`](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/FOR-JUDGES.md).*
 
 ## What I built
 
-Most "AI for your business" tools answer from documents they searched. Nuera Quicksilver answers from a
-**structured model of the company in Sanity**, and it keeps the agent away from the controls.
+Nuera Quicksilver is an **intent-driven company operating system** from Nuera RDL. A person states an
+objective; agents work out a plan; and every action they want to take is **proposed by an agent,
+authorized by a deterministic kernel, approved by a different human where it matters, and recorded in
+Sanity**. The company itself, its people, agents, policies, evidence and workflows, is a structured model
+in Sanity that the agents read through Sanity Context.
 
-You talk to one chat. It reads your decisions, policies, evidence, workflows and spend, and tells you what
-it found and where it found it. When you ask for work ("cut delivery delays by a week"), it doesn't do
-it. It offers a card with the request written out, which you can edit. Nothing happens until you press the
-button, and pressing it runs the app's own route as you.
+It is a platform, not a single screen. What is in the repository, and covered by its test suites:
 
-The decision itself goes through a **kernel written in plain TypeScript, with no model inside**. The agent
-proposes an action; the kernel checks capability, policy and risk and answers *allow*, *needs a human* or
-*block*. A different person approves. Every step lands in Sanity.
+- **The NQC Kernel**, plain TypeScript with no model inside. It checks capability grants, policy scope and
+  supersession, evidence and a 0 to 5 risk score, then answers *allow*, *needs a human* or *block*. The
+  decision lifecycle (8 states, 12 transitions) is stored as content in Sanity, and evaluation can make a
+  decision stricter, never looser.
+- **The Quicksilver Engine**, which scores what agents produce for grounding, tool failures, uncertainty
+  and brittleness, and escalates weak or high-impact results to a person.
+- **A durable runtime and host**: an idempotent run queue and worker with backpressure, leases,
+  cancellation, retries and a dead-letter queue, cron and signed-webhook triggers, an encrypted secrets
+  vault, structured logs and Prometheus metrics.
+- **An intent layer** that turns an objective into a decision graph whose values are tagged by where they
+  came from: `HUMAN_SPECIFIED`, `OBSERVED`, `AGENT_INFERRED` or `SYSTEM_CONSTRAINT`.
+- **Workflows and a governed agent catalog**: a workflow builder, and versioned draft, review and publish
+  for agent definitions, with its own permissions.
+- **Python and Go SDK foundations**, an **Azure hosting template** (written and compiled, not yet
+  deployed), and a **parity matrix** that lists every requirement with its status and, for the ones that
+  can't pass yet, what they need.
+
+![Agents propose, a kernel authorizes, a different human approves; every step is recorded in Sanity](https://raw.githubusercontent.com/nueraresearch/project-quicksilver/main/docs/images/architecture.png)
+
+The console is how a person uses it. You talk to one chat. It reads your decisions, policies, evidence,
+workflows and spend, and tells you what it found and where. When you ask for work ("cut delivery delays by a
+week"), it doesn't do it. It offers a card with the request written out, which you can edit. Nothing happens
+until you press the button, and pressing it runs the app's own route as you.
 
 ## How I used Sanity
 
@@ -68,6 +88,7 @@ model's memory.
 
 - No real email or webhook has been sent by this code; those adapters ship as dry runs.
 - "Execute" is a simulation that records a state change and a metric.
+- The Genesis, Onboard and Operate modes are the product's direction; this entry is the governed core they run on.
 - Model scoring hasn't been calibrated against a live provider, and the connectors (Stripe, HubSpot,
   QuickBooks) haven't run against real accounts.
 - Over 1,100 tests pass in CI, but they use fakes for the model and the Context endpoints; the live
@@ -77,21 +98,23 @@ The full list is the [parity matrix](https://github.com/nueraresearch/project-qu
 
 ## Try it
 
-https://quicksilver-seven.vercel.app. No account is needed: open **Sign in**, press **Start as Marcus Webb**, ask the chat something and open **What I looked at**, press **Create plan** on the card it offers, then use **Switch to Sarah Chen** in the top bar to approve it. The decision records Marcus as the requester and the planner agent as the proposer, and the approve route refuses both, so agents propose and a different human authorizes. Everything in the demo is synthetic, and it runs on its own dataset and Context endpoints, separate from ours.
+The walkthrough video (about 3 minutes) shows the full flow on the live app: **[FILL: video link]**.
+
+You can also use the app yourself at https://project-quicksilver.vercel.app. It signs our own people in through single sign-on, so judges use an access token instead: **[FILL: judge access token]**. Open `/sign-in`, choose **Use an access token instead**, and paste it. Several decisions are already waiting for approval: an agent asked the planner for each one, so the agent is recorded as the requester. Open one, read why the kernel answered as it did, and approve it. The approve route refuses the requester and the proposer, so a human who is neither has to authorize it, and that is you. Then download the audit trail. The token can't ask for a plan of its own, so planning is in the video.
+
+You can inspect the data yourself: the public, synthetic `demo` dataset in project `f87t11g1` has the same schema and the same evidence and policy documents as the app. The judge guide has five ready-made queries (policies, the evidence that contradicts itself, people and agents, capabilities and who may use them). The `production` dataset behind the live app is private.
 
 ---
 
 <!--
 BEFORE PUBLISHING (delete this block):
-1. Live URL: deploy the judge demo (docs/platform/judge-demo.md), check it with the five steps in section 5
-   of that runbook, and put its URL here and in docs/FOR-JUDGES.md. Run `npm run demo:reset -- --confirm` first.
-2. Judge-readable data: the public dataset is `demo` (synthetic). Give its query URL in docs/FOR-JUDGES.md.
-   Production stays private; never make it public.
-3. Confirm the Context endpoints and knowledge base still answer (npm run verify:mcp) and that the
-   example question in docs/FOR-JUDGES.md matches your seeded data.
-4. Check every [FILL] and the repo URL (README links nuerainc/project-quicksilver; this repo is at
-   nueraresearch/project-quicksilver).
-5. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,
+0. Judge access: follow docs/platform/judge-access-production.md (two tokens, add them to QUICKSILVER_PRINCIPALS,
+   seed the waiting decisions, test in a private window). Paste the judge token where [FILL: judge access token]
+   appears, in this post and in docs/FOR-JUDGES.md, and remove the entry after judging.
+1. Fill the video link (here and in docs/FOR-JUDGES.md); check no [FILL] remains. The cover image and the diagram load from
+   the repository, so check they show once the docs PR is merged.
+2. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,
    and the needs-you list.
-6. Post with the #sanitychallenge tag by October 4, 2026, 11:59 PM PDT.
+3. Confirm the public `demo` dataset answers: the query link in docs/FOR-JUDGES.md.
+4. Post with the #sanitychallenge tag by October 4, 2026, 11:59 PM PDT.
 -->

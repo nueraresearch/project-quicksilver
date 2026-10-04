@@ -1,0 +1,37 @@
+<!doctype html><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1600px;height:900px;background:#0f1419;color:#e8edf2;font-family:Inter,"Segoe UI",system-ui,sans-serif;padding:44px 56px;position:relative}
+h1{font-size:34px;font-weight:700;letter-spacing:-.4px}
+.sub{font-size:19px;color:#9fb0bf;margin-top:8px}
+.box{position:absolute;border-radius:14px;padding:18px 20px;border:2px solid #2b3745;background:#16202a}
+.box h3{font-size:20px;margin-bottom:8px}
+.box p{font-size:15.5px;line-height:1.42;color:#b8c6d3}
+.k{border-color:#4aa3ff;background:#112437}.k h3{color:#7cc0ff}
+.h{border-color:#f0b24a;background:#2a2113}.h h3{color:#ffd080}
+.s{border-color:#3fbf8f;background:#10261f}.s h3{color:#6fe0b4}
+.a{border-color:#a98bff;background:#1e1a33}.a h3{color:#c8b6ff}
+.tag{position:absolute;font-size:14px;color:#9fb0bf;background:#0f1419;padding:2px 8px}
+svg{position:absolute;left:0;top:0;width:1600px;height:900px;pointer-events:none}
+.foot{position:absolute;bottom:26px;left:56px;font-size:15px;color:#8195a6}
+</style>
+<h1>Agents propose. A kernel authorizes. A different human approves.</h1>
+<div class="sub">Nuera Quicksilver. Every step is recorded in Sanity, and the kernel is plain TypeScript with no model inside.</div>
+<svg viewBox="0 0 1600 900"><defs><marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8195a6"/></marker></defs>
+<g stroke="#8195a6" stroke-width="2.5" fill="none" marker-end="url(#ar)">
+<path d="M330,300 H400"/><path d="M700,300 H770"/><path d="M1070,300 H1140"/>
+<path d="M1290,400 V470"/><path d="M1140,560 H1000"/>
+<path d="M545,470 V400"/>
+<path d="M700,565 H656"/>
+</g></svg>
+<div class="box a" style="left:56px;top:230px;width:274px;height:170px"><h3>1. A person asks</h3><p>One chat. It answers from records and shows what it looked at. For work, it offers a card; nothing runs until the person presses it.</p></div>
+<div class="box a" style="left:400px;top:230px;width:300px;height:170px"><h3>2. Agents propose</h3><p>Agents read the company through Sanity Context and propose actions. They hold no authority.</p></div>
+<div class="box k" style="left:770px;top:230px;width:300px;height:170px"><h3>3. Engine evaluates</h3><p>Scores grounding, tool failures, uncertainty and brittleness. It can make a decision stricter, never looser.</p></div>
+<div class="box k" style="left:1140px;top:230px;width:404px;height:170px"><h3>4. NQC Kernel authorizes</h3><p>Capability grants, policy scope, evidence and a 0 to 5 risk score. Answers: allow, needs a human, or block.</p></div>
+<div class="box h" style="left:1140px;top:470px;width:404px;height:190px"><h3>5. A different human approves</h3><p>Bound to the exact action and policy version. Whoever requested or proposed it cannot approve it. Stale approvals are refused (409).</p></div>
+<div class="box k" style="left:700px;top:470px;width:300px;height:190px"><h3>6. Execute and observe</h3><p>Executes (a simulation in this build), records the outcome and metric, writes it all back to Sanity, and can propose a rollback.</p></div>
+<div class="box s" style="left:56px;top:470px;width:700px;height:0;border:none;background:none;padding:0"></div>
+<div class="box s" style="left:56px;top:470px;width:600px;height:240px"><h3>Sanity: the company, and the record</h3><p><b>Company model:</b> organization, departments, entities (people, agents, systems), capabilities, policies, objectives, workflows, evidence.<br><br><b>Record:</b> decisions with the kernel's explanation, evaluation records, trace spans, and a downloadable audit trail with a digest.</p></div>
+<div class="tag" style="left:300px;top:424px">agents read via Context MCP: live dataset + knowledge base</div>
+
+<div class="foot">Layers: Foundation (runtime, triggers, memory, SDKs) · Kernel loop · Intent loop · Playbooks as content. Not shown: durable run queue, host, vault, workflow builder, agent catalog.</div>
