@@ -9,17 +9,35 @@ Sanity project ID: `f87t11g1`. Walkthrough video: [FILL: video link]. Judge guid
 
 ## What I built
 
-Most "AI for your business" tools answer from documents they searched. Nuera Quicksilver answers from a
-**structured model of the company in Sanity**, and it keeps the agent away from the controls.
+Nuera Quicksilver is an **intent-driven company operating system** from Nuera RDL. A person states an
+objective; agents work out a plan; and every action they want to take is **proposed by an agent,
+authorized by a deterministic kernel, approved by a different human where it matters, and recorded in
+Sanity**. The company itself, its people, agents, policies, evidence and workflows, is a structured model
+in Sanity that the agents read through Sanity Context.
 
-You talk to one chat. It reads your decisions, policies, evidence, workflows and spend, and tells you what
-it found and where it found it. When you ask for work ("cut delivery delays by a week"), it doesn't do
-it. It offers a card with the request written out, which you can edit. Nothing happens until you press the
-button, and pressing it runs the app's own route as you.
+It is a platform, not a single screen. What is in the repository, and covered by its test suites:
 
-The decision itself goes through a **kernel written in plain TypeScript, with no model inside**. The agent
-proposes an action; the kernel checks capability, policy and risk and answers *allow*, *needs a human* or
-*block*. A different person approves. Every step lands in Sanity.
+- **The NQC Kernel**, plain TypeScript with no model inside. It checks capability grants, policy scope and
+  supersession, evidence and a 0 to 5 risk score, then answers *allow*, *needs a human* or *block*. The
+  decision lifecycle (8 states, 12 transitions) is stored as content in Sanity, and evaluation can make a
+  decision stricter, never looser.
+- **The Quicksilver Engine**, which scores what agents produce for grounding, tool failures, uncertainty
+  and brittleness, and escalates weak or high-impact results to a person.
+- **A durable runtime and host**: an idempotent run queue and worker with backpressure, leases,
+  cancellation, retries and a dead-letter queue, cron and signed-webhook triggers, an encrypted secrets
+  vault, structured logs and Prometheus metrics.
+- **An intent layer** that turns an objective into a decision graph whose values are tagged by where they
+  came from: `HUMAN_SPECIFIED`, `OBSERVED`, `AGENT_INFERRED` or `SYSTEM_CONSTRAINT`.
+- **Workflows and a governed agent catalog**: a workflow builder, and versioned draft, review and publish
+  for agent definitions, with its own permissions.
+- **Python and Go SDK foundations**, an **Azure hosting template** (written and compiled, not yet
+  deployed), and a **parity matrix** that lists every requirement with its status and, for the ones that
+  can't pass yet, what they need.
+
+The console is how a person uses it. You talk to one chat. It reads your decisions, policies, evidence,
+workflows and spend, and tells you what it found and where. When you ask for work ("cut delivery delays by a
+week"), it doesn't do it. It offers a card with the request written out, which you can edit. Nothing happens
+until you press the button, and pressing it runs the app's own route as you.
 
 ## How I used Sanity
 
@@ -68,6 +86,7 @@ model's memory.
 
 - No real email or webhook has been sent by this code; those adapters ship as dry runs.
 - "Execute" is a simulation that records a state change and a metric.
+- The Genesis, Onboard and Operate modes are the product's direction; this entry is the governed core they run on.
 - Model scoring hasn't been calibrated against a live provider, and the connectors (Stripe, HubSpot,
   QuickBooks) haven't run against real accounts.
 - Over 1,100 tests pass in CI, but they use fakes for the model and the Context endpoints; the live
