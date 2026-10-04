@@ -16,7 +16,7 @@ This page says what to look at, how to try it, and what has and has not been pro
 | Field | Value |
 |---|---|
 | Project | `Nuera Quicksilver`, project ID **`f87t11g1`** (organization: Nuera Ag Tech) |
-| Dataset | `production` is **private**. Judge-readable data: **[FILL: public demo dataset name or URL, or "see walkthrough video"]** |
+| Dataset | `production` is **private** and holds our own data. Judges use the public, synthetic dataset **`demo`**: **[FILL: public query URL once it exists, in the form `https://<project>.apicdn.sanity.io/v2024-10-01/data/query/demo?query=*[_type=="policy"]`]** |
 | Studio | https://project-quicksilver.sanity.studio (a Sanity login with project access is needed) |
 | Context MCP, live dataset | endpoint `nuera-quicksilver-agent` (GROQ mode: `groq_query`, `schema_explorer`, `initial_context`) |
 | Context MCP, knowledge base | endpoint `nuera-quicksilver-kb` over knowledge base `kbzyKoLrbQiu` (12 evidence and policy documents, 11 entries, read with `knowledge_base_read`) |
@@ -29,7 +29,15 @@ code refuses to read that project's endpoints (`assertNotLegacyContextEndpoint`)
 
 ## Try it
 
-- **Live app:** **[FILL: URL]**. Sign in: **[FILL: test account or "Try as a judge" instructions]**.
+- **Live demo:** **https://quicksilver-seven.vercel.app**. No account is needed. Open **Sign in**, then **Start as Marcus Webb**. Everything
+  in it is synthetic, and it is a separate deployment from our own, with its own dataset and its own Context endpoints
+  (the app refuses to start in demo mode if it could reach anything private).
+  1. As **Marcus Webb** (plans and requests): ask the chat about the company's policies, then open **What I looked at**
+     under the answer. Ask it to plan something and press **Create plan** on the card it offers.
+  2. Press **Switch to Sarah Chen** in the bar at the top. She is the only one who can approve: the decision records Marcus as the requester and the planner agent (`nuera-quicksilver:planner`) as the proposer, and the approve route refuses anyone who is the requester, the proposer, or would carry the action out. Marcus cannot approve, and she
+     cannot propose. Open the decision, read why, and approve it. Download its audit trail.
+  The demo resets regularly, so a decision you made may be gone later. The runbook for it is
+  [`platform/judge-demo.md`](./platform/judge-demo.md).
 - **Without credentials:** `npm install && npm run verify` runs typecheck and every suite (over 1,100
   tests) with no secrets. `npm run dev` starts the console; the pages work against a configured
   Sanity project (see [`docs/platform/sanity-isolation.md`](./platform/sanity-isolation.md)).

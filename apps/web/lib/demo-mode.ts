@@ -70,7 +70,19 @@ export const DEMO_FORBIDDEN_VARIABLES = Object.freeze([
   'QUICKSILVER_ALLOW_FAULT_INJECTION',
   'QUICKSILVER_WORKFLOW_LIVE_RUNS',
   'SANITY_AUTH_TOKEN',
+  // A real organisation sign-in secret has no place on a public demo.
+  'OIDC_CLIENT_SECRET',
 ] as const)
+
+/**
+ * The Context MCP endpoints the demo may read. Their names must say "demo", so a guest chat can never be
+ * pointed at the production endpoints (which read the private dataset) by a copied environment.
+ */
+export const DEMO_CONTEXT_URL_VARIABLES = Object.freeze(['SANITY_CONTEXT_MCP_URL', 'SANITY_CONTEXT_KB_MCP_URL'] as const)
+
+function contextEndpointName(url: string): string {
+  return url.split('?')[0]!.replace(/\/+$/, '').split('/').at(-1) ?? ''
+}
 
 /** True when the demo switch is on (`on`, any case). */
 export function demoModeOn(env: DemoEnv): boolean {
@@ -91,6 +103,12 @@ export function demoModeProblems(env: DemoEnv): string[] {
   for (const name of DEMO_FORBIDDEN_VARIABLES) {
     const value = (env[name] ?? '').trim()
     if (value && value.toLowerCase() !== 'off') problems.push(`${name} must be unset in demo mode (a public demo carries no real credential and no development switch).`)
+  }
+  for (const name of DEMO_CONTEXT_URL_VARIABLES) {
+    const url = (env[name] ?? '').trim()
+    if (url && !/demo/i.test(contextEndpointName(url))) {
+      problems.push(`${name} must point at an endpoint made for the demo dataset (its name must contain "demo"); "${contextEndpointName(url) || 'unset'}" could read private data.`)
+    }
   }
   return problems.map((p) => `Demo mode: ${p}`)
 }
