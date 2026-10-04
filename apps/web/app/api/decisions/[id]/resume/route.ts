@@ -14,6 +14,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { errorCode } from '@/lib/api-errors'
 import { safeErrorName } from '@/lib/safe-log'
 import { getSanityClient } from '@/lib/sanity-client'
 import { nextAutomaticTransition } from '@quicksilver/kernel'
@@ -31,14 +32,14 @@ import { takeWebRateLimit } from '@/lib/route-guard'
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
-  if (!id) return NextResponse.json({ error: 'Missing decision id' }, { status: 400 })
+  if (!id) return NextResponse.json({ error: 'Missing decision id', code: 'invalid-request' }, { status: 400 })
   // A valid principal with decision:read or decision:propose, before any read or write.
   const caller = await authorizeDecisionRoute(req, 'resume')
-  if (!caller.ok) return NextResponse.json({ error: caller.reason }, { status: caller.status })
+  if (!caller.ok) return NextResponse.json({ error: caller.reason, code: errorCode(caller.status) }, { status: caller.status })
   const limited = takeWebRateLimit('write', caller.principalId)
   if (limited) return NextResponse.json(limited.body, { status: limited.status, headers: limited.headers })
   if (!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
-    return NextResponse.json({ error: 'Sanity not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'Sanity not configured', code: 'internal-error' }, { status: 500 })
   }
 
   try {
@@ -46,7 +47,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const lifecycle = await loadDecisionLifecycle(client)
     if (lifecycle.kind === 'invalid') return NextResponse.json(invalidDefinitionBody(lifecycle), { status: 409 })
     if (lifecycle.kind !== 'ready') {
-      return NextResponse.json({ error: 'Resume needs the process engine (QUICKSILVER_PROCESS_ENGINE=on) and a seeded definition.' }, { status: 409 })
+      return NextResponse.json({ error: 'Resume needs the process engine (QUICKSILVER_PROCESS_ENGINE=on) and a seeded definition.', code: 'conflict' }, { status: 409 })
     }
     const { definition } = lifecycle
 
@@ -63,10 +64,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       `*[_type == "decision" && _id == $id][0]{ _id, _rev, status, kind, riskLevel, requiredApproval, kernelRecommendation, kernelAuthorized }`,
       { id },
     )
-    if (!decision) return NextResponse.json({ error: 'Decision not found' }, { status: 404 })
+    if (!decision) return NextResponse.json({ error: 'Decision not found', code: 'not-found' }, { status: 404 })
     if (decision.status !== definition.initialState) {
       return NextResponse.json(
-        { error: `Only a decision still in "${definition.initialState}" can be resumed; this one is "${decision.status}".` },
+        { error: `Only a decision still in "${definition.initialState}" can be resumed; this one is "${decision.status}".`, code: 'conflict' },
         { status: 409 },
       )
     }
@@ -75,7 +76,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const step = nextAutomaticTransition(definition, decision.status, facts)
     if (!step) {
       return NextResponse.json(
-        { error: 'No automatic transition applies to this decision yet.', process: processView(definition, decision.status, facts) },
+        { error: 'No automatic transition applies to this decision yet.', code: 'conflict', process: processView(definition, decision.status, facts) },
         { status: 409 },
       )
     }
@@ -85,13 +86,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       await commitTransition(client, decision._id, decision._rev, definition, step, KERNEL_ACTOR, now)
     } catch (err) {
       if (isRevisionConflict(err)) {
-        return NextResponse.json({ error: 'This decision changed while it was being resumed. Reload and try again.' }, { status: 409 })
+        return NextResponse.json({ error: 'This decision changed while it was being resumed. Reload and try again.', code: 'conflict' }, { status: 409 })
       }
       throw err
     }
     return NextResponse.json({ id, status: step.to, process: processView(definition, step.to!, facts, step.transition?.id) })
   } catch (err) {
     console.error('[/api/decisions/[id]/resume]', safeErrorName(err))
-    return NextResponse.json({ error: 'Resume failed', detail: safeErrorName(err) }, { status: 500 })
+    return NextResponse.json({ error: 'Resume failed', code: 'internal-error', detail: safeErrorName(err) }, { status: 500 })
   }
 }

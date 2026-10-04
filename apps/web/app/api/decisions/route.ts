@@ -39,13 +39,13 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   const statuses = (url.searchParams.get('status') ?? '').split(',').map((value) => value.trim()).filter(Boolean)
   if (statuses.length > 4 || statuses.some((value) => !(STATUSES as readonly string[]).includes(value))) {
-    return NextResponse.json({ error: `status must be up to four of ${STATUSES.join(', ')}, comma separated.` }, { status: 400 })
+    return NextResponse.json({ error: `status must be up to four of ${STATUSES.join(', ')}, comma separated.`, code: 'invalid-request' }, { status: 400 })
   }
   const rawLimit = url.searchParams.get('limit')
   const limit = rawLimit === null ? 25 : Number(rawLimit)
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50) return NextResponse.json({ error: 'limit must be a whole number from 1 to 50.' }, { status: 400 })
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) return NextResponse.json({ error: 'limit must be a whole number from 1 to 50.', code: 'invalid-request' }, { status: 400 })
   const before = url.searchParams.get('before')
-  if (before !== null && (before.length > 40 || Number.isNaN(Date.parse(before)))) return NextResponse.json({ error: 'before must be a date and time.' }, { status: 400 })
+  if (before !== null && (before.length > 40 || Number.isNaN(Date.parse(before)))) return NextResponse.json({ error: 'before must be a date and time.', code: 'invalid-request' }, { status: 400 })
 
   try {
     const client = getSanityClient('read')
@@ -73,6 +73,6 @@ export async function GET(request: Request) {
     }, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     console.error('[decisions] list failed', error instanceof Error ? error.name : 'UnknownError')
-    return NextResponse.json({ error: 'Could not load decisions. Check the configured Quicksilver read data source.' }, { status: 503, headers: { 'cache-control': 'no-store' } })
+    return NextResponse.json({ error: 'Could not load decisions. Check the configured Quicksilver read data source.', code: 'unavailable' }, { status: 503, headers: { 'cache-control': 'no-store' } })
   }
 }

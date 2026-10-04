@@ -1614,7 +1614,8 @@
             "minimum": 1
           },
           "code": {
-            "type": "string"
+            "type": "string",
+            "description": "Machine-readable error code. Always present on error responses from the decision, workflow, agent and company-data routes. The value follows the status: invalid-request (400), unauthenticated (401), forbidden (403), not-found (404), conflict (409), payload-too-large (413), unprocessable (422), rate-limited (429), internal-error (500), unavailable (503). The shared route guard can also send principal-kind-unavailable (503). Other routes may omit it."
           },
           "needs": {
             "type": "array",
@@ -1630,7 +1631,7 @@
             }
           }
         },
-        "description": "Common error fields where emitted; validation issues are present on some 400 responses. Fields are not guaranteed across all routes.",
+        "description": "Common error fields where emitted; validation issues are present on some 400 responses. `error` is on every error body and `code` on every error body from the decision, workflow, agent and company-data routes; other fields are not guaranteed across all routes.",
         "additionalProperties": true
       },
       "DecisionProcess": {
@@ -1747,6 +1748,7 @@
         "properties": {
           "rollbackDecisionId": { "type": "string", "description": "The new rollback decision, entering at awaiting-approval (or the state the process engine chose)." },
           "parentDecisionId": { "type": "string" },
+          "alreadyProposed": { "type": "boolean", "description": "True when the decision already had a pending rollback and that one is returned instead of a new one (process engine off). Absent otherwise." },
           "parentStatus": { "type": ["string", "null"], "description": "Present only on the process-engine path." },
           "parentProcess": { "$ref": "#/components/schemas/DecisionProcess", "description": "Present only on the process-engine path." },
           "process": { "$ref": "#/components/schemas/DecisionProcess", "description": "Present only on the process-engine path: the lifecycle state of the new rollback decision." }
@@ -1780,9 +1782,10 @@
       },
       "WorkflowExecutions": {
         "type": "object",
-        "required": ["executions"],
+        "required": ["executions", "truncated"],
         "properties": {
-          "executions": { "type": "array", "description": "Executions of one workflow, newest first, at most the requested limit (1 to 100, default 25).", "items": { "$ref": "#/components/schemas/WorkflowExecutionRecord" } }
+          "executions": { "type": "array", "description": "Executions of one workflow, newest first, at most the requested limit (1 to 100, default 25).", "items": { "$ref": "#/components/schemas/WorkflowExecutionRecord" } },
+          "truncated": { "type": "boolean", "description": "True only when more executions exist beyond the returned limit." }
         }
       },
       "TelemetryTraceSpan": {
@@ -1846,8 +1849,9 @@
       },
       "CompanyEntityDirectory": {
         "type": "object",
-        "required": ["total", "entities"],
+        "required": ["total", "entities", "truncated"],
         "properties": {
+          "truncated": { "type": "boolean", "description": "True only when more than 500 entities exist, so entities is cut short." },
           "total": { "type": "integer", "minimum": 0, "description": "Count of every entity; entities holds at most the first 500 by name." },
           "entities": {
             "type": "array",
@@ -1916,10 +1920,11 @@
       },
       "WorkflowPublications": {
         "type": "object",
-        "required": ["versions", "audit"],
+        "required": ["versions", "audit", "truncated"],
         "properties": {
           "versions": { "type": "array", "description": "Newest version first, at most 100.", "maxItems": 100, "items": { "$ref": "#/components/schemas/PublishedWorkflowVersion" } },
-          "audit": { "type": "array", "description": "Newest event first, at most 100.", "maxItems": 100, "items": { "$ref": "#/components/schemas/WorkflowPublicationAuditEntry" } }
+          "audit": { "type": "array", "description": "Newest event first, at most 100.", "maxItems": 100, "items": { "$ref": "#/components/schemas/WorkflowPublicationAuditEntry" } },
+          "truncated": { "type": "boolean", "description": "True only when more versions or more audit events exist than the 100 returned for each." }
         }
       },
       "WorkflowDiffChange": {
@@ -2874,7 +2879,8 @@
           "agents",
           "drafts",
           "reviewQueue",
-          "audit"
+          "audit",
+          "truncated"
         ],
         "properties": {
           "agents": {
@@ -2900,6 +2906,10 @@
             "items": {
               "$ref": "#/components/schemas/AgentCatalogAudit"
             }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True only when a cap cut something: more than 200 active definitions, 100 awaiting review, 100 drafts or 100 audit events exist."
           }
         },
         "additionalProperties": false
@@ -2908,7 +2918,8 @@
         "type": "object",
         "required": [
           "versions",
-          "audit"
+          "audit",
+          "truncated"
         ],
         "properties": {
           "versions": {
@@ -2922,6 +2933,10 @@
             "items": {
               "$ref": "#/components/schemas/AgentCatalogAudit"
             }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True only when more than 100 versions or more than 100 audit events exist."
           }
         },
         "additionalProperties": false

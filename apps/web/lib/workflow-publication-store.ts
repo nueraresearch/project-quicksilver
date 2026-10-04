@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { SanityClient } from '@sanity/client'
 import { validateWorkflowGraph, workflowDigest, type WorkflowGraph } from '@quicksilver/kernel'
 import { getSanityClient } from './sanity-client.ts'
+import { capRows } from './list-bounds.ts'
 
 export type PublicationStatus = 'draft' | 'in-review' | 'published' | 'deprecated'
 export type PublicationEvent = 'draft-created' | 'submitted-for-review' | 'reviewed' | 'published' | 'deprecated' | 'rolled-back'
@@ -252,21 +253,28 @@ function auditedPatch(
     .create(audit)
 }
 
-export async function listWorkflowPublications(workflowId: string): Promise<{
+/** Version and audit history is capped; one extra row is fetched so `truncated` is true only when the cap cut something. */
+const PUBLICATION_LIST_LIMIT = 100
+
+export async function listWorkflowPublications(workflowId: string, readClient?: Pick<SanityClient, 'fetch'>): Promise<{
   versions: PublishedWorkflowVersion[]
   audit: WorkflowPublicationAuditEntry[]
+  truncated: boolean
 }> {
-  const client = getSanityClient('read')
+  const client = readClient ?? getSanityClient('read')
   const tenant = tenantId()
-  const documents = await client.fetch<WorkflowDocument[]>(
-    `*[_type == "automationWorkflow" && tenantId == $tenant && graphId == $graphId] | order(version desc)[0...100]${versionProjection}`,
+  const fetched = await client.fetch<WorkflowDocument[]>(
+    `*[_type == "automationWorkflow" && tenantId == $tenant && graphId == $graphId] | order(version desc)[0...${PUBLICATION_LIST_LIMIT + 1}]${versionProjection}`,
     { tenant, graphId: workflowId },
   )
-  const events = await client.fetch<AuditDocument[]>(
-    '*[_type == "workflowPublicationAudit" && tenantId == $tenant && graphId == $graphId] | order(at desc)[0...100]{event,graphId,version,actorId,at,graphDigest,detail}',
+  const fetchedEvents = await client.fetch<AuditDocument[]>(
+    `*[_type == "workflowPublicationAudit" && tenantId == $tenant && graphId == $graphId] | order(at desc)[0...${PUBLICATION_LIST_LIMIT + 1}]{event,graphId,version,actorId,at,graphDigest,detail}`,
     { tenant, graphId: workflowId },
   )
+  const { rows: documents, truncated: versionsCut } = capRows(fetched, PUBLICATION_LIST_LIMIT)
+  const { rows: events, truncated: auditCut } = capRows(fetchedEvents, PUBLICATION_LIST_LIMIT)
   return {
+    truncated: versionsCut || auditCut,
     versions: documents.map(mapVersion),
     audit: events.map((event) => ({
       event: event.event,
@@ -381,25 +389,31 @@ export async function recordWorkflowExecution(record: WorkflowExecutionRecord): 
   await client.createIfNotExists(document)
 }
 
-export async function listWorkflowExecutions(workflowId: string, limit = 25): Promise<WorkflowExecutionRecord[]> {
-  const client = getSanityClient('read')
+export async function listWorkflowExecutions(workflowId: string, limit = 25, readClient?: Pick<SanityClient, 'fetch'>): Promise<{ executions: WorkflowExecutionRecord[]; truncated: boolean }> {
+  const client = readClient ?? getSanityClient('read')
   const tenant = tenantId()
-  const documents = await client.fetch<ExecutionDocument[]>(
+  const bounded = Math.max(1, Math.min(100, Math.floor(limit)))
+  // One row past the limit tells whether more exist.
+  const fetched = await client.fetch<ExecutionDocument[]>(
     '*[_type == "workflowExecution" && tenantId == $tenant && workflowId == $workflowId] | order(completedAt desc)[0...$limit]{runId,workflowId,version,digest,requestedBy,status,startedAt,completedAt,durationMs,evaluationCount}',
-    { tenant, workflowId, limit: Math.max(1, Math.min(100, Math.floor(limit))) },
+    { tenant, workflowId, limit: bounded + 1 },
   )
-  return documents.map((document) => ({
-    runId: document.runId,
-    workflowId: document.workflowId,
-    version: document.version,
-    digest: document.digest,
-    requestedBy: document.requestedBy,
-    status: document.status,
-    startedAt: Date.parse(document.startedAt),
-    completedAt: Date.parse(document.completedAt),
-    durationMs: document.durationMs,
-    evaluationCount: document.evaluationCount,
-  }))
+  const { rows: documents, truncated } = capRows(fetched, bounded)
+  return {
+    truncated,
+    executions: documents.map((document) => ({
+      runId: document.runId,
+      workflowId: document.workflowId,
+      version: document.version,
+      digest: document.digest,
+      requestedBy: document.requestedBy,
+      status: document.status,
+      startedAt: Date.parse(document.startedAt),
+      completedAt: Date.parse(document.completedAt),
+      durationMs: document.durationMs,
+      evaluationCount: document.evaluationCount,
+    })),
+  }
 }
 
 /** Cross-workflow operational view for the authenticated tenant; metadata only. */

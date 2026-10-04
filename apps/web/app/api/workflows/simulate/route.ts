@@ -15,19 +15,19 @@ export async function POST(request: Request) {
   if (!caller.ok) return NextResponse.json(caller.body, { status: caller.status, headers: caller.headers })
 
   const contentLength = Number(request.headers.get('content-length') ?? 0)
-  if (contentLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.' }, { status: 413 })
+  if (contentLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.', code: 'payload-too-large' }, { status: 413 })
 
   const raw = await request.text()
-  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.' }, { status: 413 })
+  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.', code: 'payload-too-large' }, { status: 413 })
 
   let body: unknown
   try {
     body = JSON.parse(raw)
   } catch {
-    return NextResponse.json({ error: 'Request body must be valid JSON.' }, { status: 400 })
+    return NextResponse.json({ error: 'Request body must be valid JSON.', code: 'invalid-request' }, { status: 400 })
   }
   const parsed = requestSchema.safeParse(body)
-  if (!parsed.success) return NextResponse.json({ error: 'Expected a workflow graph and optional condition outcomes.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'Expected a workflow graph and optional condition outcomes.', code: 'invalid-request' }, { status: 400 })
 
   const result = await executeWorkflowGraph(parsed.data.graph as unknown as WorkflowGraph, { simulation: true }, {
     runAgent: async (node) => ({ simulation: true, agentId: node.config?.agentId, note: 'No model was called; this is a placeholder result.' }),

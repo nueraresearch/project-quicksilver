@@ -4,6 +4,8 @@ import { checkRouteCaller } from './nqc-approval.ts'
 import { guardWebRoute, type GuardRefusal, type WebRoute } from './route-guard.ts'
 import { WorkflowPublicationFault, type PublicationActor } from './workflow-publication-store.ts'
 import { AgentCatalogFault } from './agent-catalog-contract.ts'
+import { errorCode } from './api-errors.ts'
+import { isRevisionConflict } from './process-engine.ts'
 
 const MAX_BODY_BYTES = 256 * 1024
 
@@ -28,16 +30,16 @@ export async function guardPublicationActor(request: Request, route: Publication
 export async function readPublicationBody(request: Request): Promise<{ ok: true; body: unknown } | { ok: false; response: Response }> {
   const contentLength = Number(request.headers.get('content-length') ?? 0)
   if (contentLength > MAX_BODY_BYTES) {
-    return { ok: false, response: NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.' }, { status: 413 }) }
+    return { ok: false, response: NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.', code: 'payload-too-large' }, { status: 413 }) }
   }
   const raw = await request.text()
   if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) {
-    return { ok: false, response: NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.' }, { status: 413 }) }
+    return { ok: false, response: NextResponse.json({ error: 'Request body exceeds the 256 KiB limit.', code: 'payload-too-large' }, { status: 413 }) }
   }
   try {
     return { ok: true, body: JSON.parse(raw) as unknown }
   } catch {
-    return { ok: false, response: NextResponse.json({ error: 'Request body must be valid JSON.' }, { status: 400 }) }
+    return { ok: false, response: NextResponse.json({ error: 'Request body must be valid JSON.', code: 'invalid-request' }, { status: 400 }) }
   }
 }
 
@@ -53,13 +55,16 @@ export function publicationRefusal(refusal: GuardRefusal): Response {
 }
 
 export function publicationFailure(error: unknown, fallback: string): Response {
-  if (error instanceof AgentCatalogFault) {
-    return NextResponse.json({ error: error.message }, { status: error.status })
+  if (error instanceof AgentCatalogFault || error instanceof WorkflowPublicationFault) {
+    return NextResponse.json({ error: error.message, code: errorCode(error.status) }, { status: error.status })
   }
-  if (error instanceof WorkflowPublicationFault) {
-    return NextResponse.json({ error: error.message }, { status: error.status })
+  // A datastore revision mismatch (`ifRevisionId`) means another writer moved the document first: the same
+  // 409 the agent create, rollback and publish paths already report, not a generic 500.
+  if (isRevisionConflict(error)) {
+    console.error('[workflow-publication] revision conflict')
+    return NextResponse.json({ error: 'The publication changed concurrently; refresh and retry.', code: 'conflict' }, { status: 409 })
   }
   // Keep provider, database, and infrastructure details in server logs only.
   console.error('[workflow-publication] operation failed', error instanceof Error ? error.name : 'UnknownError')
-  return NextResponse.json({ error: fallback }, { status: 500 })
+  return NextResponse.json({ error: fallback, code: 'internal-error' }, { status: 500 })
 }

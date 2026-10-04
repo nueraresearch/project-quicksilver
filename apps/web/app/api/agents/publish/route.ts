@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   if (!caller.ok) return publicationRefusal(caller.refusal)
   const body = await readPublicationBody(request); if (!body.ok) return body.response
   const parsed = requestSchema.safeParse(body.body)
-  if (!parsed.success) return NextResponse.json({ error: 'A namespaced agentId and positive version are required.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'A namespaced agentId and positive version are required.', code: 'invalid-request' }, { status: 400 })
   try { return NextResponse.json(await publishAgentDefinition(parsed.data.agentId, parsed.data.version, caller.actor)) }
   catch (error) { return publicationFailure(error, 'Could not publish the agent definition.') }
 }

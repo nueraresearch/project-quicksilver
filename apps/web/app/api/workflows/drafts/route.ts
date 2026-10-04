@@ -13,10 +13,10 @@ export async function POST(request: Request) {
   const parsedBody = await readPublicationBody(request)
   if (!parsedBody.ok) return parsedBody.response
   const parsed = requestSchema.safeParse(parsedBody.body)
-  if (!parsed.success) return NextResponse.json({ error: 'Expected an object containing a workflow graph.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json({ error: 'Expected an object containing a workflow graph.', code: 'invalid-request' }, { status: 400 })
   const graph = parsed.data.graph as unknown as WorkflowGraph
   const validation = validateWorkflowGraph(graph)
-  if (!validation.valid) return NextResponse.json({ error: 'Workflow graph is invalid.', issues: validation.errors }, { status: 400 })
+  if (!validation.valid) return NextResponse.json({ error: 'Workflow graph is invalid.', code: 'invalid-request', issues: validation.errors }, { status: 400 })
   try {
     return NextResponse.json(await createWorkflowDraft(graph, caller.actor), { status: 201 })
   } catch (error) {

@@ -16,9 +16,9 @@ export async function POST(request: Request) {
 
   let raw: unknown
   try { raw = await request.json() }
-  catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  catch { return NextResponse.json({ error: 'Invalid JSON body', code: 'invalid-request' }, { status: 400 }) }
   const input = parseBusinessAgentRequest(raw)
-  if (!input) return NextResponse.json({ error: 'Provide a known agentKey and an objective of 3 to 2,000 characters; optional context is limited to 20 strings of 4,000 characters.' }, { status: 400 })
+  if (!input) return NextResponse.json({ error: 'Provide a known agentKey and an objective of 3 to 2,000 characters; optional context is limited to 20 strings of 4,000 characters.', code: 'invalid-request' }, { status: 400 })
 
   const selected = input.agentKey === 'auto'
     ? selectBusinessAgent(input.objective)
@@ -62,6 +62,6 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('[/api/agents/run]', safeErrorName(error))
     await persistTraceSpans([{ traceId, spanId: requestSpanId, source: 'agent', kind: 'request', name: 'business-agent.request', status: 'error', startedAt: requestStartedAt, durationMs: Date.now() - requestStartedAt, requestedBy: caller.principalId, agentId: definition.id }])
-    return NextResponse.json({ error: 'Business-agent request failed.', detail: safeErrorName(error) }, { status: 503 })
+    return NextResponse.json({ error: 'Business-agent request failed.', code: 'unavailable', detail: safeErrorName(error) }, { status: 503 })
   }
 }

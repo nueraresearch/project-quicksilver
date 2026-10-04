@@ -11,7 +11,8 @@ import { WORKFLOW_TEMPLATES, templateGraph } from '@/lib/workflow-templates'
 type ValidationResponse = { valid: boolean; errors: string[]; topologicalOrder: string[] }
 type PublicationVersion = { workflowId: string; version: number; graph: WorkflowGraph; digest: string; authoredBy: string; createdAt: number; status: 'draft' | 'in-review' | 'published' | 'deprecated'; reviewedBy?: string; reviewNote?: string; publishedAt?: number }
 type PublicationAudit = { event: string; workflowId: string; version: number; actorId: string; at: number; digest: string; detail?: string }
-type PublicationList = { versions: PublicationVersion[]; audit: PublicationAudit[] }
+type PublicationList = { versions: PublicationVersion[]; audit: PublicationAudit[]; truncated?: boolean }
+type ExecutionList = { executions: WorkflowExecution[]; truncated: boolean }
 type WorkflowVersionDiff = { workflowId: string; fromVersion: number; toVersion: number; fromDigest: string; toDigest: string; entryNodeChanged: boolean; nodes: Array<{ id: string; change: string; changedFields: string[] }>; edges: Array<{ id: string; change: string; changedFields: string[] }>; riskChanges: Array<{ nodeId: string; field: string; from: string | boolean | null; to: string | boolean | null }> }
 type WorkflowExecution = { runId: string; workflowId: string; version: number; digest: string; requestedBy: string; status: 'succeeded' | 'blocked' | 'failed'; startedAt: number; completedAt: number; durationMs: number; evaluationCount: number }
 type SimulationResponse = { mode: 'simulation'; externalEffectsEnabled: false; status: 'completed' | 'blocked' | 'failed'; steps: Array<{ nodeId: string; status: 'completed' | 'skipped' | 'blocked' | 'failed'; safetyDecision?: string; detail?: string }>; error?: string }
@@ -64,7 +65,7 @@ async function getWorkflowPublications(workflowId: string): Promise<PublicationL
   return result as PublicationList
 }
 
-async function getWorkflowExecutions(workflowId: string): Promise<WorkflowExecution[]> {
+async function getWorkflowExecutions(workflowId: string): Promise<ExecutionList> {
   const route: ConsoleRoute = 'workflows/executions'
   const access = await resolveConsoleAccess()
   if (!access.signedIn) throw new Error(`${authFailureMessage(401, route)} (sign in first).`)
@@ -72,7 +73,7 @@ async function getWorkflowExecutions(workflowId: string): Promise<WorkflowExecut
   const response = await fetch(url, { headers: consoleHeaders(url, access.token) })
   const result = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(authFailureMessage(response.status, route, result.error) ?? result.error ?? 'Could not load workflow execution history.')
-  return (result as { executions: WorkflowExecution[] }).executions
+  return result as ExecutionList
 }
 
 async function getWorkflowVersionDiff(workflowId: string, from: number, to: number): Promise<WorkflowVersionDiff> {
@@ -137,6 +138,7 @@ export default function WorkflowBuilderPage() {
   const [storageAvailable, setStorageAvailable] = useState(true)
   const [publication, setPublication] = useState<PublicationList>({ versions: [], audit: [] })
   const [executions, setExecutions] = useState<WorkflowExecution[]>([])
+  const [executionsTruncated, setExecutionsTruncated] = useState(false)
   const [executionHistoryError, setExecutionHistoryError] = useState<string | null>(null)
   const [publicationBusy, setPublicationBusy] = useState(false)
   const [publicationError, setPublicationError] = useState<string | null>(null)
@@ -277,7 +279,7 @@ export default function WorkflowBuilderPage() {
       if (!cancelled) setPublicationError((cause as Error).message || 'Could not load workflow versions.')
     })
     getWorkflowExecutions(graphId).then((result) => {
-      if (!cancelled) { setExecutions(result); setExecutionHistoryError(null) }
+      if (!cancelled) { setExecutions(result.executions); setExecutionsTruncated(result.truncated); setExecutionHistoryError(null) }
     }).catch((cause) => {
       if (!cancelled) setExecutionHistoryError((cause as Error).message || 'Could not load workflow execution history.')
     })
@@ -550,7 +552,11 @@ export default function WorkflowBuilderPage() {
       const body = published && active ? { workflowId: graphId, version: active.version, input: liveInput } : { graph, input: liveInput }
       const result = await postWorkflow('workflows/run', body, 'Could not run this workflow.') as LiveRunResponse
       setLiveRun({ graphKey: published ? `published:${graphId}:${active?.version}` : JSON.stringify(graph), result })
-      if (published) setExecutions(await getWorkflowExecutions(graphId))
+      if (published) {
+        const history = await getWorkflowExecutions(graphId)
+        setExecutions(history.executions)
+        setExecutionsTruncated(history.truncated)
+      }
     } catch (cause) {
       setError((cause as Error).message)
     } finally {
@@ -703,6 +709,7 @@ export default function WorkflowBuilderPage() {
             <button onClick={savePlatformDraft} disabled={publicationBusy || !persistenceReady} className="qs-action-primary mt-4 w-full disabled:opacity-40">{publicationBusy ? 'Saving…' : `Save ${graph.id} v${graph.version}`}</button>
             {publicationNotice && <p role="status" className="mt-3 text-xs text-emerald-300">{publicationNotice}</p>}
             {publicationError && <p role="alert" className="mt-3 text-xs text-red-300">{publicationError}</p>}
+            {publication.truncated && <p role="status" className="mt-3 text-xs text-amber-200">Showing the first {publication.versions.length} versions and {publication.audit.length} history events; more exist.</p>}
             <details className="mt-4">
             <summary className="min-h-11 cursor-pointer text-sm font-semibold text-quicksilver-signal">Version history <span className="ml-2 text-xs font-normal text-quicksilver-accent">{publication.versions.length} versions</span></summary>
             <div className="mt-3 space-y-3">
@@ -725,7 +732,7 @@ export default function WorkflowBuilderPage() {
             {publication.audit.length > 0 && <details className="mt-4"><summary className="flex min-h-11 cursor-pointer items-center font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Publication history ({publication.audit.length})</summary><ol className="mt-2 space-y-2 text-xs text-quicksilver-accent">{publication.audit.slice(0, 12).map((event, index) => <li key={`${event.event}-${event.version}-${event.at}-${index}`}>{new Date(event.at).toLocaleString()} · {event.event} v{event.version} · {event.actorId}{event.detail ? ` · ${event.detail}` : ''}</li>)}</ol></details>}
           </section>
           <section className="qs-panel"><h2 className="text-base font-semibold text-quicksilver-signal">Safety check</h2><p className="qs-helper mt-2">Validation checks graph structure, branches, step limits, evaluation, and supervisor approval requirements.</p><input ref={fileInput} type="file" accept=".json,application/json" onChange={importDraft} className="hidden" /><button onClick={() => fileInput.current?.click()} disabled={!persistenceReady} className="qs-action-secondary mb-2 w-full disabled:opacity-40">Import workflow JSON</button><button onClick={exportDraft} className="qs-action-secondary w-full">Export workflow draft</button><button onClick={validateDraft} disabled={validating} className="qs-action-primary mt-4 w-full disabled:opacity-40">{validating ? 'Checking…' : 'Validate workflow'}</button>{error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}{validation && <div className={`mt-4 rounded border p-3 ${validation.valid ? 'border-emerald-800 bg-emerald-950/20' : 'border-amber-800 bg-amber-950/20'}`}><p className="font-mono text-xs uppercase tracking-widest">{validation.valid ? 'Ready for review' : 'Needs changes'}</p>{validation.errors.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-quicksilver-accent">{validation.errors.map((item) => <li key={item}>{item}</li>)}</ul>}{validation.valid && <p className="mt-2 text-xs text-quicksilver-accent">Topological order: {validation.topologicalOrder.join(' → ')}</p>}</div>}</section>
-          <section className="qs-panel"><h2 className="text-base font-semibold text-quicksilver-signal">Run a published workflow</h2><p className="qs-helper mt-2">Running a workflow starts from the chat, so it is one conversation with one audit trail. Ask Quicksilver to run it and press the card it offers.</p><button type="button" onClick={() => window.dispatchEvent(new Event('quicksilver:open-chat'))} className="qs-action-secondary mt-4 w-full">Open the chat</button></section>          <details className="mt-4"><summary className="flex min-h-11 cursor-pointer items-center font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Execution history ({executions.length})</summary>{executionHistoryError ? <p className="mt-2 text-xs text-amber-200">{executionHistoryError}</p> : <ol className="mt-2 space-y-2 text-xs text-quicksilver-accent">{executions.map((execution) => <li key={execution.runId}>{new Date(execution.completedAt).toLocaleString()} · v{execution.version} · {execution.status} · {execution.durationMs} ms · {execution.evaluationCount} evaluations · {execution.requestedBy}</li>)}</ol>}</details><section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Run preview</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Simulation only: agent results are placeholders. No model, live evaluator, tool, or supervisor approval is called, and no external action can run.</p><button onClick={previewWorkflow} disabled={!persistenceReady} className="mt-4 w-full rounded border border-quicksilver-quicksilver bg-quicksilver-quicksilver/5 px-4 py-3 font-mono text-xs uppercase tracking-widest text-quicksilver-signal hover:bg-quicksilver-quicksilver/15 disabled:opacity-40">Preview workflow path</button>{simulation?.graphKey === JSON.stringify(graph) && <div role="status" className="mt-4 rounded border border-quicksilver-border p-3"><p className="font-mono text-xs uppercase tracking-widest">Simulation · {simulation.result.status}</p>{simulation.result.error && <p className="mt-2 text-xs text-amber-200">{simulation.result.error}</p>}<ul className="mt-3 space-y-2 text-xs text-quicksilver-accent">{simulation.result.steps.map((step) => <li key={step.nodeId}><span className="font-mono">{nodes.find((node) => node.id === step.nodeId)?.label ?? step.nodeId}</span> · {step.status}{step.safetyDecision ? ` · ${step.safetyDecision}` : ''}{step.detail ? <span className="block">{step.detail}</span> : null}</li>)}</ul><p className="mt-3 text-xs leading-4 text-quicksilver-accent">A preview is not a live evaluation or approval. Tool steps stop before dispatch.</p></div>}</section>          <section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">What happens next</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Published versions can run through the gated read-only path and their release and run history is visible above. Hosted execution, team workspaces, scheduled deployment, and effectful tools remain in progress.</p></section>
+          <section className="qs-panel"><h2 className="text-base font-semibold text-quicksilver-signal">Run a published workflow</h2><p className="qs-helper mt-2">Running a workflow starts from the chat, so it is one conversation with one audit trail. Ask Quicksilver to run it and press the card it offers.</p><button type="button" onClick={() => window.dispatchEvent(new Event('quicksilver:open-chat'))} className="qs-action-secondary mt-4 w-full">Open the chat</button></section>          <details className="mt-4"><summary className="flex min-h-11 cursor-pointer items-center font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Execution history ({executions.length}{executionsTruncated ? '+' : ''})</summary>{executionHistoryError ? <p className="mt-2 text-xs text-amber-200">{executionHistoryError}</p> : <>{executionsTruncated && <p role="status" className="mt-2 text-xs text-amber-200">Showing the latest {executions.length} runs; more exist.</p>}<ol className="mt-2 space-y-2 text-xs text-quicksilver-accent">{executions.map((execution) => <li key={execution.runId}>{new Date(execution.completedAt).toLocaleString()} · v{execution.version} · {execution.status} · {execution.durationMs} ms · {execution.evaluationCount} evaluations · {execution.requestedBy}</li>)}</ol></>}</details><section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">Run preview</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Simulation only: agent results are placeholders. No model, live evaluator, tool, or supervisor approval is called, and no external action can run.</p><button onClick={previewWorkflow} disabled={!persistenceReady} className="mt-4 w-full rounded border border-quicksilver-quicksilver bg-quicksilver-quicksilver/5 px-4 py-3 font-mono text-xs uppercase tracking-widest text-quicksilver-signal hover:bg-quicksilver-quicksilver/15 disabled:opacity-40">Preview workflow path</button>{simulation?.graphKey === JSON.stringify(graph) && <div role="status" className="mt-4 rounded border border-quicksilver-border p-3"><p className="font-mono text-xs uppercase tracking-widest">Simulation · {simulation.result.status}</p>{simulation.result.error && <p className="mt-2 text-xs text-amber-200">{simulation.result.error}</p>}<ul className="mt-3 space-y-2 text-xs text-quicksilver-accent">{simulation.result.steps.map((step) => <li key={step.nodeId}><span className="font-mono">{nodes.find((node) => node.id === step.nodeId)?.label ?? step.nodeId}</span> · {step.status}{step.safetyDecision ? ` · ${step.safetyDecision}` : ''}{step.detail ? <span className="block">{step.detail}</span> : null}</li>)}</ul><p className="mt-3 text-xs leading-4 text-quicksilver-accent">A preview is not a live evaluation or approval. Tool steps stop before dispatch.</p></div>}</section>          <section className="rounded border border-quicksilver-border bg-quicksilver-panel p-5"><h2 className="font-mono text-xs uppercase tracking-widest text-quicksilver-accent">What happens next</h2><p className="mt-2 text-xs leading-5 text-quicksilver-accent">Published versions can run through the gated read-only path and their release and run history is visible above. Hosted execution, team workspaces, scheduled deployment, and effectful tools remain in progress.</p></section>
         </aside>
       </div>
     </main>
