@@ -34,8 +34,7 @@ a live-dataset endpoint (`groq_query`, `schema_explorer`) and a knowledge-base e
 (`knowledge_base_read`). `packages/agent/src/mcp.ts` connects both and merges their tools behind a policy
 check, so a tool that declares itself destructive or non-read-only is refused.
 
-**Knowledge base.** I built a knowledge base from the `evidence` and `policy` documents (12 documents,
-11 entries). Sanity's pipeline flags contradictions between entries; I left the seeded ones unresolved on
+**Knowledge base.** I built a knowledge base from the `evidence` and `policy` documents (12 documents). Sanity's pipeline flags contradictions between entries; I left the seeded ones unresolved on
 purpose, because a company's real evidence disagrees with itself and an agent should have to deal with that.
 
 **Showing the work.** Under every answer there's a **What I looked at** list: each knowledge-base entry,
