@@ -116,5 +116,12 @@ npm run demo:reset              # dry run: shows what would be deleted
 npm run demo:reset -- --confirm
 ```
 
-Run it before the judging window opens and whenever the data looks cluttered. Scheduling it (a GitHub Action
+Reset removes the pending decisions too, so seed them again straight afterwards
+(`docs/platform/demo-decisions.md`; it spends a little model credit):
+
+```bash
+npm run demo:seed-decisions -- --base-url https://<demo site> --confirm
+```
+
+Run both before the judging window opens and whenever the data looks cluttered. Scheduling it (a GitHub Action
 with the demo token as a repository secret) is optional and not set up.
