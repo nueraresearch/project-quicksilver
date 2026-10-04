@@ -110,7 +110,8 @@ You can inspect the data yourself: the public, synthetic `demo` dataset in proje
 BEFORE PUBLISHING (delete this block):
 0. Judge access: follow docs/platform/judge-access-production.md (two tokens, add them to QUICKSILVER_PRINCIPALS,
    seed the waiting decisions, test in a private window). Paste the judge token where [FILL: judge access token]
-   appears, in this post and in docs/FOR-JUDGES.md, and remove the entry after judging.
+   appears in this post only. Do not commit it to the repository (docs/FOR-JUDGES.md points here instead), and remove
+   the entry after judging.
 1. Fill the video link (here and in docs/FOR-JUDGES.md); check no [FILL] remains. The cover image and the diagram load from
    the repository, so check they show once the docs PR is merged.
 2. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,

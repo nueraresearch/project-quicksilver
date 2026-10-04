@@ -41,7 +41,7 @@ These run against the public, synthetic `demo` dataset in project `f87t11g1`, wi
 
 ## Try it
 
-- **Live app, with an access token:** https://project-quicksilver.vercel.app. The app signs our own people in through single sign-on, so judges use an access token instead: **[FILL: judge access token]**.
+- **Live app, with an access token:** https://project-quicksilver.vercel.app. The app signs our own people in through single sign-on, so judges use an access token instead. The token is given in the submission post on DEV; it is deliberately not stored in this repository.
   1. Open `/sign-in`, choose **Use an access token instead**, and paste the token. You are signed in as a human with the `supervisor` role.
   2. Open **Decisions**. Several are already waiting for approval. An agent entity (the Engineering Agent) asked the planner for each one, so it is recorded as the requester and the planner (`nuera-quicksilver:planner`) as the proposer.
   3. Open one and read why the kernel answered as it did, and what would change the answer. Approve it. The approve route refuses the requester and the proposer, so a human who is neither has to authorize it, which is you. Then download its audit trail (JSON, with a digest).
