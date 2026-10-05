@@ -21,8 +21,8 @@ by Quicksilver, our Sanity Challenge 2026 submission, which lives separately at
 - [M8–M9 enterprise plan](M8-M9-ENTERPRISE-PLAN.md): feature-complete release candidate, hardening, evidence, and 1.0.0 gate
 - [M7 release evidence](platform/m7-release-evidence.md): executable acceptance matrix and verification results for all four M7 parts
 
-Copies of the challenge submission, DEV posts, and demo script are kept here as
-historical records, each marked with a banner. They do not describe the new platform's current capability
+Copies of the withdrawn challenge submission, DEV posts, and demo script are kept here as
+historical records, each marked with a banner. They do not describe this platform's current capability
 or deployment environment.
 
 For a first contribution, start with the [repository README](../README.md), then

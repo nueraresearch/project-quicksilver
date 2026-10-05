@@ -8,12 +8,13 @@ Suggested title: Quicksilver: An Autonomous Company Operating System
 Suggested tags: sanitychallenge, ai, webdev, typescript
 -->
 
-> **Historical record: Sanity Challenge submission.** This document belongs to
-> **Quicksilver**, our Sanity Challenge 2026 entry, which lives at
-> [nuerainc/quicksilver-sanity-challenge](https://github.com/nuerainc/quicksilver-sanity-challenge).
-> A copy is kept here because Nuera Quicksilver was inspired by that submission.
+> **Historical record: the withdrawn Sanity Challenge entry.** This document belongs to
+> **Quicksilver**, our Sanity Challenge 2026 entry, which has since been withdrawn and
+> lives at [nuerainc/quicksilver-sanity-challenge](https://github.com/nuerainc/quicksilver-sanity-challenge).
+> A copy is kept here because Nuera Quicksilver was built from that submission and is
+> the entry in its place, in both challenge paths.
 > It does not describe this repository, and the live demo it mentions is the
-> challenge deployment, not a deployment of Nuera Quicksilver.
+> withdrawn deployment, not a deployment of Nuera Quicksilver.
 
 # Quicksilver: An Autonomous Company Operating System
 
