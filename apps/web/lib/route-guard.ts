@@ -42,6 +42,7 @@ const RATE_LIMIT_ENV: Readonly<Record<WebRateLimitClass, string>> = Object.freez
 export type WebRoute =
   | 'plan' | 'query' | 'chat' | 'inbox' | 'agents/run' | 'dashboard/overview' | 'dashboard/finance'
   | 'decisions' | 'decisions/detail' | 'decisions/audit'
+  | 'actions/tools'
   | 'entities'
   | 'monitoring/workflows' | 'monitoring/traces'
   | 'agents/catalog' | 'agents/definitions' | 'agents/drafts' | 'agents/drafts/submit' | 'agents/review' | 'agents/publish' | 'agents/rollback'
@@ -64,6 +65,10 @@ export const WEB_ROUTE_ACCESS: Readonly<Record<WebRoute, { permissions: readonly
   decisions: { permissions: Object.freeze<Permission[]>(['decision:read']) },
   'decisions/detail': { permissions: Object.freeze<Permission[]>(['decision:read']) },
   'decisions/audit': { permissions: Object.freeze<Permission[]>(['audit:read']) },
+  // What this deployment can and cannot do, in the console's own words. Read-only, and
+  // the same audience as the decision list: anyone who can see a decision can see that
+  // pressing Execute does not send anything.
+  'actions/tools': { permissions: Object.freeze<Permission[]>(['decision:read']) },
   // Business agents are proposal-only workers with the same read boundary as Ask mode.
   'agents/run': { permissions: Object.freeze<Permission[]>(['decision:read']), rateLimit: 'model' },
   // The entity directory uses the same company-read boundary as Ask mode.

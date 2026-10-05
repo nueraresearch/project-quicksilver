@@ -598,6 +598,29 @@
         ]
       }
     },
+    "/api/actions/tools": {
+      "get": {
+        "operationId": "describeDeploymentActions",
+        "description": "What this deployment can actually do, in the deployment's own words. Execute records the approved action and a deterministic simulated result; nothing leaves this deployment. Lists every effectful tool the host defines, each as a dry run here, with the exact configuration that would make it live. An asynchronous reader should not have to take a README's word for what the buttons do. Read-only. Needs decision:read.",
+        "tags": [
+          "Decisions"
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ActionsToolsResponse"
+          },
+          "401": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "403": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimitResponse"
+          }
+        }
+      }
+    },
     "/api/monitoring/workflows": {
       "get": {
         "operationId": "getWorkflowMonitoring",
@@ -1569,6 +1592,35 @@
           "approvalDrivers": { "type": "array", "items": { "type": "string" } },
           "blockingReasons": { "type": "array", "items": { "type": "string" } },
           "whatWouldChangeIt": { "type": "array", "items": { "type": "object", "required": ["change", "kind", "simulated", "improves"], "properties": { "change": { "type": "string" }, "kind": { "type": "string", "enum": ["action", "capability", "policy", "review", "evidence"] }, "simulated": { "type": "boolean" }, "improves": { "type": "boolean" }, "outcome": { "type": "object", "properties": { "recommendation": { "type": "string" }, "riskLevel": { "type": "integer" }, "blockingReasons": { "type": "integer" }, "concerns": { "type": "integer" } } } } } }
+        }
+      },
+      "EffectfulTool": {
+        "type": "object",
+        "required": ["id", "effect", "consoleMode", "liveRequires", "requiresHumanApproval"],
+        "properties": {
+          "id": { "type": "string", "examples": ["notification.send"] },
+          "effect": { "type": "string", "description": "What the tool would do, in one line." },
+          "consoleMode": { "type": "string", "enum": ["dry-run"], "description": "What this deployment does instead." },
+          "liveRequires": { "type": "array", "items": { "type": "string" }, "description": "The exact configuration that would make the tool live. The default is always the dry run." },
+          "requiresHumanApproval": { "type": "boolean", "enum": [true] }
+        }
+      },
+      "ConsoleExecution": {
+        "type": "object",
+        "required": ["consoleMode", "detail", "reproducible"],
+        "properties": {
+          "consoleMode": { "type": "string", "enum": ["simulated"] },
+          "detail": { "type": "string", "description": "States that nothing leaves this deployment." },
+          "reproducible": { "type": "boolean", "description": "The same decision always produces the same outcome." }
+        }
+      },
+      "ActionsDisclosure": {
+        "type": "object",
+        "required": ["execution", "tools", "approval"],
+        "properties": {
+          "execution": { "$ref": "#/components/schemas/ConsoleExecution" },
+          "tools": { "type": "array", "items": { "$ref": "#/components/schemas/EffectfulTool" } },
+          "approval": { "type": "string", "description": "How approval is bound." }
         }
       },
       "DecisionDetail": {
@@ -3034,6 +3086,7 @@
       "ChatResponse": { "description": "The assistant's answer, with links to pages of the app.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } } },
       "DecisionListResponse": { "description": "Recent decisions.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionList" } } } },
       "DecisionDetailResponse": { "description": "One decision.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionDetail" } } } },
+      "ActionsToolsResponse": { "description": "What this deployment can and cannot do.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionsDisclosure" } } } },
       "RateLimitResponse": {
         "content": {
           "application/json": {
