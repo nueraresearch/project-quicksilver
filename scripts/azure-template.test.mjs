@@ -10,7 +10,9 @@ test('the Azure template sets every environment variable the Render blueprint se
   const renderVars = [...render.matchAll(/- key: ([A-Z_]+)/g)].map((m) => m[1])
   assert.ok(renderVars.length >= 10)
   // SANITY_AUTH_TOKEN is the legacy combined token: the Azure path never needs it.
-  const missing = renderVars.filter((name) => name !== 'SANITY_AUTH_TOKEN' && !bicep.includes(`'${name}'`))
+  // The approved-actions variables exist only for the Render first-email proof (docs/platform/render-live-email.md).
+  const renderOnly = new Set(['SANITY_AUTH_TOKEN', 'QUICKSILVER_AUTHORIZATION_KEY', 'QUICKSILVER_ACTIONS_CONFIG', 'QUICKSILVER_ACTIONS_DIR', 'QUICKSILVER_EMAIL_API_KEY'])
+  const missing = renderVars.filter((name) => !renderOnly.has(name) && !bicep.includes(`'${name}'`))
   assert.deepEqual(missing, [], 'add these to deploy/azure/main.bicep or say why they are not needed')
   assert.ok(!bicep.includes("'SANITY_AUTH_TOKEN'"))
 })

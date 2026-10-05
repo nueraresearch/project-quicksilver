@@ -26,7 +26,7 @@ services:
       - key: QUICKSILVER_HOST_CONFIG
         value: /etc/secrets/quicksilver.host.json   # add as a Render secret file
       - key: QUICKSILVER_TENANT_ID
-        value: nuera
+        value: brodi                 # must equal the tenantId in every QUICKSILVER_PRINCIPALS entry
       - key: DATABASE_URL
         fromDatabase:
           name: quicksilver-db
@@ -34,6 +34,16 @@ services:
       - key: QUICKSILVER_VAULT_KEY
         sync: false
       - key: QUICKSILVER_PRINCIPALS
+        sync: false
+      # Approved actions (the first real email): docs/platform/render-live-email.md.
+      # Add deploy/render/actions.render.json as the secret file actions.json.
+      - key: QUICKSILVER_AUTHORIZATION_KEY   # at least 32 characters; without it every approval is refused (503)
+        sync: false
+      - key: QUICKSILVER_ACTIONS_CONFIG
+        value: /etc/secrets/actions.json
+      - key: QUICKSILVER_ACTIONS_DIR         # proposals live on the disk, or a restart loses them
+        value: /data/actions
+      - key: QUICKSILVER_EMAIL_API_KEY       # your Resend key; enter it in the Render dashboard only
         sync: false
       - key: SANITY_CONTEXT_MCP_URL
         sync: false
