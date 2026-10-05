@@ -1,5 +1,5 @@
 import { defineType, defineField } from 'sanity'
-import { guardCondition } from './workflow'
+import { guardCondition } from './workflow.ts'
 
 export default defineType({
   name: 'policy',

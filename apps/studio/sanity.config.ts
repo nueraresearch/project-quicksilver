@@ -2,8 +2,8 @@ import { defineConfig } from 'sanity'
 import { structureTool } from 'sanity/structure'
 import { visionTool } from '@sanity/vision'
 import { workflow } from 'sanity-plugin-workflow'
-import { schemaTypes } from './schemas'
-import { dedicatedSanityProjectId } from './lib/sanity-project-id'
+import { schemaTypes } from './schemas/index.ts'
+import { dedicatedSanityProjectId } from './lib/sanity-project-id.ts'
 
 /**
  * Sanity Workflows (the actual product feature, not our own `workflow`
