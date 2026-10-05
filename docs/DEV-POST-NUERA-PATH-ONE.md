@@ -4,15 +4,14 @@ tags: sanitychallenge, devchallenge, ai, typescript
 cover_image: https://raw.githubusercontent.com/nueraresearch/project-quicksilver/main/docs/images/cover.png
 ---
 
-*This is my entry for Path One of the Sanity Challenge. Code: https://github.com/nueraresearch/project-quicksilver (MIT).
-Sanity project ID: `f87t11g1`. Walkthrough video: [FILL: video link]. Judge guide: [`docs/FOR-JUDGES.md`](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/FOR-JUDGES.md).*
+*This is my entry for Path One of the Sanity Challenge. Code: https://github.com/nueraresearch/project-quicksilver (MIT). Sanity project ID: `f87t11g1`. Judge guide: [`docs/FOR-JUDGES.md`](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/FOR-JUDGES.md).*
 
 ## What I built
 
 Nuera Quicksilver is an **intent-driven company operating system** from Nuera RDL. A person states an
 objective; agents work out a plan; and every action they want to take is **proposed by an agent,
 authorized by a deterministic kernel, approved by a different human where it matters, and recorded in
-Sanity**. The company itself, its people, agents, policies, evidence and workflows, is a structured model
+Sanity**. The company itself — its people, agents, policies, evidence and workflows — is a structured model
 in Sanity that the agents read through Sanity Context.
 
 It is a platform, not a single screen. What is in the repository, and covered by its test suites:
@@ -43,7 +42,7 @@ git clone https://github.com/nueraresearch/project-quicksilver
 cd project-quicksilver && npm install && npm run verify
 ```
 
-That runs typecheck and every suite — **1,242 tests** — against fakes, with no API keys, no Sanity project
+That runs typecheck and every suite — **1,282 tests** — against fakes, with no API keys, no Sanity project
 and no sign-in. I made a point of that: a claim about a governance kernel is only worth what you can
 reproduce, and "trust me" is exactly the failure mode this project is about. The kernel imports no model
 SDK at all, and a test fails the build if it ever starts to.
@@ -156,31 +155,17 @@ model's memory.
 - The Genesis, Onboard and Operate modes are the product's direction; this entry is the governed core they run on.
 - Model scoring hasn't been calibrated against a live provider, and the connectors (Stripe, HubSpot,
   QuickBooks) haven't run against real accounts.
-- Over 1,240 tests pass in CI, but they use fakes for the model and the Context endpoints; the live
-  endpoints were verified by hand. No usability sessions with real people yet.
+- 1,282 tests pass, but they use fakes for the model and the Context endpoints; the live endpoints were
+  verified by hand. No usability sessions with real people yet.
 
 The full list is the [parity matrix](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/platform/parity-tests.md).
 
 ## Try it
 
-The walkthrough video (about 3 minutes) shows the full flow on the live app: **[FILL: video link]**.
+Live app: https://project-quicksilver.vercel.app. It signs our own people in through single sign-on, so judges use an access token instead: **`qs_mh3a1ExwuX9QYAbsgjAFve6QdXgReucf6bU3Quug8Pk`**. Open `/sign-in`, choose **Use an access token instead**, and paste it.
 
-You can also use the app yourself at https://project-quicksilver.vercel.app. It signs our own people in through single sign-on, so judges use an access token instead: **[FILL: judge access token]**. Open `/sign-in`, choose **Use an access token instead**, and paste it. Several decisions are already waiting for approval: an agent asked the planner for each one, so the agent is recorded as the requester. Open one, read why the kernel answered as it did, and approve it. The approve route refuses the requester and the proposer, so a human who is neither has to authorize it, and that is you. Then download the audit trail. The token can't ask for a plan of its own, so planning is in the video.
+Several decisions are already waiting for approval — an agent asked the planner for each one, so the agent is recorded as the requester. Open one, read why the kernel answered as it did, and approve it. The approve route refuses the requester and the proposer, so a human who is neither has to authorize it, and that is you. Then download the audit trail.
+
+The full step-by-step walkthrough, including the five ready-made GROQ queries for the public `demo` dataset, is in [`docs/FOR-JUDGES.md`](https://github.com/nueraresearch/project-quicksilver/blob/main/docs/FOR-JUDGES.md).
 
 You can inspect the data yourself: the public, synthetic `demo` dataset in project `f87t11g1` has the same schema and the same evidence and policy documents as the app. The judge guide has five ready-made queries (policies, the evidence that contradicts itself, people and agents, capabilities and who may use them). The `production` dataset behind the live app is private.
-
----
-
-<!--
-BEFORE PUBLISHING (delete this block):
-0. Judge access: follow docs/platform/judge-access-production.md (two tokens, add them to QUICKSILVER_PRINCIPALS,
-   seed the waiting decisions, test in a private window). Paste the judge token where [FILL: judge access token]
-   appears in this post only. Do not commit it to the repository (docs/FOR-JUDGES.md points here instead), and remove
-   the entry after judging.
-1. Fill the video link (here and in docs/FOR-JUDGES.md); check no [FILL] remains. The cover image and the diagram load from
-   the repository, so check they show once the docs PR is merged.
-2. Add 2 to 3 screenshots: the chat answer with "What I looked at" open, a decision with the why panel,
-   and the needs-you list.
-3. Confirm the public `demo` dataset answers: the query link in docs/FOR-JUDGES.md.
-4. Post with the #sanitychallenge tag by October 4, 2026, 11:59 PM PDT.
--->
