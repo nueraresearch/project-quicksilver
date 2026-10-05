@@ -25,9 +25,11 @@ The two files in `deploy/render/` are templates. Copy them into Render **secret 
 
 ## Environment variables on the Render service
 
+`deploy/render.yaml` now declares all of these. The ones marked `sync: false` (principals, vault key, authorization key and the Resend key) are blank until you enter them in the dashboard; the rest are set for you.
+
 | Variable | Value |
 |---|---|
-| `QUICKSILVER_TENANT_ID` | `brodi` (the blueprint says `nuera`; change it) |
+| `QUICKSILVER_TENANT_ID` | `brodi` (the blueprint now sets this) |
 | `QUICKSILVER_PRINCIPALS` | an array of two entries made with `npm run principal:token`: the founder (`entity-founder`, role `intent-provider`, human) and the agent (`entity-engineering-agent`, `--kind agent`). Set `QUICKSILVER_TENANT_ID=brodi` in your shell first so the entries carry that tenant. Make new tokens; do not reuse any that have been pasted anywhere. |
 | `QUICKSILVER_AUTHORIZATION_KEY` | a random string of at least 32 characters. Without it every approval is refused with 503. |
 | `QUICKSILVER_ACTIONS_CONFIG` | `/etc/secrets/actions.json` |
