@@ -23,7 +23,20 @@ apps/studio/backups/
 # Hosted runtime: local config and data (vault file, file store)
 quicksilver.host.json
 deploy/quicksilver.host.json
+# Local approved-actions policy: holds the real recipient allow-list.
+deploy/actions/actions.local.json
 data/
 .vercel
 .env*
+# `.env*` above would also swallow the template. It is only safe today because
+# the file is already tracked; if it is ever deleted or renamed, `git add`
+# would report nothing to add and the template would come back unignored-and-
+# missing. Keep the template committable.
+!.env.example
 packages/agent/kb-capture.json
+
+# Local scratch: one-off probes and diagnostics written while working a problem.
+# They are useful for the session that made them and noise in git status after.
+.qs-*.ts
+.qs-*.ps1
+list-oidc-users.mjs

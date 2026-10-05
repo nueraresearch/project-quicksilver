@@ -50,11 +50,16 @@ export class EmailAdapter implements ChannelAdapter {
 
   async send(to: string, text: string): Promise<void> {
     const subject = this.subjects.get(to) ?? ''
-    await this.o.fetch(this.o.apiUrl, {
+    const res = await this.o.fetch(this.o.apiUrl, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.o.apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({ from: this.o.from, to, subject: subject ? (subject.startsWith('Re:') ? subject : `Re: ${subject}`) : 'Quicksilver', text }),
     })
+    // A 401 (revoked key), 403 (unverified domain) or 422 (bad address) is a real
+    // "the person never got this", so it must not be reported as a sent reply.
+    // The provider's body can echo the request, so only the status is surfaced;
+    // the key is never in this message.
+    if (!res.ok) throw new Error(`the email API answered HTTP ${res.status}; the reply was not sent.`)
   }
 
   async stop(): Promise<void> { this.onMessage = undefined }

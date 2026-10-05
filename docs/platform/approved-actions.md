@@ -49,6 +49,25 @@ authorization key in the variable named by `execution.authorizationKeyEnv`
 every approval is refused with 503. Proposals are kept next to the Genesis data
 (`QUICKSILVER_ACTIONS_DIR` overrides).
 
+## Checking the email path before you trust it
+
+`npm run resend:check` walks the whole `notification.send` chain and prints the
+first thing that would keep it a dry run. It reads nothing from the network and
+prints no secret, so it is safe to run anywhere:
+
+```
+npm run resend:check                  # config only
+npm run resend:check -- --live       # GET /domains: proves the key, shows verified domains
+npm run resend:check -- --send a@b.com   # one real send; refuses any address off the allow-list
+```
+
+It checks the operator channel's three variables, the policy file's `email`
+block, whether the variable `email.apiKeyEnv` names is actually set, whether
+`enabledTools` includes `notification.send`, and the authorization key. This
+also covers the operator's own email channel (`npm run operator:gateway`), which
+reads the same `QUICKSILVER_EMAIL_*` variables and was previously undocumented
+in `.env.example`.
+
 ## Routes
 
 | Route | Who |
@@ -84,7 +103,13 @@ one is refused with 400.
 
 ## Not covered yet
 
-- The live adapters have only been exercised against fakes: no real email or webhook has been sent by this code, so there is no operational evidence.
+- The live adapters have only been exercised against fakes, with one exception: a
+  live Resend email was sent on 2026-10-04 (`quicksilver@nueraresearch.com` to
+  `nuera.agtech@gmail.com`, message id `01a109b0-c4ac-7261-9d38-b35845fa3cf7`,
+  via `npm run resend:check -- --send`). The `webhook.dispatch` adapter still has
+  no real call recorded, and that one send did not travel the
+  propose/approve/authorize path — it proves the Resend credentials and the
+  delivery path, not the full approved-action sequence.
 - Workflow `tool` steps on the hosted runtime are still blocked
   (`TOOL_BLOCKED_REASON`); this is a separate path through proposals, not a
   change to workflows.

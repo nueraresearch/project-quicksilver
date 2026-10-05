@@ -247,3 +247,53 @@ test('long replies are split at natural breaks', () => {
   const parts = chunkText(`${'a'.repeat(30)}\n\n${'b'.repeat(30)}`, 40)
   assert.deepEqual(parts, ['a'.repeat(30), 'b'.repeat(30)])
 })
+
+test('outbound email posts to the mail API, and a refused send is never reported as sent', async () => {
+  const secret = 's'.repeat(40)
+  const calls: { url: string; headers: Record<string, string>; body: any }[] = []
+  const answering = (ok: boolean, status: number) => async (url: string, init: any) => {
+    calls.push({ url, headers: init.headers, body: JSON.parse(init.body) })
+    return { ok, status, json: async () => ({ id: 'msg-1' }), text: async () => '{"id":"msg-1"}' }
+  }
+
+  const good = new EmailAdapter({ from: 'op@example.com', apiKey: 're_key', inboundSecret: secret, fetch: answering(true, 200) as any })
+  await good.send('bo@example.com', 'here you go')
+  assert.equal(calls[0]!.url, 'https://api.resend.com/emails')
+  assert.equal(calls[0]!.headers.authorization, 'Bearer re_key')
+  assert.deepEqual(calls[0]!.body, { from: 'op@example.com', to: 'bo@example.com', subject: 'Quicksilver', text: 'here you go' })
+
+  // A reply the provider refused must raise. Returning quietly told the person
+  // their answer was delivered when it was not (a 401, 403 or 422 from the API).
+  for (const status of [401, 403, 422]) {
+    const bad = new EmailAdapter({ from: 'op@example.com', apiKey: 're_key', inboundSecret: secret, fetch: answering(false, status) as any })
+    await assert.rejects(() => bad.send('bo@example.com', 'nope'), new RegExp(`HTTP ${status}`))
+  }
+
+  // The provider's body can echo the request; the key must not reach the caller.
+  try {
+    const bad = new EmailAdapter({ from: 'op@example.com', apiKey: 're_key', inboundSecret: secret, fetch: answering(false, 401) as any })
+    await bad.send('bo@example.com', 'nope')
+    assert.fail('a refused send must throw')
+  } catch (error) {
+    assert.equal(String((error as Error).message).includes('re_key'), false, 'the API key must not appear in the error')
+  }
+})
+
+test('an email reply keeps the thread subject it was answering', async () => {
+  const secret = 's'.repeat(40)
+  const bodies: any[] = []
+  const mail = new EmailAdapter({ from: 'op@example.com', apiKey: 'k', inboundSecret: secret, fetch: (async (_url: string, init: any) => {
+    bodies.push(JSON.parse(init.body))
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '{}' }
+  }) as any })
+  const ts = Math.floor(Date.now() / 1000)
+  const raw = JSON.stringify({ from: 'Bo <Bo@Example.com>', subject: 'Report', text: 'please send it' })
+  assert.equal(mail.receive(raw, String(ts), signWebhook(secret, ts, raw)).status, 200)
+  await mail.send('bo@example.com', 'sent')
+  assert.equal(bodies[0]!.subject, 'Re: Report', 'the answer replies in the same thread')
+
+  const second = JSON.stringify({ from: 'Bo <Bo@Example.com>', subject: 'Re: Report', text: 'and the budget' })
+  assert.equal(mail.receive(second, String(ts), signWebhook(secret, ts, second)).status, 200)
+  await mail.send('bo@example.com', 'here')
+  assert.equal(bodies[1]!.subject, 'Re: Report', 'Re: is not doubled')
+})
