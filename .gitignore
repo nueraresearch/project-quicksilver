@@ -24,3 +24,6 @@ apps/studio/backups/
 quicksilver.host.json
 deploy/quicksilver.host.json
 data/
+.vercel
+.env*
+packages/agent/kb-capture.json

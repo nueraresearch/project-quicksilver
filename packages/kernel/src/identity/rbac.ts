@@ -212,7 +212,7 @@ export class AccessController {
       const definition = this.roles.get(roleKey(roleId, principal.tenantId)) ?? this.roles.get(roleKey(roleId))
       if (!definition) continue
       for (const permission of definition.permissions) {
-        if (principal.kind === 'agent' && AUTHORITY_PERMISSIONS.includes(permission)) continue
+        if (principal.kind !== 'human' && AUTHORITY_PERMISSIONS.includes(permission)) continue
         granted.set(permission, [...(granted.get(permission) ?? []), roleId])
       }
     }
@@ -231,7 +231,7 @@ export class AccessController {
       else {
         if (principal.disabled) reasons.push(`Principal "${principal.id}" is disabled.`)
         if (resource && principal.tenantId !== resource.tenantId) reasons.push('Principal and resource belong to different tenants.')
-        if (principal.kind === 'agent' && AUTHORITY_PERMISSIONS.includes(permission)) reasons.push('Agents cannot hold authority permissions; a human supervisor must act.')
+        if (principal.kind !== 'human' && AUTHORITY_PERMISSIONS.includes(permission)) reasons.push('Only a human supervisor may hold authority permissions; agents and service principals propose, a person decides.')
         if (SEPARATION_OF_DUTIES.includes(permission) && resource?.requestedBy && resource.requestedBy === principal.id) {
           reasons.push('Separation of duties: the requester cannot approve their own request.')
         }

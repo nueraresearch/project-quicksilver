@@ -26,10 +26,10 @@
 </div>
 
 > **Which repository is this?** This is **Nuera Quicksilver**, the platform from Nuera RDL and our entry for the
-> Sanity Challenge 2026 (Path One). The live app is https://project-quicksilver.vercel.app; it signs in through
+> Sanity Challenge 2026, in both paths. The live app is https://project-quicksilver.vercel.app; it signs in through
 > organization single sign-on, so the walkthrough video and the public, synthetic `demo` dataset are the way in
-> for judges. Start with the [judge guide](./docs/FOR-JUDGES.md). It grew out of an earlier challenge build, see
-> [Origins](#origins).
+> for judges. Start with the [judge guide](./docs/FOR-JUDGES.md). It grew out of an earlier, now withdrawn, challenge
+> entry; see [Origins](#origins).
 
 <p align="center">
   <img src="docs/images/architecture.png" alt="Agents propose, a kernel authorizes, a different human approves; every step is recorded in Sanity" width="900">
@@ -298,7 +298,7 @@ project-quicksilver/
 ├── docs/               Canonical NQC/platform docs plus historical challenge writeups (marked as such)
 ├── ARCHITECTURE.md     Design and data model
 ├── CONTRIBUTING.md     Contributor setup, boundaries, and verification
-├── SUBMISSION.md       Historical: the Sanity Challenge submission record
+├── SUBMISSION.md       Historical: the withdrawn Sanity Challenge submission record
 └── BUILD-LOG.md        Day-by-day build history across every environment
 ```
 
@@ -331,16 +331,16 @@ npm run host
 ```
 ## Origins
 
-Project Quicksilver was inspired by **Quicksilver**, our submission to the
-**[Sanity Challenge](https://dev.to/challenges)** (Sept 18 – Oct 4, 2026). That
-submission lives in its own repository,
+Project Quicksilver was built from **Quicksilver**, the Sanity Challenge entry
+**[Sanity Challenge](https://dev.to/challenges)** (Sept 18 – Oct 4, 2026) that has since
+been withdrawn. That submission lives in its own repository,
 **[nuerainc/quicksilver-sanity-challenge](https://github.com/nuerainc/quicksilver-sanity-challenge)**,
 with its live demo, and was entered in both paths:
 
 - **Path One**, *Ship an Agent That Queries Real Content*: Quicksilver: An Autonomous Company Operating System
 - **Path Two**, *Vibe-Code Something Strange*: Quicksilver: The Company That Operates Itself
 
-Nuera Quicksilver started from that codebase and is not a challenge entry. Copies
+Nuera Quicksilver is the entry in its place, in both challenge paths. Copies
 of the challenge documents ([submission record](./SUBMISSION.md),
 [Path One post](./docs/DEV-POST-PATH-ONE.md), [Path Two post](./docs/DEV-POST-PATH-TWO.md),
 [demo script](./docs/DEMO-SCRIPT.md)) are kept here for history.

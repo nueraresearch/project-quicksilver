@@ -71,7 +71,8 @@ test('gateway: strangers are not heard; a one-time code pairs them; group chats 
   assert.match(a.sent.at(-1)!.text, /not valid/, 'a code works once')
   a.say('u1', 'in a group', { direct: false })
   a.say('u1', 'what is on today?')
-  await gw.idle(); await tick()
+  await gw.idle()
+  await waitFor(() => turns.length === 1)
   assert.deepEqual(turns, ['what is on today?'])
 })
 
@@ -83,10 +84,12 @@ test('gateway: one conversation per person across channels, and duplicates are d
   await gw.idle()
   a.say('u1', 'first', { messageId: 'm1' })
   a.say('u1', 'first', { messageId: 'm1' })
-  await gw.idle(); await tick()
+  await gw.idle()
+  // The duplicate carries the same messageId, so exactly one turn should land.
+  await waitFor(() => seen.length === 1)
   b.say('+15550001', 'second')
-  await gw.idle(); await tick()
-  assert.equal(seen.length, 2)
+  await gw.idle()
+  await waitFor(() => seen.length === 2)
   assert.equal(seen[1]!.history.length, 1)
   assert.equal(seen[1]!.history[0]!.channel, 'tg', 'the SMS turn sees the Telegram turn')
   assert.match(historyAsContext(seen[1]!.history), /via tg\] They said: first/)
@@ -115,35 +118,52 @@ test('gateway: approvals happen in the chat, bound to the call; no answer means 
   a.say('u1', await pairing.createCode('entity-founder'))
   await gw.idle()
   a.say('u1', 'clean the build')
-  await gw.idle(); await tick()
+  await gw.idle()
+  await waitFor(() => a.sent.length > 0 && /approve [A-Z2-9]{4}/.test(a.sent.at(-1)!.text))
   const prompt = a.sent.at(-1)!.text
   const code = /approve ([A-Z2-9]{4})/.exec(prompt)![1]!
   assert.match(prompt, /rm -r dist/)
   a.say('u1', 'approve ZZZZ')
   await gw.idle()
+  await waitFor(() => /no approval waiting/.test(a.sent.at(-1)!.text))
   assert.match(a.sent.at(-1)!.text, /no approval waiting/)
   a.say('u1', `approve ${code}`)
-  await gw.idle(); await tick()
+  await gw.idle()
+  await waitFor(() => answers.length === 1)
   assert.deepEqual(answers[0], { approved: true, bound: true })
   a.say('u1', 'again')
-  await gw.idle(); await tick(700)
+  await gw.idle()
+  // The approver waits, then denies on timeout; poll for the second answer rather than sleeping a fixed span.
+  await waitFor(() => answers.length === 2, 5_000)
   assert.deepEqual(answers[1], { approved: false, bound: true }, 'timeout denies')
 })
 
 test('gateway: messages during a run wait their turn', async () => {
   let release!: () => void
+  let markHeld!: () => void
+  const slowHeld = new Promise<void>((resolve) => { markHeld = resolve })
   const order: string[] = []
   const { pairing, a, gw } = await setup(async (r) => {
     order.push(r.message.text)
-    if (r.message.text === 'slow') await new Promise<void>((res) => { release = res })
+    if (r.message.text === 'slow') {
+      // Assign `release` before signalling, so a waiter that resumes here can rely on it.
+      const held = new Promise<void>((res) => { release = res })
+      markHeld()
+      await held
+    }
     return { reply: 'ok' }
   })
   a.say('u1', await pairing.createCode('entity-founder'))
   await gw.idle()
   a.say('u1', 'slow')
-  await gw.idle(); await tick()
+  await gw.idle()
+  // Wait for the 'slow' turn to actually be in flight, rather than sleeping a fixed
+  // span and hoping the handler got scheduled first.
+  await slowHeld
   a.say('u1', 'next')
   await gw.idle()
+  // 'slow' is still held, so the last reply is the queued 'next' — that ordering is the point.
+  await waitFor(() => /this one is next/.test(a.sent.at(-1)!.text))
   assert.match(a.sent.at(-1)!.text, /this one is next/)
   release()
   await waitFor(() => order.length === 2)

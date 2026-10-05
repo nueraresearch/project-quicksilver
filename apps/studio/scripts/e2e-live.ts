@@ -24,7 +24,7 @@
  * QUICKSILVER_PROCESS_ENGINE=on plus QUICKSILVER_ALLOW_FAULT_INJECTION=on
  * (scenario B forces execution outcomes; every forced run is stamped
  * `faultInjection` on the decision and its metric).
- * Base URL: QUICKSILVER_E2E_BASE_URL, default https://quicksilver-seven.vercel.app
+ * Base URL: QUICKSILVER_E2E_BASE_URL, default https://project-quicksilver.vercel.app
  *
  * Credentials: the supervisor token is sent as `Authorization: Bearer` to the
  * /api/decisions/* routes. /api/plan requires a principal with decision:propose
@@ -72,7 +72,12 @@ for (const envPath of findEnvFiles(__dirname)) {
   }
 }
 
-const BASE = (process.env.QUICKSILVER_E2E_BASE_URL || 'https://quicksilver-seven.vercel.app').replace(/\/$/, '')
+// The default is this project's live deployment. quicksilver-seven.vercel.app is the
+// withdrawn challenge build (see apps/studio/lib/post-check.ts, which fails the build if
+// anything still links it), and it has only / and /decisions with no API routes — so
+// defaulting to it made `npm run e2e:live` pass against a deployment that can no longer
+// answer the calls it makes.
+const BASE = (process.env.QUICKSILVER_E2E_BASE_URL || 'https://project-quicksilver.vercel.app').replace(/\/$/, '')
 const CLEANUP = process.argv.includes('--cleanup')
 const LIFECYCLE_ID = 'workflow-decision-lifecycle'
 const OBJECTIVE = '[E2E] Schedule preventive maintenance and a diagnostic check on CNC Machine 3 in the next maintenance window.'

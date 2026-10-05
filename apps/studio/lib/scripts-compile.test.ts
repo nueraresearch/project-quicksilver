@@ -17,3 +17,27 @@ test('no studio script uses top-level await', () => {
   }
   assert.deepEqual(offenders, [], 'wrap the script body in an async main()')
 })
+
+/**
+ * quicksilver-seven.vercel.app is the withdrawn challenge build: it answers only / and
+ * /decisions, with no API routes. A script that *calls* a deployment must not default to it.
+ * This is how `npm run e2e:live` came to test a deployment that had already been retired — the
+ * run reached a host that could not serve the calls it made.
+ *
+ * Prose that documents the challenge build on purpose — docs/DEMO-SCRIPT.md, SUBMISSION.md — is
+ * correct and is not covered here. Only code is, and only uses that are not inside a comment, so a
+ * comment explaining the withdrawal can still name it.
+ */
+test('no studio script defaults to the withdrawn challenge deployment', () => {
+  const dir = new URL('../scripts/', import.meta.url)
+  const offenders: string[] = []
+  for (const name of readdirSync(dir).filter((f) => f.endsWith('.ts'))) {
+    const code = readFileSync(new URL(name, dir), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '') // block comments
+      .replace(/^\s*\/\/.*$/gm, '') // whole-line line comments
+      .replace(/\s\/\/[^\n]*$/gm, '') // trailing line comments
+      .replace(/^\s*\*.*$/gm, '') // JSDoc continuation lines
+    if (code.includes('quicksilver-seven.vercel.app')) offenders.push(name)
+  }
+  assert.deepEqual(offenders, [], 'a script must not call the withdrawn challenge deployment; use project-quicksilver.vercel.app')
+})
