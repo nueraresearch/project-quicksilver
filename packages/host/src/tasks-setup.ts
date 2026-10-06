@@ -5,8 +5,9 @@
  *   <data>/tasks/<taskId>.json   one file per task (append-only, mode 0600)
  *   <data>/tasks/clients.json    task clients: names and token digests (mode 0600)
  *
- * <data> is the directory of a file run store; QUICKSILVER_TASKS_DIR moves the
- * tasks directory. Without either, tasks are held in memory.
+ * <data> is the file run-store directory or QUICKSILVER_DATA_DIR (for example
+ * Render's mounted /data disk); QUICKSILVER_TASKS_DIR moves the tasks directory.
+ * Without either, tasks are held in memory.
  *
  * Department autonomy is read the way `npm run operate -- status` reads it:
  * the provider's grants in the intent ledger of QUICKSILVER_COMPANY_ID and the
@@ -14,7 +15,7 @@
  * department is `advise`, so nothing runs on its own.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { departmentAutonomy, type DepartmentAutonomy } from '@quicksilver/kernel/playbooks/operate'
 import { DEFAULT_HAND_OVER } from '@quicksilver/kernel/playbooks/shadow'
@@ -25,6 +26,7 @@ import { DEFAULT_TASK_BOUNDARIES, mergeBoundaries, type TaskBoundaryConfig } fro
 import { readLabBoundaries } from './lab-boundaries.ts'
 import { FileTaskClientPersistence, MemoryTaskClientPersistence, TaskClientRegistry } from './task-clients.ts'
 import { FileTaskStore, MemoryTaskStore, validateCatalog, type TaskCatalog, type TaskStore } from './tasks.ts'
+import { resolvePersistentDataDir } from './persistence.ts'
 
 /** Used only when no catalog file exists: every task goes to a human. */
 export const FALLBACK_TASK_CATALOG: TaskCatalog = {
@@ -57,7 +59,7 @@ export interface TaskSetup {
 export function taskSetup(config: HostConfig, options: { baseDir: string; env?: Record<string, string | undefined> }): TaskSetup {
   const env = options.env ?? process.env
   const notes: string[] = []
-  const dataDir = config.store.kind === 'file' ? dirname(config.store.path) : undefined
+  const dataDir = resolvePersistentDataDir(config, options.baseDir, env)
   const dir = env.QUICKSILVER_TASKS_DIR ? resolve(options.baseDir, env.QUICKSILVER_TASKS_DIR) : dataDir ? join(dataDir, 'tasks') : undefined
   if (!dir) notes.push('Tasks and task clients are kept in memory; use a file store or QUICKSILVER_TASKS_DIR to keep them.')
 

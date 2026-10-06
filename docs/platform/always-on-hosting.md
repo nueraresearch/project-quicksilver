@@ -42,6 +42,25 @@ Hosting is compute, so its cost is **capital** in the Genesis money ledger
 5. Payment webhooks go to `https://<service>.onrender.com/webhooks/<id>`.
    Their signing secrets live in the vault (`vault:<name>`).
 
+### Render persistence architecture
+
+Render uses two durable persistence layers in this deployment:
+
+- **PostgreSQL (`DATABASE_URL`)** is the authoritative multi-process store for
+  workflow runs and run events. It is migrated at host startup and is safe for
+  concurrent queue workers.
+- **The mounted persistent disk (`/data`)** is the file-backed store for
+  single-tenant auxiliary state: `intent/` (company intent graphs, ledger,
+  ranker, shadow and decision journals), `tasks/` (tasks and client token
+  digests), and `<tenant>/memory.json` (governed memory and its hash chain).
+
+The blueprint sets `QUICKSILVER_DATA_DIR=/data`. This explicit setting is
+important: a Postgres run store must not imply that a container-local filesystem
+is durable. Back up both the Postgres database and the `/data` disk separately.
+It also removes the startup warning **“Tasks and task clients are kept in
+memory”**; the host now reports the auxiliary stores as file-backed while the
+run store remains Postgres.
+
 ## VPS with Docker
 
 ```bash
