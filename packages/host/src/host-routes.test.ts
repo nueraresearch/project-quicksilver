@@ -34,6 +34,7 @@ import { MemoryShadowStore, type ShadowApiDeps } from './shadow-api.ts'
 import { MemoryTaskClientPersistence, TaskClientRegistry } from './task-clients.ts'
 import { MemoryTaskStore } from './tasks.ts'
 import { generateMasterKey } from './vault.ts'
+import { MemoryStore } from '@quicksilver/kernel'
 
 const TENANT = 'nuera'
 
@@ -107,6 +108,7 @@ async function start(options: StartOptions = {}) {
     media: {} as MediaService,
     actions: { store: new MemoryActionStore('t'), tools: dryRunTools(), policy: { enabledTools: [] } },
     decisions: {} as DecisionApiDeps,
+    memory: { store: new MemoryStore(), decisionExists: async () => true },
     tasks: {
       store: new MemoryTaskStore(),
       clients,

@@ -8,6 +8,7 @@ import {
   type RoutingRequest,
 } from '@quicksilver/kernel'
 import { assertAgentDispatch } from './governance.ts'
+import { isResolvedAgentProfile, MAX_AGENT_PROFILE_CONTEXT_CHARS, type ResolvedAgentProfile } from './profiles.ts'
 
 /** Shared input contract for model-backed Nuera Quicksilver Agents. */
 export interface NueraAgentRequest<Input = unknown> {
@@ -24,6 +25,8 @@ export interface NueraAgentRequest<Input = unknown> {
   memory?: MemoryStore
   /** Advisory recall for the worker prompt; it can inform proposals but never grants authority. */
   recallMemory?: { domain?: string; limit?: number }
+  /** Trusted process-resolved bindings for this worker identity. */
+  profile?: ResolvedAgentProfile
   signal?: AbortSignal
 }
 
@@ -72,15 +75,29 @@ export async function executeGovernedAgent<Input, Output>(
   }
   if (request.agentId !== agent.id) throw new Error('Request agentId does not match the worker identity.')
   if (!Number.isInteger(agent.version) || agent.version < 1) throw new Error('Agent implementation version must be a positive integer.')
+  if (request.profile) {
+    if (!isResolvedAgentProfile(request.profile)) throw new Error('Agent profile must be resolved by the trusted profile registry.')
+    if (request.profile.agentId !== agent.id) throw new Error('Agent profile identity does not match the worker identity.')
+    if (!Number.isInteger(request.profile.version) || request.profile.version < 1) throw new Error('Agent profile version must be a positive integer.')
+    if (request.profile.memoryDomain !== undefined && request.profile.memoryDomain !== `agent:${agent.id}`) {
+      throw new Error('Agent profile memory domain is not isolated to this worker.')
+    }
+    if (!Array.isArray(request.profile.context) || request.profile.context.some((block) => typeof block !== 'string')
+      || request.profile.context.reduce((size, block) => size + block.length, 0) > MAX_AGENT_PROFILE_CONTEXT_CHARS) {
+      throw new Error('Agent profile context is invalid or exceeds its size limit.')
+    }
+  }
   if (!Array.isArray(agent.tasks) || !agent.tasks.includes(request.taskType)) {
     throw new Error(`Agent "${agent.id}" does not implement task "${request.taskType}".`)
   }
 
   assertAgentDispatch(agent.id, request.taskType, request.impactLevel ?? 'low')
-  const advisoryMemories = request.memory
+  const memoryDomain = request.profile ? request.profile.memoryDomain : request.recallMemory?.domain
+  const memoryEnabled = !request.profile || request.profile.memoryDomain !== undefined
+  const advisoryMemories = request.memory && memoryEnabled
     ? [
-        ...request.memory.recall({ kind: 'failure-exemplar', domain: request.recallMemory?.domain, limit: request.recallMemory?.limit ?? 4 }),
-        ...request.memory.recall({ kind: 'domain-pattern', domain: request.recallMemory?.domain, limit: request.recallMemory?.limit ?? 4 }),
+        ...request.memory.recall({ kind: 'failure-exemplar', domain: memoryDomain, limit: request.recallMemory?.limit ?? 4 }),
+        ...request.memory.recall({ kind: 'domain-pattern', domain: memoryDomain, limit: request.recallMemory?.limit ?? 4 }),
       ]
         .sort((a, b) => b.confidence - a.confidence || (a.createdAt < b.createdAt ? 1 : -1))
         .slice(0, Math.max(0, Math.min(request.recallMemory?.limit ?? 8, 16)))
@@ -90,9 +107,12 @@ export async function executeGovernedAgent<Input, Output>(
         .map((memory) => `- [${memory.id}] ${memory.content} (domain=${memory.domain}; source=${memory.source}; confidence=${memory.confidence})`)
         .join('\n')}`
     : undefined
+  const baseContext = [...(request.context ?? []), ...(request.profile?.context ?? [])]
   const effectiveRequest = recalledContext
-    ? { ...request, context: [...(request.context ?? []), recalledContext] }
-    : request
+    ? { ...request, context: [...baseContext, recalledContext] }
+    : request.profile
+      ? { ...request, context: baseContext }
+      : request
   const result = await agent.execute(effectiveRequest)
   if (!result || typeof result.modelId !== 'string' || !result.modelId.trim() || !('output' in result)) {
     throw new Error(`Agent "${agent.id}" returned an invalid structured result.`)
@@ -118,7 +138,7 @@ export async function executeGovernedAgent<Input, Output>(
   // Lessons the evaluation proposed are kept only through the store, which re-runs the
   // governor. A store failure must not fail the agent's work, so it is reported, not thrown.
   const memoryWrites: GovernedNueraAgentResult['memoryWrites'] = []
-  if (request.memory) {
+  if (request.memory && memoryEnabled) {
     for (const update of evaluation.memoryUpdates) {
       const safe = update.governance.safeEntry
       if (!safe) {
@@ -126,7 +146,8 @@ export async function executeGovernedAgent<Input, Output>(
         continue
       }
       try {
-        const written = request.memory.write(safe, { proposedBy: { id: agent.id, kind: 'agent' } })
+        const scoped = request.profile?.memoryDomain ? { ...safe, domain: request.profile.memoryDomain } : safe
+        const written = request.memory.write(scoped, { proposedBy: { id: agent.id, kind: 'agent' } })
         memoryWrites.push({ id: safe.id, stored: written.stored || written.unchanged, reasons: written.decision.reasons })
       } catch (error) {
         memoryWrites.push({ id: safe.id, stored: false, reasons: [`The memory store failed: ${(error as Error).message.slice(0, 200)}`] })
