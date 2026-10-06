@@ -173,6 +173,18 @@ write, queue, connector, SDK, MCP, webhook, secret, and audit path.
 - Enforce WAES on all customer-facing outputs.
 - Connect every mode to the Supervisor Agent and kernel authorization path.
 
+### M8-I — product UI and operational UX
+
+- Add a reusable, provenance-aware telemetry KPI layer to `/monitoring` and `/monitoring/traces` using real run, evaluation, queue, cost, and runtime contracts.
+- Add an execution trace and artifact split view to workflow and agent detail surfaces, including run ID, workflow/agent digest, evaluation outcomes, safety decisions, requester, and simulation versus live-read-only status.
+- Upgrade `/entities` with filterable actor cards, status/heartbeat summaries, permission badges, and detail panels backed by the entity and RBAC APIs.
+- Add truthful chat starter prompts, artifact copy/export, and message telemetry to the existing governed chat entry point.
+- Add an evidence-backed benchmark matrix and workload metadata view; every result must carry model/runtime revision, hardware/configuration, timestamp, provenance, and reproducibility status.
+- Reuse the frontend reference's compact dark visual language only through accessible shared components; preserve route-level auth, deep links, responsive navigation, focus handling, reduced-motion support, and explicit unavailable states.
+- Do not import mock CRM, finance, support, robotics, sandbox, GPU, or benchmark data as production behavior. External actions remain connector-backed, approval-bound, audited, and fail-closed.
+
+**M8-I exit:** the visual surfaces are integrated with versioned authenticated contracts, have loading/error/empty/access-denied states, and have component/route tests. No UI action claims an external side effect before the backend confirms it.
+
 ## 4. M8 exit gate
 
 M8 is complete only when:
@@ -191,6 +203,12 @@ M8 is complete only when:
 - [ ] All 121 parity items are classified as covered, partial with named M9
       closure, operational-evidence, or explicitly out of scope with owner
       approval.
+- [ ] UI telemetry, execution traces, entity views, and benchmark surfaces use
+      authenticated real-data contracts with provenance and unavailable states.
+- [ ] UI actions are route-authenticated, tenant-bound, auditable, and cannot
+      represent simulated external side effects as completed operations.
+- [ ] Responsive, keyboard, focus, reduced-motion, and screen-reader behavior
+      passes the web usability checks for the adopted operator components.
 - [ ] A clean release-candidate deployment can be installed, upgraded,
       backed up, restored, rolled back, and audited.
 
@@ -242,6 +260,8 @@ Produce dated, redacted, reproducible evidence for:
 - marketplace publish/install/revoke/rollback;
 - domain-pack review and execution;
 - SDK/CLI compatibility;
+- monitoring KPI freshness, execution-trace provenance, benchmark evidence,
+  entity permission visibility, and chat artifact export;
 - audit export and integrity verification.
 
 ### M9-D — parity closure
@@ -364,17 +384,3 @@ Maintain:
 
 Every item must have an owner, issue/PR, implementation location, automated
 evidence, operational evidence requirement, target milestone, and rollback plan.
-
-## M8-I — Product UI and operational UX
-
-The UI adoption track brings the strongest ideas from the separate frontend prototype into the production console without importing its simulated data or side effects.
-
-- Add provenance-aware telemetry KPI cards to `/monitoring` and `/monitoring/traces` using authenticated run, evaluation, queue, cost, and runtime contracts.
-- Add execution trace and artifact split views to workflow and agent detail surfaces with run IDs, workflow/agent digests, evaluation outcomes, safety decisions, requester identity, and simulation versus live-read-only status.
-- Upgrade `/entities` with filterable actor cards, heartbeat/status summaries, permission badges, and API-backed detail panels.
-- Add truthful chat starter prompts, artifact copy/export, and message telemetry to the governed chat entry point.
-- Add an evidence-backed benchmark matrix with model/runtime revision, hardware/configuration, timestamp, provenance, and reproducibility status.
-- Preserve route authentication, deep links, responsive navigation, focus handling, reduced motion, accessible states, and explicit unavailable/error/empty states.
-- Do not import mock CRM, finance, support, robotics, sandbox, GPU, or benchmark data as production behavior. External actions remain connector-backed, approval-bound, audited, and fail-closed.
-
-**M8-I exit:** adopted surfaces use versioned authenticated contracts, have component/route tests, and never claim an external side effect before backend confirmation. M9 evidence must cover telemetry freshness, execution-trace provenance, benchmark evidence, entity permission visibility, and chat artifact export.
