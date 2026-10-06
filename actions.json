@@ -1,0 +1,11 @@
+{
+  "enabledTools": ["notification.send"],
+  "proposalTtlMs": 86400000,
+  "approvalTtlMs": 900000,
+  "maxInputBytes": 16384,
+  "email": {
+    "from": "onboarding@resend.dev",
+    "recipients": ["nuera.agtech@gmail.com","nuera719@hmail.com"],
+    "apiKeyEnv": "QUICKSILVER_EMAIL_API_KEY"
+  }
+}
