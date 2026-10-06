@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mapVerifiedOidcIdentity, parseOidcIdentityBindings, verifyOidcIdToken } from './oidc-identities.ts'
 import { digestAuthSecret, oidcSessionStore, type OidcSessionStore } from './oidc-session-store.ts'
 
@@ -154,8 +154,37 @@ function redirect(location: string, cookies: string[] = []): Response {
   return new Response(null, { status: 303, headers })
 }
 
-function appFailure(request: Request): Response {
-  return redirect(new URL('/sign-in?auth=failed', request.url).href, [clearCookie(OIDC_LOGIN_COOKIE)])
+/**
+ * Every reason sign-in can fail collapses to `/sign-in?auth=failed`, and the browser
+ * is not told which one it was: naming a stage to the visitor would tell an attacker
+ * whether an account exists or whether an allowlist is configured. So the stage and
+ * reason go to the server log, and a short opaque `ref` goes in the URL so a person
+ * can quote it and support can find the line without the reason leaking.
+ *
+ * This exists because the failures used to log only `error.name`, which for every
+ * thrown `Error` is the literal string "Error" — seven distinct causes all logged
+ * `[oidc] callback failed Error`.
+ */
+function signInFailure(request: Request, stage: string, reason: string, extra: Record<string, unknown> = {}): Response {
+  // randomUUID rather than randomToken: this runs on paths that never reached the
+  // token exchange, so it must not depend on the injected `random` the caller may
+  // not have supplied, and a correlation tag needs no length contract.
+  const ref = randomUUID().slice(0, 8)
+  console.error('[oidc] sign-in failed', JSON.stringify({ ref, stage, reason, ...extra }))
+  const target = new URL('/sign-in?auth=failed', request.url)
+  target.searchParams.set('ref', ref)
+  return redirect(target.href, [clearCookie(OIDC_LOGIN_COOKIE)])
+}
+
+/** The reason, never the cause object: an error message could echo a token or code. */
+function reasonOf(error: unknown): string {
+  return error instanceof Error && typeof error.message === 'string'
+    ? error.message.replace(/[A-Za-z0-9_-]{24,}/g, '<redacted>').slice(0, 200)
+    : 'UnknownError'
+}
+
+function appFailure(request: Request, stage = 'unspecified', reason = 'unspecified'): Response {
+  return signInFailure(request, stage, reason)
 }
 
 function cookieValue(request: Request, name: string): string | null {
@@ -205,7 +234,7 @@ export async function startOidcLogin(request: Request, env: OidcBrowserEnv, deps
     return redirect(authorization.href, [setCookie(OIDC_LOGIN_COOKIE, binding, LOGIN_TTL_MS / 1000)])
   } catch (error) {
     console.error('[oidc] login start failed', error instanceof Error ? error.name : 'UnknownError')
-    return appFailure(request)
+    return appFailure(request, 'login-start', reasonOf(error))
   }
 }
 
@@ -218,7 +247,10 @@ export async function completeOidcLogin(request: Request, env: OidcBrowserEnv, d
   const code = codeValues.length === 1 ? codeValues[0] : null
   const binding = cookieValue(request, OIDC_LOGIN_COOKIE)
   if (!config) logNotConfigured(env)
-  if (!config || !state || state.length > 256 || !binding) return appFailure(request)
+  if (!config) return signInFailure(request, 'callback-config', 'not-configured')
+  if (!state) return signInFailure(request, 'callback-state', 'missing-or-duplicate')
+  if (state.length > 256) return signInFailure(request, 'callback-state', 'too-long')
+  if (!binding) return signInFailure(request, 'callback-binding', 'login-cookie-missing')
 
   const now = deps.now?.() ?? new Date()
   let store: OidcSessionStore
@@ -227,10 +259,19 @@ export async function completeOidcLogin(request: Request, env: OidcBrowserEnv, d
     store = deps.store ?? await oidcSessionStore()
     transaction = await store.consumeLoginTransaction(digestAuthSecret(state), digestAuthSecret(binding), now)
   } catch (error) {
-    console.error('[oidc] callback transaction failed', error instanceof Error ? error.name : 'UnknownError')
-    return appFailure(request)
+    return signInFailure(request, 'callback-transaction', reasonOf(error))
   }
-  if (!transaction || url.searchParams.has('error') || !code || code.length > 4096) return appFailure(request)
+  if (!transaction) return signInFailure(request, 'callback-transaction', 'no-live-transaction')
+  if (url.searchParams.has('error')) {
+    // Google returned an error instead of a code. The code and its description are
+    // safe to name (access_denied, consent_required); the state is not echoed.
+    return signInFailure(request, 'callback-provider', 'provider-returned-error', {
+      error: String(url.searchParams.get('error')).slice(0, 64),
+      errorDescription: String(url.searchParams.get('error_description') ?? '').slice(0, 160),
+    })
+  }
+  if (!code) return signInFailure(request, 'callback-code', 'missing-or-duplicate')
+  if (code.length > 4096) return signInFailure(request, 'callback-code', 'too-long')
 
   const fetcher = deps.fetcher ?? fetch
   const random = deps.random ?? randomBytes
@@ -255,7 +296,9 @@ export async function completeOidcLogin(request: Request, env: OidcBrowserEnv, d
       headers: tokenHeaders,
       body: form,
     })
-    if (!response.ok) throw new Error('OIDC token exchange failed.')
+    // The status separates the two causes that matter and look identical otherwise:
+    // 401 is a client id/secret that no longer matches; 400 is a spent or replayed code.
+    if (!response.ok) throw new Error(`OIDC token exchange failed (HTTP ${response.status}).`)
     const tokenResult = await boundedJson(response)
     if (typeof tokenResult.id_token !== 'string') throw new Error('OIDC response did not contain an ID token.')
     const claims = await verifyOidcIdToken(tokenResult.id_token, {
@@ -286,8 +329,7 @@ export async function completeOidcLogin(request: Request, env: OidcBrowserEnv, d
       clearCookie(OIDC_LOGIN_COOKIE),
     ])
   } catch (error) {
-    console.error('[oidc] callback failed', error instanceof Error ? error.name : 'UnknownError')
-    return appFailure(request)
+    return signInFailure(request, 'callback-exchange', reasonOf(error))
   }
 }
 

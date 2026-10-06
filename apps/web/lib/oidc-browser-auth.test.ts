@@ -143,24 +143,41 @@ test('OIDC login uses HTTPS discovery, state, nonce and S256 PKCE then creates a
   assert.equal(await revokeBrowserSession(sessionRequest, env, deps), false, 'a second revocation is not reported as successful')
 })
 
+/**
+ * A refused sign-in must land on /sign-in with auth=failed, carry a correlation ref so
+ * a person can quote it, and never name the stage or reason — that would tell an
+ * attacker whether an account exists or whether an allowlist is configured.
+ */
+function assertRefused(response: Response): void {
+  const url = new URL(response.headers.get('location')!)
+  assert.equal(url.origin, 'https://app.example.test')
+  assert.equal(url.pathname, '/sign-in')
+  assert.equal(url.searchParams.get('auth'), 'failed')
+  assert.match(url.searchParams.get('ref') ?? '', /^[0-9a-f]{8}$/)
+  const surfaced = [...url.searchParams.keys()].join(' ')
+  for (const secret of ['reason', 'stage', 'error', 'code', 'state', 'sub', 'iss', 'issuer', 'subject', 'token']) {
+    assert.equal(surfaced.includes(secret), false, `sign-in failure must not surface "${secret}"`)
+  }
+}
+
 test('wrong browser binding cannot consume a valid OIDC state transaction', async () => {
   const { deps, env, store } = await setup()
   const started = await startFlow(deps, env)
   const state = started.authorization.searchParams.get('state')!
   const wrong = await completeOidcLogin(new Request(`https://app.example.test/api/auth/oidc/callback?code=x&state=${state}`, { headers: { cookie: `${OIDC_LOGIN_COOKIE}=${'x'.repeat(40)}` } }), env, deps)
-  assert.equal(wrong.headers.get('location'), 'https://app.example.test/sign-in?auth=failed')
+  assertRefused(wrong)
   assert.equal(store.sessions.size, 0)
 
   const valid = await completeOidcLogin(new Request(`https://app.example.test/api/auth/oidc/callback?code=x&state=${state}`, { headers: { cookie: `${OIDC_LOGIN_COOKIE}=${started.bindingValue}` } }), env, deps)
   assert.equal(valid.status, 303, 'the valid browser can complete after an invalid cross-browser attempt')
   const replay = await completeOidcLogin(new Request(`https://app.example.test/api/auth/oidc/callback?code=x&state=${state}`, { headers: { cookie: `${OIDC_LOGIN_COOKIE}=${started.bindingValue}` } }), env, deps)
-  assert.equal(replay.headers.get('location'), 'https://app.example.test/sign-in?auth=failed')
+  assertRefused(replay)
 })
 
 test('OIDC start refuses insecure configuration and never accepts an external return path', async () => {
   const { deps, env } = await setup()
   const refused = await startOidcLogin(new Request('https://app.example.test/api/auth/oidc/start'), { ...env, OIDC_ISSUER: 'http://idp.example.test' }, deps)
-  assert.equal(refused.headers.get('location'), 'https://app.example.test/sign-in?auth=failed')
+  assertRefused(refused)
 
   const started = await startOidcLogin(new Request('https://app.example.test/api/auth/oidc/start?returnTo=https%3A%2F%2Fevil.example'), env, deps)
   const state = new URL(started.headers.get('location')!).searchParams.get('state')!
@@ -187,11 +204,13 @@ test('a verified login that is not on the allowlist is refused and logged with i
     // Someone else is on the allowlist: this person is verified but unmapped.
     const other = JSON.stringify([{ issuer: ISSUER, subject: 'someone-else', tenantId: TENANT, principalId: 'person-other', roles: ['viewer'] }])
     const unmapped = await login(other)
-    assert.equal(unmapped.response.headers.get('location'), 'https://app.example.test/sign-in?auth=failed')
+    assertRefused(unmapped.response)
     assert.equal(unmapped.store.sessions.size, 0, 'no session is created')
     assert.ok(!(unmapped.response.headers.get('set-cookie') ?? '').includes(OIDC_SESSION_COOKIE), 'no session cookie is set')
     const lines = warn.mock.calls.map((c) => c.arguments.map(String).join(' '))
-    assert.equal(lines.length, 1)
+    // One warn: the allow-list refusal naming issuer and subject. The correlation line is
+    // console.error, not console.warn, so it is not in this list.
+    assert.equal(lines.length, 1, 'the allow-list refusal is logged once')
     assert.match(lines[0]!, /^\[oidc\] login refused: identity is not on the allowlist /)
     const logged = JSON.parse(lines[0]!.slice(lines[0]!.indexOf('{')))
     assert.deepEqual(logged, { reason: 'unmapped', issuer: ISSUER, subject: 'user-123' })
@@ -202,7 +221,7 @@ test('a verified login that is not on the allowlist is refused and logged with i
     // An allowlist that fails to parse is reported as misconfigured, not as an unknown person.
     warn.mock.resetCalls()
     const broken = await login('not json')
-    assert.equal(broken.response.headers.get('location'), 'https://app.example.test/sign-in?auth=failed')
+    assertRefused(broken.response)
     assert.equal(JSON.parse(warn.mock.calls[0]!.arguments.join(' ').slice(warn.mock.calls[0]!.arguments.join(' ').indexOf('{'))).reason, 'misconfigured')
 
     // A person who is on the allowlist logs nothing.
@@ -235,9 +254,9 @@ test('a login that cannot start names the settings that are wrong, never their v
     assert.deepEqual(oidcConfigProblems({ ...env, OIDC_CLIENT_SECRET: undefined }), ['OIDC_CLIENT_SECRET: missing or blank'])
 
     const refused = await startOidcLogin(new Request('https://app.example.test/api/auth/oidc/start'), bad, deps)
-    assert.equal(refused.headers.get('location'), 'https://app.example.test/sign-in?auth=failed')
+    assertRefused(refused)
     const lines = error.mock.calls.map((c) => c.arguments.map(String).join(' '))
-    assert.equal(lines.length, 1)
+    assert.equal(lines.length, 2, 'the settings line plus the correlation line')
     assert.match(lines[0]!, /^\[oidc\] sign-in is not configured /)
     assert.ok(lines[0]!.includes('OIDC_ISSUER: missing or blank'))
     assert.ok(!lines[0]!.includes(secret), 'the secret value is never logged')
