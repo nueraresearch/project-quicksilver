@@ -25,6 +25,7 @@ import type { EvaluatorToolCall } from '@quicksilver/kernel'
 import type { NueraQuicksilverAgent } from './contracts.ts'
 import { withMeasuredProviderFallback } from './provider-fallback.ts'
 import { normalizeModelTokenUsage } from './usage.ts'
+import { formatAgentContext } from './profile-context.ts'
 import {
   closeAll,
   createSanityContextClients,
@@ -73,7 +74,7 @@ export interface QueryAgentOutput extends QueryResult {
   usage: import('./contracts.ts').ModelTokenUsage
 }
 
-export async function queryCompany(question: string, options: { signal?: AbortSignal } = {}): Promise<QueryAgentOutput> {
+export async function queryCompany(question: string, options: { signal?: AbortSignal; agentContext?: readonly string[] } = {}): Promise<QueryAgentOutput> {
   assertAgentDispatch('nuera-quicksilver:query', 'reasoning', 'moderate')
   if (!isLlmConfigured()) {
     throw new Error(
@@ -98,7 +99,7 @@ export async function queryCompany(question: string, options: { signal?: AbortSi
       return generateText({
       model,
       system: QUERY_SYSTEM_PROMPT,
-      prompt: `Question: ${question}`,
+      prompt: `Question: ${question}${formatAgentContext(options.agentContext)}`,
       abortSignal: options.signal,
       tools: tools as unknown as Parameters<typeof generateText>[0]['tools'],
       experimental_output: Output.object({
@@ -125,7 +126,7 @@ export const queryQuicksilverAgent: NueraQuicksilverAgent<string, QueryAgentOutp
   version: 1,
   tasks: ['reasoning'],
   async execute(request) {
-    const result = await queryCompany(request.input, { signal: request.signal })
+    const result = await queryCompany(request.input, { signal: request.signal, agentContext: request.context })
     return {
       output: result,
       modelId: result.modelId,

@@ -6,6 +6,7 @@ import { parseBusinessAgentRequest, selectBusinessAgent } from '@/lib/business-a
 import { presentBusinessAgentResult } from '@/lib/business-agent-response'
 import { guardWebRoute } from '@/lib/route-guard'
 import { safeErrorName } from '@/lib/safe-log'
+import { requireWebAgentProfile, webAgentMemoryFor } from '@/lib/agent-profiles'
 import { persistTraceSpans } from '@/lib/telemetry-store'
 import type { TraceSpanInput } from '@/lib/telemetry'
 
@@ -30,12 +31,14 @@ export async function POST(request: Request) {
   const requestSpanId = randomUUID()
   const requestStartedAt = Date.now()
   try {
+    const profile = await requireWebAgentProfile(definition.id)
     const result = await executeGovernedAgent(agent, {
       agentId: definition.id,
       taskType: definition.task,
       input,
-      context: input.context,
       impactLevel: 'moderate',
+      profile,
+      memory: webAgentMemoryFor(definition.id),
       signal: request.signal,
     })
     const completedAt = Date.now()

@@ -58,6 +58,7 @@ import { z } from 'zod'
 import { decisionActionFingerprint, policySnapshotVersion } from '@/lib/nqc-approval'
 import { guardWebRoute } from '@/lib/route-guard'
 import { PLAN_NDJSON, countDetail, encodePlanLine, type PlanStepName, type PlanStepStatus } from '@/lib/plan-stream'
+import { requireWebAgentProfile, webAgentMemoryFor } from '@/lib/agent-profiles'
 import {
   executeGovernedAgent,
   isLlmConfigured,
@@ -359,11 +360,14 @@ async function executePlan(
     // The planner runs on the standard agent contract, so its output is evaluated
     // by the Quicksilver Engine before any candidate action reaches the kernel.
     step('planner', 'started')
+    const plannerProfile = await requireWebAgentProfile(plannerQuicksilverAgent.id)
     const plannerRun = await executeGovernedAgent(plannerQuicksilverAgent, {
       agentId: plannerQuicksilverAgent.id,
       taskType: 'planning',
       input: { objective },
       impactLevel: 'moderate',
+      profile: plannerProfile,
+      memory: webAgentMemoryFor(plannerQuicksilverAgent.id),
       signal,
     })
     const plannerCompletedAt = Date.now()
@@ -371,6 +375,7 @@ async function executePlan(
     step('planner', 'done', `${total} ${total === 1 ? 'action' : 'actions'}`)
     const plannerSpanId = randomUUID()
     const plan = plannerRun.output
+    const reviewerProfile = total > 0 ? await requireWebAgentProfile(reviewerQuicksilverAgent.id) : undefined
     const now = new Date().toISOString()
     const runId = Date.now().toString(36)
 
@@ -474,6 +479,8 @@ async function executePlan(
             policies: refs.policies.map((p) => ({ id: p.id, name: p.name, scope: p.scope, priority: p.priority })),
             evidence: refs.evidence,
             },
+            profile: reviewerProfile,
+            memory: webAgentMemoryFor(reviewerQuicksilverAgent.id),
           })
           review = reviewerRun.output
           reviewed += 1
