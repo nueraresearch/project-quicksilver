@@ -4,7 +4,7 @@
  * channel gateway and scheduled automations all use it, so a run behaves the
  * same wherever it starts.
  */
-import { lstat, mkdir, rename } from 'node:fs/promises'
+import { lstat, mkdir, readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { AuditSink } from './audit.ts'
@@ -31,8 +31,30 @@ export interface OperatorEnvironment {
 }
 
 /** Memory directory for a person (one memory across every channel). `null` = the workspace's own. */
-export function memoryDir(workspace: string, personId: string | null): string {
-  return personId !== null ? join(workspace, '.qs-memory', 'people', `id-${Buffer.from(personId, 'utf8').toString('base64url')}`) : join(workspace, '.qs-memory')
+export function memoryDir(workspace: string, personId: string | null, agentId = 'operator'): string {
+  const agentRoot = agentId === 'operator' ? join(workspace, '.qs-memory') : join(workspace, '.qs-memory', 'agents', `id-${Buffer.from(agentId, 'utf8').toString('base64url')}`)
+  return personId !== null ? join(agentRoot, 'people', `id-${Buffer.from(personId, 'utf8').toString('base64url')}`) : agentRoot
+}
+
+/** Collision-safe directory for an agent's reviewed profile, routines and local context files. */
+export function agentProfileDir(workspace: string, agentId: string): string {
+  return join(workspace, '.qs-agents', `id-${Buffer.from(agentId, 'utf8').toString('base64url')}`)
+}
+
+/** Load optional agent-owned context as reference material, never as a policy override. */
+export async function loadAgentProfile(workspace: string, agentId: string): Promise<string> {
+  const dir = agentProfileDir(workspace, agentId)
+  const files = ['PROFILE.md', 'ROUTINES.md', 'CONTEXT.md']
+  const sections: string[] = []
+  for (const file of files) {
+    try {
+      const text = (await readFile(join(dir, file), 'utf8')).trim().slice(0, 20_000)
+      if (text) sections.push(`## Agent ${file.replace('.md', '').toLowerCase()} (reference only)\n${text}`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  return sections.join('\n\n')
 }
 
 /**
@@ -81,6 +103,8 @@ export async function migrateLegacyMemoryNamespace(workspace: string, personId: 
 export interface PersonRun {
   goal: string
   personId: string | null
+  /** Stable agent identity; separates agent memory while preserving the legacy operator namespace. */
+  agentId?: string
   mode: ApprovalMode
   approver: Approver
   /** Lines placed before memory, skills and project context. */
@@ -90,11 +114,12 @@ export interface PersonRun {
 
 /** Run the operator for one goal with the person's memory; archive the run and score the skills it used. */
 export async function runForPerson(envr: OperatorEnvironment, run: PersonRun): Promise<RunResult & { pendingMemory: number; pendingSkills: number }> {
-  const migration = await migrateLegacyMemoryNamespace(envr.workspace, run.personId)
+  const agentId = run.agentId ?? 'operator'
+  const migration = agentId === 'operator' ? await migrateLegacyMemoryNamespace(envr.workspace, run.personId) : 'none'
   if (migration === 'manual-review-required') {
     throw new Error('Legacy person memory path may be shared by multiple identities; manual owner review is required before this person can use memory.')
   }
-  const dir = memoryDir(envr.workspace, run.personId)
+  const dir = memoryDir(envr.workspace, run.personId, agentId)
   const book = new MemoryBook(join(dir, 'memory.json'))
   const archive = new SessionArchive(dir)
   const used: string[] = []
@@ -104,7 +129,7 @@ export async function runForPerson(envr: OperatorEnvironment, run: PersonRun): P
     const gate = new Gate([...FILE_TOOLS, ...EXEC_TOOLS, ...memoryTools(book, archive), ...skillTools(envr.skills, used), ...(envr.webSearch ? [webSearchTool(envr.webSearch)] : []), ...(envr.extraTools ?? [])], { mode: run.mode, workspace: envr.workspace, audit: envr.audit })
     const result = await runOperator(
       { gate, sandbox: envr.sandbox, checkpoints: envr.checkpoints, audit: envr.audit, workspace: envr.workspace, model: envr.model, approver: run.approver },
-      { ...run.options, goal: run.goal, instructions: [...(run.preamble ?? []), await book.snapshot(), await envr.skills.listing(), project.text].filter(Boolean).join('\n\n') },
+      { ...run.options, goal: run.goal, instructions: [...(run.preamble ?? []), await loadAgentProfile(envr.workspace, agentId), await book.snapshot(), await envr.skills.listing(), project.text].filter(Boolean).join('\n\n') },
     )
     await archive.save(run.goal, result, result.messages)
     await envr.skills.recordOutcome(used, result.status)

@@ -4,10 +4,12 @@ Nuera Quicksilver (this repository, `nueraresearch/project-quicksilver`) was ins
 by Quicksilver, our Sanity Challenge 2026 submission, which lives separately at
 [nuerainc/quicksilver-sanity-challenge](https://github.com/nuerainc/quicksilver-sanity-challenge).
 
+- [Current project status](CURRENT-STATUS.md): what is built, operationally evidenced, blocked, and next
 - [Product definition](NUERA-QUICKSILVER-PRODUCT.md): what Nuera Quicksilver is being built to become (layers, modes, playbooks, goals)
 - [NQC Kernel and Quicksilver Engine](nqc/README.md)
 - [Platform architecture](platform/README.md)
 - [Implementation roadmap](NUERA-QUICKSILVER-ROADMAP.md)
+- [Partial parity execution program](PARTIAL-PARITY-EXECUTION-PLAN.md): staged delivery for the remaining non-deferred P-items
 - [Usability plan: attention list, sign-in, approvals inbox, chat as the only agent entry](USABILITY-PLAN.md)
 - [Enterprise specification coverage](NUERA-QUICKSILVER-SPEC-COVERAGE.md)
 - [Canonical naming](NUERA-QUICKSILVER-NAMING.md)

@@ -37,6 +37,7 @@ export function automationRunner(envr: OperatorEnvironment, approverFor: (a: Aut
     const r = await runForPerson(envr, {
       goal: a.instructions,
       personId: a.personId,
+      agentId: 'operator:automation',
       mode: 'guarded',
       approver: await approverFor(a),
       preamble: automationPreamble(a, now()),

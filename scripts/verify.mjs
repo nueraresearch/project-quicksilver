@@ -37,6 +37,11 @@ for (const [script, label] of commands) {
   for (const match of output.matchAll(/(?:ℹ|#) tests (\d+)/g)) totalTests += Number(match[1])
   for (const match of output.matchAll(/(?:ℹ|#) pass (\d+)/g)) totalPassed += Number(match[1])
 
+  if (result.status === null) {
+    console.error(`\nVERIFY FAILED: ${script} terminated by ${result.signal ?? 'an unknown signal'} before returning a test status`)
+    process.exit(1)
+  }
+
   if (result.status !== 0) {
     failedStage = script
     break

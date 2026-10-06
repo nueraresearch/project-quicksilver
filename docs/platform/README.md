@@ -20,6 +20,7 @@ that every operating mode depends on.
 - [Identity and RBAC](identity-rbac.md)
 - [Triggers: cron schedules and signed webhooks](triggers.md)
 - [Hosted runtime: host process, management API, secrets vault, logs and metrics](hosted-runtime.md)
+- [Render operational evidence (2026-10-05/06)](render-operational-evidence-2026-10-05.md)
 - [Tool registry](tool-registry.md)
 - [Supervisor approval gate](supervisor-approval.md)
 - [TypeScript SDK foundation](sdk-typescript.md)
