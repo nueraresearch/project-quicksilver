@@ -41,28 +41,40 @@
 
 ## Current status
 
+> **Status update — 2026-10-06:** Browser OIDC/session foundations and a
+> single-tenant Render deployment have been added since the long-form build
+> summary above. See the maintained [current status](./docs/CURRENT-STATUS.md)
+> for the done/not-done distinction and the outstanding CI failure.
+
 The repository is a **tested platform foundation**, not a hosted production
-service. The credential-free verification path currently covers the kernel,
-agents, host, Aura, web/security helpers, and TypeScript packages. The web app
-builds locally; the Sanity Studio and live agent paths additionally require the
-dedicated Sanity project, Context MCP configuration, and model credentials.
+service. Its single-tenant Render host is live for health, readiness, and
+persistence-wiring validation, but no effectful provider workflow has been
+operated and it is not a multi-tenant production service. The credential-free
+verification path covers the kernel, agents, host, Aura, web/security helpers,
+and TypeScript packages; the latest CI signal is called out below. The web app
+and Studio additionally need their dedicated Sanity project configuration, while
+live-agent paths also need model credentials.
 
 | Area | Status | Evidence or next dependency |
 |---|---|---|
 | NQC Kernel, policy, capability, process and workflow governance | Built and tested | `npm run kernel:test` |
 | Durable run queue, worker, triggers and stores | Built and tested | Kernel runtime and store-contract suites |
-| Single-tenant host, vault, management API, logs and metrics | Built and tested | `npm run host:test` |
+| Single-tenant host, vault, management API, logs and metrics | Built; Render deployment wiring validated | `npm run host:test` and [Render evidence](./docs/platform/render-operational-evidence-2026-10-05.md) |
 | Aura intent and provenance layer | Built foundation and tested | `npm run aura:test` |
 | Web console and API routes | Builds and security-tested | `npm run build` and `npm run seed:test` |
 | Sanity Studio, schema deployment and seed data | Requires dedicated project configuration | `SANITY_STUDIO_PROJECT_ID` and Sanity auth |
 | Live Context MCP and model-backed planning | Requires external credentials | `npm run verify:mcp` and `npm run verify:llm` |
-| Public hosting, SSO/OIDC and multi-tenant hosting | Not operationally complete | See parity items P-014, P-107 and P-108 |
+| Public hosting, browser OIDC and multi-tenant hosting | Render and browser-OIDC foundations exist; operationally incomplete | [Current status](./docs/CURRENT-STATUS.md), parity items P-014, P-107 and P-108 |
 | Effectful external actions (email, signed webhook) | Built behind human approval; dry run by default; never run against a live provider | [Approved actions](./docs/platform/approved-actions.md), parity item P-095 |
 
 ### What has not been proven
 
 Stated plainly, because it is the part a cold reader most needs:
 
+- **CI is not currently green.** PR #88's Ubuntu and Windows `verify` jobs
+  failed in the shared regression/type-check step. The Ubuntu log identifies
+  `host:test`; GitHub exposes no precise Windows assertion in its annotation.
+  Treat the branch as awaiting a fresh diagnostic run, not release-verified.
 - **No real email or webhook has been sent by this code.** The approved-action
   adapters (Resend email, signed webhook) have only been exercised against
   fakes, so there is no operational evidence yet. They ship as dry runs.
@@ -242,6 +254,10 @@ maintained number. GitHub Actions runs this credential-free regression and
 type-check path for pull requests and pushes to `main`. Live Sanity and
 model-provider checks remain separate because they require external credentials.
 
+> **Current CI note (2026-10-06):** PR #88 merged with failed Ubuntu and
+> Windows matrix jobs in this path. The next priority is to reproduce and fix
+> the shared `host:test` failure, then restore a green cross-platform baseline.
+
 | Check | Command | Credentials |
 |---|---|---|
 | Kernel, agent, host, Aura, seed/web suites and type checks | `npm run verify` | No |
@@ -261,7 +277,7 @@ The challenge-era stress test found real bugs: a risk formula that scored nearly
 
 | Layer | Choice |
 |---|---|
-| App | Next.js 15 (App Router), TypeScript, Tailwind; not currently deployed |
+| App | Next.js 15 (App Router), TypeScript, Tailwind; the public app is deployed to Vercel with controlled access |
 | Content & state | Dedicated Nuera Quicksilver Sanity project (`f87t11g1`), isolated from the public challenge dataset; Studio schema deployment remains pending |
 | Agent read path | Sanity **Context MCP**, in both GROQ mode (live dataset) and Knowledge Base mode (cited, with contradiction detection) |
 | Agent harness | AI SDK 6 + `@ai-sdk/mcp`, role-based models (planner + independent reviewer; Azure OpenAI in production) |
@@ -275,7 +291,7 @@ The challenge-era stress test found real bugs: a risk formula that scored nearly
 | Python CLI | Internal Python `qs` CLI for validation, safe preview, and gated read-only runs; not published |
 | Run runtime | `@quicksilver/kernel/runtime`: durable run records, in-memory / journaled-file / PostgreSQL stores, governed priority queue with dead letters, and a worker ([details](./docs/platform/durable-runs.md)) |
 | Triggers | `@quicksilver/kernel/triggers`: UTC cron scheduler and HMAC-signed webhooks, enqueued under the `trigger` role ([details](./docs/platform/triggers.md)) |
-| Hosted runtime | `@quicksilver/host`: single-tenant process with management API, secrets vault, JSON logs and Prometheus metrics; Docker and Compose in `deploy/` ([details](./docs/platform/hosted-runtime.md)) |
+| Hosted runtime | `@quicksilver/host`: single-tenant process with management API, secrets vault, JSON logs and Prometheus metrics; Docker/Compose plus a Render deployment for health, readiness, and persistence validation ([details](./docs/platform/hosted-runtime.md)) |
 
 ## Repository layout
 

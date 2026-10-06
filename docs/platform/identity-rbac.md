@@ -96,10 +96,19 @@ Without an `access` option the queue still accepts named actors, which keeps
 local development and the existing tests simple. Configure `access` for any
 shared deployment.
 
-## Not yet built
+## Browser OIDC sign-in foundation
 
-- SSO/OIDC sign-in and browser sessions, behind the same `IdentityProvider`
-  port.
+Browser sign-in is implemented separately from the bearer-token provider: it
+uses authorization code with PKCE, state and nonce validation, signed ID-token
+verification, an explicit issuer/subject allowlist, server-side session storage
+of only the session-token digest, role revalidation, and revocation. The first
+live Google sign-in was recorded on 2026-10-03. See [Single sign-on](sso-setup.md)
+for the deployment checklist and current evidence boundary.
+
+## Still open
+
+- A console control that starts sign-in and evidence that a session survives a
+  later deployment.
 - Persistent principal and role administration, including a UI and an
   audited `tenant:admin` API.
 - Durable storage for the access-audit sink. Today denials go to the web

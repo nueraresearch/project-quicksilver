@@ -3,6 +3,9 @@ node_modules
 .next
 dist
 build
+.work/
+.manus/
+outputs/
 .env
 .env.local
 .env.*.local
