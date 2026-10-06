@@ -112,7 +112,15 @@ export class BusinessTriggerRegistry {
       if (definition.enabled === false || !('eventType' in definition) || definition.tenantId !== event.tenantId || definition.eventType !== event.eventType) continue
       deliveries.push({ triggerId: definition.id, result: await this.queue.enqueue({
         graph: definition.graph,
-        input: { event: structuredClone(event.payload), eventType: event.eventType, eventId: event.eventId, occurredAt: event.at ?? Date.now() },
+        input: {
+          event: structuredClone(event.payload),
+          eventType: event.eventType,
+          eventId: event.eventId,
+          // A retry of the same event must produce byte-identical input, or the queue
+          // refuses it as a reused idempotency key with different input. Wall-clock
+          // belongs in the record, not in the identity of the request.
+          ...(event.at !== undefined ? { occurredAt: event.at } : {}),
+        },
         tenantId: event.tenantId,
         trigger: { kind: 'event', source: definition.id },
         idempotencyKey: `business:event:${definition.id}:${event.eventId}`,
@@ -129,7 +137,15 @@ export class BusinessTriggerRegistry {
       if (definition.enabled === false || !('metric' in definition) || definition.tenantId !== sample.tenantId || definition.metric !== sample.metric || !metricMatches(definition.operator, sample.value, definition.threshold)) continue
       deliveries.push({ triggerId: definition.id, result: await this.queue.enqueue({
         graph: definition.graph,
-        input: { metric: sample.metric, value: sample.value, sampleId: sample.sampleId, measuredAt: sample.at ?? Date.now(), operator: definition.operator, threshold: definition.threshold },
+        input: {
+          metric: sample.metric,
+          value: sample.value,
+          sampleId: sample.sampleId,
+          operator: definition.operator,
+          threshold: definition.threshold,
+          // Same rule as an event: stable input, or the retry is refused as a reused key.
+          ...(sample.at !== undefined ? { measuredAt: sample.at } : {}),
+        },
         tenantId: sample.tenantId,
         trigger: { kind: 'event', source: definition.id },
         idempotencyKey: `business:metric:${definition.id}:${sample.sampleId}`,
