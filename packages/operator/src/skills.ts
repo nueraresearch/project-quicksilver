@@ -35,8 +35,21 @@ export interface Skill {
   body: string
   dir: string
   source: 'project' | 'library'
+  formatVersion: number
   /** Front matter keys beyond name and description, kept as text. */
   meta: Record<string, string>
+}
+
+export const SKILL_FORMAT_VERSION = 1 as const
+
+export interface SkillBundleFile { path: string; content: string }
+export interface SkillBundle {
+  schemaVersion: typeof SKILL_FORMAT_VERSION
+  name: string
+  description: string
+  body: string
+  meta: Record<string, string>
+  files: SkillBundleFile[]
 }
 
 export interface SkillScore { uses: number; verified: number; failed: number; lastUsed?: string }
@@ -63,7 +76,26 @@ export function parseSkillMd(text: string): { meta: Record<string, string>; body
 }
 
 export function renderSkillMd(s: { name: string; description: string; body: string }): string {
-  return `---\nname: ${s.name}\ndescription: ${s.description.replace(/\n+/g, ' ')}\n---\n\n${s.body.trim()}\n`
+  return `---\nskill-version: ${SKILL_FORMAT_VERSION}\nname: ${s.name}\ndescription: ${s.description.replace(/\n+/g, ' ')}\n---\n\n${s.body.trim()}\n`
+}
+
+function compatibleFormat(meta: Record<string, string>): boolean {
+  const value = meta['skill-version']
+  return value === undefined || /^(?:0|1)$/.test(value.trim())
+}
+
+function safeBundleFiles(files: unknown): files is SkillBundleFile[] {
+  if (!Array.isArray(files)) return false
+  const seen = new Set<string>()
+  return files.every((file) => {
+    if (!file || typeof file !== 'object') return false
+    const candidate = file as Partial<SkillBundleFile>
+    if (typeof candidate.path !== 'string' || typeof candidate.content !== 'string') return false
+    const parts = candidate.path.split('/')
+    if (!candidate.path || candidate.path === 'SKILL.md' || candidate.path.startsWith('/') || candidate.path.includes('\\') || candidate.path.includes(':') || parts.some((part) => !part || part === '.' || part === '..') || seen.has(candidate.path) || candidate.content.length > 40_000) return false
+    seen.add(candidate.path)
+    return true
+  })
 }
 
 /** Validate and scan one skill. Returns problems (refusals) and flags (warnings). */
@@ -103,9 +135,9 @@ export class SkillLibrary {
       const parsed = parseSkillMd(await readFile(file, 'utf8'))
       if ('error' in parsed) continue
       const s = { name: parsed.meta.name ?? name, description: parsed.meta.description ?? '', body: parsed.body }
-      if (s.name !== name || checkSkill(s).problems.length) continue
+      if (s.name !== name || !compatibleFormat(parsed.meta) || checkSkill(s).problems.length) continue
       const { name: _n, description: _d, ...meta } = parsed.meta
-      out.push({ ...s, dir: join(dir, name), source, meta })
+      out.push({ ...s, dir: join(dir, name), source, formatVersion: Number(meta['skill-version'] ?? SKILL_FORMAT_VERSION), meta })
     }
     return out
   }
@@ -183,12 +215,59 @@ export class SkillLibrary {
     return true
   }
 
+  /** Revoke an active library skill without deleting its reviewed history. */
+  async revoke(name: string): Promise<boolean> {
+    if (!NAME.test(name)) return false
+    const from = join(this.root, 'active', name)
+    if (!existsSync(join(from, 'SKILL.md'))) return false
+    const to = join(this.root, 'revoked', `${name}-${Date.now().toString(36)}`)
+    await mkdir(join(this.root, 'revoked'), { recursive: true, mode: 0o700 })
+    await rename(from, to)
+    return true
+  }
+
+  /** Export a reviewed skill as a self-contained, schema-versioned bundle. */
+  async exportBundle(name: string): Promise<SkillBundle | null> {
+    const skill = await this.get(name)
+    if (!skill || skill.source !== 'library') return null
+    const files: SkillBundleFile[] = []
+    for (const file of (await readdir(skill.dir, { recursive: true })).map(String).sort()) {
+      if (file === 'SKILL.md' || file.includes('\\') || file.startsWith('..')) continue
+      const content = await readFile(join(skill.dir, file), 'utf8')
+      if (content.length > 40_000) throw new Error(`Skill file "${file}" is too large to export.`)
+      files.push({ path: file, content })
+    }
+    const { name: _name, description: _description, body: _body, dir: _dir, source: _source, formatVersion: _version, meta } = skill
+    return { schemaVersion: SKILL_FORMAT_VERSION, name: skill.name, description: skill.description, body: skill.body, meta, files }
+  }
+
+  /** Import a portable bundle into pending review; active skills are never overwritten. */
+  async importBundle(bundle: SkillBundle): Promise<{ ok: true; name: string; flags: string[] } | { ok: false; problems: string[] }> {
+    if (!bundle || bundle.schemaVersion !== SKILL_FORMAT_VERSION || !compatibleFormat(bundle.meta ?? {})) return { ok: false, problems: ['The skill bundle uses an unsupported format version.'] }
+    if (!safeBundleFiles(bundle.files)) return { ok: false, problems: ['The skill bundle contains an unsafe, duplicate, missing, or oversized file.'] }
+    const input = { name: bundle.name, description: bundle.description, body: bundle.body }
+    const checked = checkSkill(input)
+    if (checked.problems.length) return { ok: false, problems: checked.problems }
+    const to = join(this.root, 'pending', input.name)
+    const destinations = bundle.files.map((file) => ({ file, target: resolve(to, file.path) }))
+    if (destinations.some(({ target }) => target === to || relative(to, target).startsWith('..'))) return { ok: false, problems: ['The skill bundle contains an unsafe file path.'] }
+    await rm(to, { recursive: true, force: true })
+    await mkdir(to, { recursive: true, mode: 0o700 })
+    await writeFile(join(to, 'SKILL.md'), renderSkillMd(input), { mode: 0o600 })
+    for (const { file, target } of destinations) {
+      await mkdir(join(target, '..'), { recursive: true, mode: 0o700 })
+      await writeFile(target, file.content, { mode: 0o600 })
+    }
+    return { ok: true, name: input.name, flags: checked.flags }
+  }
+
   /** Install a skill folder a person chose (for example one downloaded from a hub): scanned, then pending. */
   async importFolder(dir: string): Promise<{ ok: true; name: string; flags: string[] } | { ok: false; problems: string[] }> {
     const file = join(dir, 'SKILL.md')
     if (!existsSync(file)) return { ok: false, problems: ['There is no SKILL.md in that folder.'] }
     const parsed = parseSkillMd(await readFile(file, 'utf8'))
     if ('error' in parsed) return { ok: false, problems: [parsed.error] }
+    if (!compatibleFormat(parsed.meta)) return { ok: false, problems: ['The skill uses an unsupported format version.'] }
     const s = { name: parsed.meta.name ?? '', description: parsed.meta.description ?? '', body: parsed.body }
     const c = checkSkill(s)
     if (c.problems.length) return { ok: false, problems: c.problems }

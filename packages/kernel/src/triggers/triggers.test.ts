@@ -18,6 +18,7 @@ import {
   signStripeWebhook,
   signWebhook,
   validateCron,
+  BusinessTriggerRegistry,
 } from './index.ts'
 
 const graph: WorkflowGraph = {
@@ -461,4 +462,23 @@ test('Webhook (stripe scheme): wrong secret, stale or doubled t=, quicksilver he
 test('Webhook: an unknown scheme is refused at configuration time', () => {
   const queue = new WorkflowRunQueue({ store: new InMemoryWorkflowRunStore(), access: new AccessController() })
   assert.throws(() => new WebhookTrigger({ queue, endpoints: [{ id: 'x', tenantId: 'acme', scheme: 'paypal' as never, graph, secrets: [secret] }] }), /unknown signature scheme/)
+})
+
+
+test('Business triggers: matching events and metrics enqueue idempotently through the governed queue', async () => {
+  const queue = new WorkflowRunQueue({ store: new InMemoryWorkflowRunStore(), access: new AccessController() })
+  const registry = new BusinessTriggerRegistry(queue)
+  registry.add({ id: 'orders-late', tenantId: 'acme', eventType: 'order.late', graph, principal: hookPrincipal })
+  registry.add({ id: 'downtime-high', tenantId: 'acme', metric: 'production.downtime', operator: 'gte', threshold: 20, graph, principal: hookPrincipal })
+
+  const event = { tenantId: 'acme', eventType: 'order.late', eventId: 'evt-1', payload: { order: 7 } }
+  const first = await registry.emitEvent(event)
+  const retry = await registry.emitEvent(event)
+  assert.equal(first[0]!.result.accepted, true)
+  assert.equal(retry[0]!.result.accepted, true)
+  assert.equal(retry[0]!.result.deduplicated, true)
+  assert.equal((await registry.observeMetric({ tenantId: 'acme', metric: 'production.downtime', value: 19, sampleId: 'm-1' })).length, 0)
+  const metric = await registry.observeMetric({ tenantId: 'acme', metric: 'production.downtime', value: 20, sampleId: 'm-2' })
+  assert.equal(metric[0]!.result.accepted, true)
+  assert.equal((await queue.store.list()).length, 2)
 })

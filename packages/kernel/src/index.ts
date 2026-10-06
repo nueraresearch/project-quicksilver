@@ -122,6 +122,7 @@ export * from './policy-snapshot.ts'
 export * from './control-log.ts'
 
 export * from './workflows/runtime.ts'
+export * from './workflows/batch.ts'
 
 export * from './workflows/publication.ts'
 

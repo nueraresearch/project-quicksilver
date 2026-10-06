@@ -5,6 +5,9 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
   executeWorkflowGraph,
@@ -12,6 +15,7 @@ import {
   evaluateWorkflowConditionExpression,
   validateWorkflowConditionExpression,
   workflowConditionNodeReference,
+  executeBoundedBatch,
   type WorkflowGraph,
   type WorkflowNode,
   type WorkflowRuntimeHandlers,
@@ -764,4 +768,31 @@ test('Runtime: a provider retry hint on a thrown error is surfaced on the failed
   const result = await executeWorkflowGraph(linear(), 'x', h)
   assert.equal(result.status, 'failed')
   assert.equal(result.steps.at(-1)?.retryAfterMs, 12_000)
+})
+
+
+test('Batch: bounded concurrent items receive isolated workspaces that are cleaned after execution', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'quicksilver-batch-test-'))
+  const active = new Set<string>()
+  let peak = 0
+  try {
+    const result = await executeBoundedBatch(
+      [{ id: 'a', input: 1 }, { id: 'b', input: 2 }, { id: 'c', input: 3 }],
+      async (item, workspace) => {
+        assert.equal(active.has(workspace.path), false)
+        active.add(workspace.path)
+        peak = Math.max(peak, active.size)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        active.delete(workspace.path)
+        return item.input * 2
+      },
+      { workspaceRoot: root, maxConcurrency: 2, timeoutMs: 1_000 },
+    )
+    assert.equal(result.status, 'completed')
+    assert.deepEqual(result.results.map((entry) => entry.output), [2, 4, 6])
+    assert.ok(peak <= 2)
+    assert.deepEqual(await readdir(root), [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
