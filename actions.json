@@ -5,7 +5,7 @@
   "maxInputBytes": 16384,
   "email": {
     "from": "onboarding@resend.dev",
-    "recipients": ["REPLACE-WITH-YOUR-RESEND-ACCOUNT-EMAIL"],
+    "recipients": ["nuera.agtech@gmail.com","nuera719@hmail.com"],
     "apiKeyEnv": "QUICKSILVER_EMAIL_API_KEY"
   }
 }
