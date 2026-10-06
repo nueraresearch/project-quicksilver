@@ -21,9 +21,11 @@ The machine-readable contract is [openapi.json](openapi.json) (OpenAPI 3.1.0). I
 
 Errors are JSON objects with an `error` string. `error` is on every error response. `code` is on every error response from the decision, workflow, agent and company-data (`/api/entities`) routes and from the shared route guard; the other routes (`/api/plan`, `/api/query`, `/api/chat`, `/api/inbox`, `/api/whoami`, `/api/monitoring/*`, `/api/dashboard/*`, `/api/auth/*`) still send `error` alone on their own validation and load failures. Other fields appear on some responses:
 
+The product-memory routes (`/api/memory` and `/api/memory/{id}/review`) also include a stable `code` on their error responses.
+
 | Field | Where it appears |
 | --- | --- |
-| `code` | A stable machine-readable value, listed below. Present on every error from the decision, workflow, agent and company-data routes; absent on the routes named above. |
+| `code` | A stable machine-readable value, listed below. Present on every error from the decision, workflow, agent, company-data and product-memory routes; absent on the routes named above. |
 | `needs` | 403 from the shared route guard: the permissions the route requires. |
 | `retryAfterSeconds` | 429 body. The same value is in the `Retry-After` header. |
 | `issues` | Some 400 and 422 validation failures: the schema issues (decision routes) or the graph validator's errors (workflow routes). |

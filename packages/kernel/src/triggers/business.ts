@@ -1,6 +1,6 @@
 import type { WorkflowGraph } from '../workflows/graph.ts'
 import type { Principal } from '../identity/rbac.ts'
-import { WorkflowRunQueue, type EnqueueResult } from '../runtime/queue.ts'
+import type { EnqueueResult, WorkflowRunQueue } from '../runtime/queue.ts'
 
 export type MetricOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'neq'
 
@@ -82,8 +82,11 @@ function metricMatches(operator: MetricOperator, value: number, threshold: numbe
  */
 export class BusinessTriggerRegistry {
   private readonly definitions = new Map<string, BusinessTriggerDefinition>()
+  private readonly queue: WorkflowRunQueue
 
-  constructor(private readonly queue: WorkflowRunQueue) {}
+  constructor(queue: WorkflowRunQueue) {
+    this.queue = queue
+  }
 
   add(definition: BusinessTriggerDefinition): void {
     validDefinition(definition)

@@ -16,7 +16,7 @@ import { setAuthorizationAuditAppender } from './authorization-audit-store.ts'
 register('./route-test-loader.mjs', import.meta.url)
 setAuthorizationAuditAppender(async () => 'test-authorization-audit-record')
 
-const { errorCode } = await import('./api-errors.ts')
+const { apiErrorBody, errorCode } = await import('./api-errors.ts')
 const { publicationFailure, readPublicationBody } = await import('./workflow-publication-http.ts')
 const { WorkflowPublicationFault } = await import('./workflow-publication-store.ts')
 const { AgentCatalogFault } = await import('./agent-catalog-contract.ts')
@@ -31,6 +31,12 @@ test('errorCode maps every status the API emits to one stable code', () => {
   )
   assert.equal(errorCode(418), 'invalid-request')
   assert.equal(errorCode(502), 'internal-error')
+})
+
+test('apiErrorBody pairs human-readable messages with stable status codes', () => {
+  assert.deepEqual(apiErrorBody('Invalid request.', 400), { error: 'Invalid request.', code: 'invalid-request' })
+  assert.deepEqual(apiErrorBody('Memory not found.', 404), { error: 'Memory not found.', code: 'not-found' })
+  assert.deepEqual(apiErrorBody('Memory is unavailable.', 503), { error: 'Memory is unavailable.', code: 'unavailable' })
 })
 
 test('a lost Sanity revision race on a lifecycle write is a 409 with a code, not a generic 500', async () => {
