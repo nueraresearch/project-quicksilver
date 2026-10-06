@@ -188,6 +188,7 @@ resource host 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'PORT', value: '8787' }
         { name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE', value: 'false' }
         { name: 'QUICKSILVER_HOST_CONFIG', value: '/config/quicksilver.host.json' }
+        { name: 'QUICKSILVER_DATA_DIR', value: '/data' }
         { name: 'QUICKSILVER_TENANT_ID', value: tenantId }
         { name: 'DATABASE_URL', value: '${kvRef}database-url)' }
         { name: 'QUICKSILVER_VAULT_KEY', value: '${kvRef}quicksilver-vault-key)' }
