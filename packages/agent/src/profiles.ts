@@ -137,7 +137,7 @@ export class AgentProfileRegistry {
 
 /** Read a project context file while refusing traversal, symlink escapes, and oversized files. */
 export async function readProjectContextFile(projectRoot: string, relativePath: string): Promise<AgentProfileResource | undefined> {
-  if (!relativePath || isAbsolute(relativePath) || relativePath.includes('\\') || relativePath.includes('\0')) {
+  if (!relativePath || isAbsolute(relativePath) || /^[A-Za-z]:/.test(relativePath) || relativePath.includes('\\') || relativePath.includes('\0')) {
     throw new Error('Project context paths must be relative POSIX-style paths inside the project root.')
   }
   const segments = relativePath.split('/')
