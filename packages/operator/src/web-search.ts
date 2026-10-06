@@ -24,6 +24,13 @@ export interface WebSearchResult {
   sources: WebSearchSource[]
 }
 
+export interface WebPageResult {
+  url: string
+  title: string
+  text: string
+  contentType: string
+}
+
 export interface WebSearchProvider {
   search(request: WebSearchRequest, options?: { signal?: AbortSignal }): Promise<WebSearchResult>
 }
@@ -31,6 +38,65 @@ export interface WebSearchProvider {
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 class WebSearchError extends Error {}
+
+function publicUrl(value: string): URL {
+  let url: URL
+  try { url = new URL(value) } catch { throw new Error('Page URL must be an absolute http(s) URL.') }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Page URL must be a public http(s) URL without credentials.')
+  const hostname = url.hostname.toLowerCase()
+  if (hostname === 'localhost' || hostname.endsWith('.local') || hostname === '::1' || hostname === '0.0.0.0' || /^127\./.test(hostname) || /^10\./.test(hostname) || /^192\.168\./.test(hostname) || /^169\.254\./.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) throw new Error('Page URL resolves to a private or local host.')
+  return url
+}
+
+function pageText(value: string, max: number): { title: string; text: string } {
+  const title = cleanSnippet(value.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '', 300)
+  const text = cleanSnippet(value.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ').replace(/<[^>]*>/g, ' '), max)
+  return { title, text }
+}
+
+/** Read-only public page fetcher. It never follows redirects or accepts private hosts. */
+export class PublicWebPageFetcher {
+  private readonly fetcher: FetchLike
+  private readonly timeoutMs: number
+  private readonly maxBytes: number
+
+  constructor(options: { fetch?: FetchLike; timeoutMs?: number; maxBytes?: number } = {}) {
+    this.fetcher = options.fetch ?? fetch
+    this.timeoutMs = options.timeoutMs ?? 12_000
+    this.maxBytes = options.maxBytes ?? 512_000
+    if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 100 || this.timeoutMs > 60_000) throw new Error('Page fetch timeout must be between 100 and 60000 milliseconds.')
+    if (!Number.isInteger(this.maxBytes) || this.maxBytes < 1_024 || this.maxBytes > 5_000_000) throw new Error('Page fetch maxBytes must be between 1024 and 5000000.')
+  }
+
+  async fetchPage(value: string, options: { signal?: AbortSignal } = {}): Promise<WebPageResult> {
+    const url = publicUrl(value)
+    if (options.signal?.aborted) throw new Error('Page fetch was cancelled.')
+    const controller = new AbortController()
+    const forwardAbort = () => controller.abort(options.signal?.reason)
+    options.signal?.addEventListener('abort', forwardAbort, { once: true })
+    const timer = setTimeout(() => controller.abort(new Error('Page fetch timed out.')), this.timeoutMs)
+    try {
+      const response = await this.fetcher(url, { method: 'GET', redirect: 'manual', headers: { Accept: 'text/html, application/xhtml+xml, text/plain' }, signal: controller.signal })
+      if (response.status >= 300 && response.status < 400) throw new WebSearchError('Page fetch refused a redirect.')
+      if (!response.ok) throw new WebSearchError(`Page fetch failed (HTTP ${response.status}).`)
+      const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+      if (!['text/html', 'application/xhtml+xml', 'text/plain'].includes(contentType)) throw new WebSearchError('Page fetch returned a non-text content type.')
+      const declaredBytes = Number(response.headers.get('content-length') ?? 0)
+      if (declaredBytes > this.maxBytes) throw new WebSearchError('Page fetch response exceeded the configured size limit.')
+      const body = await response.text()
+      if (new TextEncoder().encode(body).byteLength > this.maxBytes) throw new WebSearchError('Page fetch response exceeded the configured size limit.')
+      const parsed = pageText(body, Math.floor(this.maxBytes / 2))
+      return { url: url.href, title: parsed.title, text: parsed.text, contentType }
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error(options.signal?.aborted ? 'Page fetch was cancelled.' : 'Page fetch timed out.')
+      if (error instanceof WebSearchError) throw error
+      throw new Error('Page fetch provider request failed.')
+    } finally {
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', forwardAbort)
+    }
+  }
+}
 
 function cleanSnippet(value: unknown, max = 1200): string {
   return typeof value === 'string'
