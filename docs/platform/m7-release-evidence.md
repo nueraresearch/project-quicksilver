@@ -47,4 +47,4 @@ npm run verify
 
 ## Release interpretation
 
-M7 is **implementation-complete and regression-verified**. This does not mean the repository is a hosted 1.0.0 service. M8/M9 work remains for SSO/OIDC, multi-tenant hosting, effectful executors, stable public SDKs, traces, marketplace and domain-pack controls, operational evidence, and the other enterprise gaps listed in the parity matrix.
+M7 is **implementation-complete and regression-verified**. This does not mean the repository is a hosted 1.0.0 service. Browser OIDC/session foundations and a single-tenant Render deployment have since been added, but M8/M9 work remains for complete sign-in operations, multi-tenant hosting, effectful executors, stable public SDKs, full traces/alerts, marketplace and domain-pack controls, operational evidence, and the other enterprise gaps listed in the parity matrix.
