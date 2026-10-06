@@ -1,6 +1,7 @@
 # Always-on hosting template (M5): Render blueprint for the single-tenant host.
-# Not deployed. Use it once the entity and payment accounts exist (Genesis needs
-# a public address for payment webhooks).
+# Deployment template for the single-tenant host. The existing Render service
+# uses this topology; Genesis still needs entity and payment accounts before
+# real payment webhooks are enabled.
 #
 # In Render: New → Blueprint → this repository, blueprint path deploy/render.yaml.
 # Every secret below is `sync: false`: you enter it in the Render dashboard,
@@ -27,6 +28,8 @@ services:
         value: /etc/secrets/quicksilver.host.json   # add as a Render secret file
       - key: QUICKSILVER_DATA_DIR
         value: /data                         # intent, tasks, and governed memory
+      - key: QUICKSILVER_GENESIS_DIR
+        value: /data/genesis                 # Genesis ledger, experiments, and hosted-site history
       - key: QUICKSILVER_TENANT_ID
         value: brodi                 # must equal the tenantId in every QUICKSILVER_PRINCIPALS entry
       - key: DATABASE_URL

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -30,4 +30,16 @@ test('Postgres without an explicit data directory remains fail-visible rather th
   assert.equal(resolvePersistentDataDir(config, baseDir, {}), undefined)
   assert.equal(buildGovernedMemory(config).persistent, false)
   assert.equal(taskSetup(config, { baseDir, env: {} }).dir, undefined)
+})
+
+test('Render maps Postgres auxiliary state and Genesis state to the mounted disk', () => {
+  const render = readFileSync(join(process.cwd(), 'deploy/render.yaml'), 'utf8')
+  assert.match(render, /key: QUICKSILVER_DATA_DIR\s+value: \/data\b/)
+  assert.match(render, /key: QUICKSILVER_GENESIS_DIR\s+value: \/data\/genesis\b/)
+
+  const baseDir = mkdtempSync(join(tmpdir(), 'qs-persistence-'))
+  const config = parseHostConfig({ tenantId: 'acme', store: { kind: 'postgres', urlEnv: 'DATABASE_URL' } })
+  const dataDir = resolvePersistentDataDir(config, baseDir, { QUICKSILVER_DATA_DIR: '/data' })
+  assert.equal(dataDir, '/data')
+  assert.equal(join(dataDir!, 'genesis'), '/data/genesis')
 })
