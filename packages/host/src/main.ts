@@ -447,6 +447,12 @@ async function main(): Promise<void> {
   const configName = process.env.QUICKSILVER_HOST_CONFIG ?? 'quicksilver.host.json'
   const configPath = isAbsolute(configName) ? configName : resolve(baseDir, configName)
   const config = await loadHostConfig(configPath, { tenantId: process.env.QUICKSILVER_TENANT_ID?.trim() || 'default' })
+  // Render assigns the public listener port through PORT. Keep the config-file
+  // port as the local default, but let the platform override it in production.
+  const platformPort = Number(process.env.PORT)
+  if (Number.isInteger(platformPort) && platformPort > 0 && platformPort <= 65_535) {
+    config.http.port = platformPort
+  }
   if (args[0] !== 'vault') console.error(`Config: ${configPath}${envFiles.length ? ` · env: ${envFiles.join(', ')}` : ''}`)
   if (args[0] === 'vault') return vaultCommand(config, args.slice(1))
 
