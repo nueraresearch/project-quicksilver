@@ -235,7 +235,7 @@ const webAgentMemoryStores = new Map<string, FileMemoryStore>()
 const segment = (value: string) => `id-${Buffer.from(value, 'utf8').toString('base64url')}`
 
 /** Opt-in, tenant- and agent-partitioned file memory. FileMemoryStore requires one writer process per file. */
-export function webAgentMemoryFor(agentId: string, env: Readonly<WebAgentProfileEnvironment> = process.env): MemoryStore | undefined {
+export function webAgentMemoryFor(agentId: string, env: Readonly<WebAgentProfileEnvironment> = process.env as WebAgentProfileEnvironment): MemoryStore | undefined {
   if (!WEB_AGENT_IDS.has(agentId)) throw new Error(`Cannot open memory for unknown web agent "${agentId}".`)
   const root = env.QUICKSILVER_AGENT_MEMORY_DIR?.trim()
   if (!root) return undefined

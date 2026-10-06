@@ -63,7 +63,7 @@ export interface ProcessOptions {
 export function runProcess(file: string, args: string[], o: ProcessOptions): Promise<SandboxRunResult> {
   const started = Date.now()
   return new Promise((done) => {
-    const child = spawn(file, args, { cwd: o.cwd, env: o.env, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(file, args, { cwd: o.cwd, env: o.env as NodeJS.ProcessEnv, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     let truncated = false
