@@ -359,3 +359,16 @@ Keep challenge writeups as historical/reference material. Canonical cognitive
 and platform docs now have separate homes under `docs/nqc/` and
 `docs/platform/`, linked from `docs/README.md`. Avoid rewriting historical
 claims as current product capabilities.
+
+## M8–M9 UI adoption track
+
+Production operator UX adopted from the frontend reference without importing its simulated data or side effects:
+
+- Telemetry KPI cards and freshness/provenance labels in `/monitoring` and `/monitoring/traces`.
+- Execution traces and artifact views in `/workflows` and `/agents`, backed by real run IDs, digests, evaluation results, safety decisions, and requester identity.
+- Filterable entity cards and permission-aware detail views in `/entities`.
+- Truthful chat starter prompts, artifact export, and message telemetry.
+- Evidence-backed benchmark and workload views with reproducibility metadata.
+- Responsive, accessible visual polish while preserving route authentication, deep links, unavailable states, and kernel governance.
+
+M8 builds and integrates these surfaces; M9 hardens them and publishes operational evidence. No UI may represent a simulated external side effect as completed.
