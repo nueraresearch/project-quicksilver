@@ -448,12 +448,12 @@ export class MemoryBook {
   }
 
   /** A person adds or confirms something: active and stated. */
-  addStated(scope: MemoryScope, text: string, by: string, retentionDays = DEFAULT_MEMORY_RETENTION_DAYS, sensitivity?: MemorySensitivity): Promise<MemoryEntry> {
+  addStated(scope: MemoryScope, text: string, by: string, retentionDays = DEFAULT_MEMORY_RETENTION_DAYS, sensitivity?: MemorySensitivity, provenance: Pick<MemoryEntry['source'], 'decisionId'> = {}): Promise<MemoryEntry> {
     return this.mutate((entries) => {
       const cleaned = text.trim()
       const privacyProblem = memoryPrivacyProblem(cleaned)
       if (!cleaned || cleaned.length > 500 || !Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650 || privacyProblem) throw new Error(privacyProblem ?? 'Memory text must be 1–500 characters and retention must be 1–3,650 days.')
-      const e = memoryWithDefaults({ id: `mem-${randomBytes(5).toString('hex')}`, scope, text: cleaned, kind: 'stated', status: 'active', source: { by, sensitivity: effectiveSensitivity(cleaned, sensitivity) }, retentionDays })
+      const e = memoryWithDefaults({ id: `mem-${randomBytes(5).toString('hex')}`, scope, text: cleaned, kind: 'stated', status: 'active', source: { by, ...provenance, sensitivity: effectiveSensitivity(cleaned, sensitivity) }, retentionDays })
       return { entries: [...entries, e], result: e, changes: [{ action: 'created', memoryId: e.id, actorId: by, at: e.at, contentHash: e.contentHash }] }
     })
   }
