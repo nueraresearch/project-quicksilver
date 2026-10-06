@@ -77,6 +77,8 @@ export interface GenesisStore {
 export interface GenesisApiDeps {
   config: GenesisRunConfig
   store: GenesisStore
+  /** Non-secret backend label for startup diagnostics. */
+  persistence?: 'file' | 'memory' | 'sanity'
   /** Names of active vault secrets (never values). The host supplies its own vault's names when this is absent. */
   vaultNames?: () => Promise<string[]>
   now?: () => number

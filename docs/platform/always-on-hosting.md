@@ -2,8 +2,9 @@
 
 M2 runs the host on the founder's computer. That is enough for the Onboard
 pilot. The Genesis run needs the host up day and night, because payment
-providers send webhooks to a public address. None is deployed yet: that
-waits on the entity decision and the payment accounts.
+providers send webhooks to a public address. The Render topology is now
+operationally deployed for health, readiness, and persistence validation; real
+payment webhooks still wait on the entity decision and payment accounts.
 
 **Chosen path: Azure**, using the founder's Azure free credits, host on
 **Azure App Service (Web App for Containers)** with **Azure Database for
@@ -19,18 +20,19 @@ different build. The Azure deploy template (the `render.yaml` equivalent) is
 | Option | Files | Good for | Rough cost |
 |---|---|---|---|
 | Azure App Service (Web App for Containers) + Azure Database for PostgreSQL | `deploy/azure/main.bicep` (compiled, never applied) | **Chosen path.** Least operations work on free Azure credits; managed Postgres, TLS and restarts | Covered by Azure free credits initially; check current App Service + Flexible Server tier prices before they run out |
-| Render (managed) | `deploy/render.yaml` | Documented fallback; not the current plan | A starter web service, a small Postgres and a 1 GB disk; check Render's current prices |
+| Render (managed) | `deploy/render.yaml` | Active single-tenant deployment and validation path | A starter web service, a small Postgres and a 1 GB disk; check Render's current prices |
 | Any small VPS | `deploy/docker-compose.yml` + `deploy/docker-compose.public.yml` | Full control; Caddy handles TLS | A small VPS |
 | Founder's computer (today) | `deploy/quicksilver.local.example.json` | Onboard pilot | None; no public webhooks |
 
 Hosting is compute, so its cost is **capital** in the Genesis money ledger
 (`kind: compute`, `category: hosting`), charged against the $500 budget.
 
-## Render (documented fallback, not the current plan)
+## Render (active single-tenant deployment path)
 
-1. In Render, create a Blueprint from this repository with the blueprint
-   path `deploy/render.yaml`. The service has `autoDeploy: false`, so
-   nothing deploys until you choose to.
+1. In Render, create or synchronize a Blueprint from this repository with the
+   blueprint path `deploy/render.yaml`. The service has `autoDeploy: false`,
+   which prevents ordinary branch pushes from deploying automatically; an
+   explicit Blueprint synchronization can still apply a reviewed merge.
 2. Add the host config as a **secret file** named `quicksilver.host.json`.
    Start from `deploy/quicksilver.host.example.json` and set
    `http.host: "0.0.0.0"`, `http.port: 8787` and `store.kind: "postgres"`.
@@ -52,9 +54,11 @@ Render uses two durable persistence layers in this deployment:
 - **The mounted persistent disk (`/data`)** is the file-backed store for
   single-tenant auxiliary state: `intent/` (company intent graphs, ledger,
   ranker, shadow and decision journals), `tasks/` (tasks and client token
-  digests), and `<tenant>/memory.json` (governed memory and its hash chain).
+  digests), `<tenant>/memory.json` (governed memory and its hash chain), and
+  `genesis/` (Genesis ledger, experiments, and hosted-site history).
 
-The blueprint sets `QUICKSILVER_DATA_DIR=/data`. This explicit setting is
+The blueprint sets `QUICKSILVER_DATA_DIR=/data` and
+`QUICKSILVER_GENESIS_DIR=/data/genesis`. These explicit settings are
 important: a Postgres run store must not imply that a container-local filesystem
 is durable. Back up both the Postgres database and the `/data` disk separately.
 It also removes the startup warning **“Tasks and task clients are kept in

@@ -78,6 +78,8 @@ docker compose -f deploy/docker-compose.yml up -d --build
 | `QUICKSILVER_PRINCIPALS` | Bearer-token principals, same format as the web app. Every principal must belong to the host's tenant or the host refuses to start |
 | `QUICKSILVER_VAULT_KEY` | 32-byte vault master key (name set by `vault.keyEnv`) |
 | `DATABASE_URL` | Postgres URL when `store.kind` is `postgres` (name set by `store.urlEnv`) |
+| `QUICKSILVER_DATA_DIR` | Mounted durable directory for auxiliary intent, task, and governed-memory files when the run store is Postgres; Render uses `/data` |
+| `QUICKSILVER_GENESIS_DIR` | Optional durable directory for Genesis ledger, experiments, and hosted-site history; Render uses `/data/genesis` |
 | `QUICKSILVER_LOG_LEVEL` | Overrides `log.level` |
 | Model provider keys and `SANITY_CONTEXT_MCP_URL` / `SANITY_CONTEXT_TOKEN` | Enable the read-only query agent. Without them, agent steps fail closed |
 | `NEXT_PUBLIC_SANITY_PROJECT_ID` and `SANITY_WRITE_TOKEN` | Store each step evaluation as an `evaluationRecord` document (and the Sanity shadow, Genesis and task stores when chosen). The legacy challenge project is refused. See [Sanity tokens](#sanity-tokens-read-and-write) |

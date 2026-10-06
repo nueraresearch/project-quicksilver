@@ -186,7 +186,7 @@ async function buildShadow(config: HostConfig, log: Logger, intent: { graphs: im
  * Config from QUICKSILVER_GENESIS_CONFIG (default deploy/genesis/genesis-500.json); data next to
  * the intent stores, or QUICKSILVER_GENESIS_DIR. Vault names come from the host's own vault.
  */
-async function buildGenesis(config: HostConfig, log: Logger): Promise<GenesisApiDeps | undefined> {
+async function buildGenesis(config: HostConfig, log: Logger, dataDir?: string): Promise<GenesisApiDeps | undefined> {
   const configPath = resolve(baseDir, process.env.QUICKSILVER_GENESIS_CONFIG ?? 'deploy/genesis/genesis-500.json')
   if (!existsSync(configPath)) {
     log.info('no Genesis run config; the Genesis routes are off', { configPath })
@@ -201,6 +201,7 @@ async function buildGenesis(config: HostConfig, log: Logger): Promise<GenesisApi
   }
   const dir = process.env.QUICKSILVER_GENESIS_DIR
     ? resolve(baseDir, process.env.QUICKSILVER_GENESIS_DIR)
+    : dataDir ? join(dataDir, 'genesis')
     : config.store.kind === 'file' ? join(dirname(config.store.path), 'genesis') : undefined
   if (!dir) log.warn('the Genesis ledger and experiments are kept in memory; use a file store or QUICKSILVER_GENESIS_DIR to keep them')
   const agent = await import('@quicksilver/agent')
@@ -214,11 +215,11 @@ async function buildGenesis(config: HostConfig, log: Logger): Promise<GenesisApi
     // No Sanity-backed pending-payment store yet (P-027 v1): the queue stays in files.
     const pending = new FilePendingPaymentStore(dir ?? join(baseDir, 'data', 'genesis'), config.tenantId)
     const commerce = genesis.commerceMode && genesis.commerceMode !== 'off' ? { store: new FileCommerceProposalStore(dir ?? join(baseDir, 'data', 'genesis'), config.tenantId) } : undefined
-    return { config: genesis, store: new StoresGenesisAdapter(stores), pending, ...(commerce ? { commerce } : {}), ...(runWaes ? { runWaes } : {}) }
+    return { config: genesis, store: new StoresGenesisAdapter(stores), persistence: 'sanity', pending, ...(commerce ? { commerce } : {}), ...(runWaes ? { runWaes } : {}) }
   }
   const pending = dir ? new FilePendingPaymentStore(dir, config.tenantId) : new MemoryPendingPaymentStore(config.tenantId)
   const commerce = genesis.commerceMode && genesis.commerceMode !== 'off' ? { store: dir ? new FileCommerceProposalStore(dir, config.tenantId) : new MemoryCommerceProposalStore(config.tenantId) } : undefined
-  return { config: genesis, store: dir ? new FileGenesisStore(dir, config.tenantId) : new MemoryGenesisStore(config.tenantId), pending, ...(commerce ? { commerce } : {}), ...(runWaes ? { runWaes } : {}) }
+  return { config: genesis, store: dir ? new FileGenesisStore(dir, config.tenantId) : new MemoryGenesisStore(config.tenantId), persistence: dir ? 'file' : 'memory', pending, ...(commerce ? { commerce } : {}), ...(runWaes ? { runWaes } : {}) }
 }
 
 /**
@@ -226,7 +227,7 @@ async function buildGenesis(config: HostConfig, log: Logger): Promise<GenesisApi
  * QUICKSILVER_HOSTING_DIR names where a static server reads published sites. The file adapter writes
  * <dir>/<tenant>/<site>/live/ and deploys nothing. Release history sits next to the Genesis data.
  */
-function buildHosting(config: HostConfig, genesis: GenesisApiDeps | undefined, log: Logger): HostingApiDeps | undefined {
+function buildHosting(config: HostConfig, genesis: GenesisApiDeps | undefined, log: Logger, dataDir?: string): HostingApiDeps | undefined {
   const out = process.env.QUICKSILVER_HOSTING_DIR
   if (!out) return undefined
   if (!genesis) {
@@ -235,6 +236,7 @@ function buildHosting(config: HostConfig, genesis: GenesisApiDeps | undefined, l
   }
   const storeDir = process.env.QUICKSILVER_GENESIS_DIR
     ? resolve(baseDir, process.env.QUICKSILVER_GENESIS_DIR)
+    : dataDir ? join(dataDir, 'genesis')
     : config.store.kind === 'file' ? join(dirname(config.store.path), 'genesis') : undefined
   if (!storeDir) log.warn('hosted-site history is kept in memory; use a file store or QUICKSILVER_GENESIS_DIR to keep it')
   return {
@@ -465,14 +467,21 @@ async function main(): Promise<void> {
   const { store, close, ready } = await buildStore(config, log)
   const intent = await buildIntent(config, log, dataDir)
   const shadow = await buildShadow(config, log, intent, dataDir)
-  const genesis = await buildGenesis(config, log)
-  const hosting = buildHosting(config, genesis, log)
+  const genesis = await buildGenesis(config, log, dataDir)
+  const hosting = buildHosting(config, genesis, log, dataDir)
   const media = buildMedia(config, log)
   const actions = buildActions(config, log)
   const memory = buildGovernedMemory(config, dataDir)
   if (!memory.persistent) log.warn('governed memory is held in memory only and is lost on restart; use the file run store to keep it')
   const tasks = taskSetup(config, { baseDir })
   for (const note of tasks.notes) log.warn(note)
+  log.info('auxiliary persistence configured', {
+    dataDir: dataDir ?? null,
+    tasks: tasks.dir ? 'file' : 'memory',
+    intent: dataDir ? 'file' : 'memory',
+    memory: memory.persistent ? 'file' : 'memory',
+    genesis: genesis?.persistence ?? 'disabled',
+  })
   const host = new QuicksilverHost(config, {
     principals,
     store,
