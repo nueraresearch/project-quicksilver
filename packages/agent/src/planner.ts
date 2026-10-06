@@ -25,11 +25,14 @@ import { assertAgentDispatch } from './governance.ts'
 import type { NueraQuicksilverAgent } from './contracts.ts'
 import { withMeasuredProviderFallback } from './provider-fallback.ts'
 import { normalizeModelTokenUsage } from './usage.ts'
+import { formatAgentContext } from './profile-context.ts'
 
 export interface PlannerInput {
   objective: string
   /** Optional pre-loaded context to skip MCP round-trips (used for tests). */
   context?: Record<string, unknown>
+  /** Resolved profile and governed recall context; always treated as advisory data. */
+  agentContext?: readonly string[]
 }
 
 export interface PlannerOutput extends z.infer<typeof PlanOutputSchema> {
@@ -114,7 +117,7 @@ Step 1: Use the available tools (groq_query, schema_explorer, knowledge_base_rea
 
 Step 2: Emit a structured plan. The candidateActions array MUST contain at least one action. Each action must reference entities and capabilities by their Sanity document IDs (e.g., "entity-engineering-agent", "cap-process-param"). Do NOT invent IDs — only use IDs you actually retrieved.
 
-The kernel will compute risk and authorization from your candidate actions. Be specific about which policies apply.`,
+  The kernel will compute risk and authorization from your candidate actions. Be specific about which policies apply.${formatAgentContext(input.agentContext)}`,
       tools: tools as unknown as Parameters<typeof generateText>[0]['tools'],
       experimental_output: Output.object({ schema: PlanOutputSchema }),
       stopWhen: stepCountIs(PLANNER_MAX_STEPS),
@@ -147,7 +150,7 @@ export const plannerQuicksilverAgent: NueraQuicksilverAgent<PlannerInput, Planne
   version: 1,
   tasks: ['planning'],
   async execute(request) {
-    const plan = await planObjective(request.input)
+    const plan = await planObjective({ ...request.input, agentContext: request.context })
     return {
       output: plan,
       modelId: plan.modelId,

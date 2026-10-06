@@ -27,7 +27,7 @@ import type { Permission } from '@quicksilver/kernel/identity'
  * - `tasks`: task submission keeps its own per-client bucket (`tasks.rateLimit`).
  */
 
-export type HostRouteFeature = 'intent' | 'shadow' | 'genesis' | 'decisions' | 'tasks' | 'vault' | 'hosting' | 'media' | 'actions'
+export type HostRouteFeature = 'intent' | 'shadow' | 'genesis' | 'decisions' | 'tasks' | 'vault' | 'hosting' | 'media' | 'actions' | 'memory'
 export type HostRateLimitClass = 'write' | 'model' | 'webhook' | 'tasks'
 
 export type HostRouteAccess =
@@ -68,6 +68,11 @@ export const HOST_ROUTES: readonly HostRoute[] = Object.freeze<HostRoute[]>([
   { method: 'POST', path: '/api/tasks/:id/cancel', feature: 'tasks', rateLimit: 'write', access: anyOf('task:read', 'task:read-own', 'task:submit', 'task:approve') },
   { method: 'POST', path: '/api/tasks/:id/approve', feature: 'tasks', rateLimit: 'write', access: anyOf('task:approve') },
   { method: 'POST', path: '/api/tasks/:id/deny', feature: 'tasks', rateLimit: 'write', access: anyOf('task:approve') },
+
+  // ── Governed memory (P-018): supervisor-only; writes require a recorded decision source. ──
+  { method: 'GET', path: '/api/memory', feature: 'memory', access: anyOf('memory:read') },
+  { method: 'POST', path: '/api/memory', feature: 'memory', rateLimit: 'write', access: anyOf('memory:write') },
+  { method: 'POST', path: '/api/memory/:id/forget', feature: 'memory', rateLimit: 'write', access: anyOf('memory:write') },
 
   // ── Aura intents and the intent ledger ──
   // POST /api/intents calls the model parser when one is configured.

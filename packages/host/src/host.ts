@@ -36,6 +36,7 @@ import { genesisPaymentWebhookSink } from './genesis-payment-webhook.ts'
 import { COMMERCE_KEY_VAULT_NAME, createStripeCommerceClient, type StripeCommerceClient } from './genesis-commerce.ts'
 import { handleDecisionRoute, type DecisionApiDeps } from './decisions-api.ts'
 import { handleTaskRoute } from './tasks-api.ts'
+import { handleMemoryRoute, type MemoryApiDeps } from './memory-api.ts'
 import { TaskError, TaskService, type TaskRunBackend, type TaskServiceDeps } from './tasks.ts'
 import type { TaskClientRegistry } from './task-clients.ts'
 import { hostRouteLabel, matchHostRoute, type HostRoute, type HostRouteFeature } from './routes.ts'
@@ -88,6 +89,8 @@ export interface HostDependencies {
    * controller, the run queue and the configured rate limit. Routes return 404 when absent.
    */
   tasks?: Omit<TaskServiceDeps, 'tenantId' | 'access' | 'runs' | 'rateLimit' | 'now'> & { clients?: TaskClientRegistry }
+  /** P-018 governed memory management, backed by this host's tenant store and decision journal. */
+  memory?: MemoryApiDeps
 }
 
 const HOSTING_BODY_BYTES = 8 * 1024 * 1024
@@ -525,6 +528,18 @@ export class QuicksilverHost {
         source: channel === 'mcp' ? 'mcp' : 'api',
         readBody: () => readJson(req, 16_384),
       }, this.tasks)
+      if (handled) return handled
+    }
+
+    // Governed memory management (P-018): route-table RBAC runs before this handler.
+    if (parts[1] === 'memory' && this.deps.memory) {
+      const handled = await handleMemoryRoute({
+        method, parts, query: url.searchParams, principal,
+        readBody: async () => {
+          const body = await readJson(req, this.config.http.maxBodyBytes)
+          return body.ok ? { ok: true as const, value: body.value } : { ok: false as const, status: body.status, error: body.error }
+        },
+      }, { ...this.deps.memory, ...(this.deps.now ? { now: this.deps.now } : {}) })
       if (handled) return handled
     }
 

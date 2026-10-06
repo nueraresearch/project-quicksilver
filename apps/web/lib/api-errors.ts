@@ -16,6 +16,10 @@ export type ApiErrorCode =
   | 'internal-error'
   | 'unavailable'
 
+export function apiErrorBody(error: string, status: number): { error: string; code: ApiErrorCode } {
+  return { error, code: errorCode(status) }
+}
+
 export function errorCode(status: number): ApiErrorCode {
   switch (status) {
     case 401: return 'unauthenticated'

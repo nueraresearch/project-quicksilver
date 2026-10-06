@@ -348,6 +348,20 @@ async function buildAgentRunner(log: Logger, memory: MemoryStore): Promise<Agent
     return undefined
   }
   const agent = await import('@quicksilver/agent')
+  // The current host worker is the query agent. Give it an explicit, isolated
+  // memory profile now; reviewed skill/routine loaders remain unavailable, so
+  // a future binding to either fails closed rather than silently loading text.
+  const profiles = new agent.AgentProfileRegistry([{
+    agentId: agent.queryQuicksilverAgent.id,
+    version: 1,
+    memoryDomain: `agent:${agent.queryQuicksilverAgent.id}`,
+  }])
+  const profile = await profiles.resolve(agent.queryQuicksilverAgent.id, {
+    async loadSkill() { return undefined },
+    async loadRoutine() { return undefined },
+    loadProjectContext: (path) => agent.readProjectContextFile(baseDir, path),
+  })
+  if (!profile) throw new Error('The host query-agent profile failed to resolve.')
   try {
     agent.readEnvMcpConfig()
   } catch (error) {
@@ -364,6 +378,7 @@ async function buildAgentRunner(log: Logger, memory: MemoryStore): Promise<Agent
       taskType: 'reasoning',
       input,
       impactLevel: impact,
+      profile,
       // Lessons from the run are kept through the governed store; authorization never reads them.
       memory,
       ...(signal ? { signal } : {}),
@@ -472,6 +487,7 @@ async function main(): Promise<void> {
   const media = buildMedia(config, log)
   const actions = buildActions(config, log)
   const memory = buildGovernedMemory(config, dataDir)
+  const decisions = await buildDecisions(config, shadow, dataDir)
   if (!memory.persistent) log.warn('governed memory is held in memory only and is lost on restart; use the file run store to keep it')
   const tasks = taskSetup(config, { baseDir })
   for (const note of tasks.notes) log.warn(note)
@@ -490,7 +506,11 @@ async function main(): Promise<void> {
     evaluationSink: await buildEvaluationSink(log),
     intent,
     shadow,
-    decisions: await buildDecisions(config, shadow, dataDir),
+    decisions,
+    memory: {
+      store: memory.store,
+      decisionExists: async (id) => (await decisions.store.list()).some((decision) => decision.id === id),
+    },
     genesis,
     ...(hosting ? { hosting } : {}),
     ...(media ? { media } : {}),

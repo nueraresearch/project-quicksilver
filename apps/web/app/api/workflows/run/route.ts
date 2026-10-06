@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { executeWorkflowGraph, validateWorkflowGraph, type NqcEvaluationResponse, type WorkflowGraph } from '@quicksilver/kernel'
 import { persistEvaluations } from '@/lib/evaluation-store'
 import { guardWebRoute } from '@/lib/route-guard'
+import { requireWebAgentProfile, webAgentMemoryFor } from '@/lib/agent-profiles'
 import { isProductionEnv } from '@quicksilver/kernel/production-flags'
 import { estimateModelCostUsd, executeGovernedAgent, isLlmConfigured, queryQuicksilverAgent, type GovernedNueraAgentResult, type QueryAgentOutput } from '@quicksilver/agent'
 import { WorkflowPublicationFault, getActivePublishedWorkflow, recordWorkflowExecution } from '@/lib/workflow-publication-store'
@@ -96,6 +97,8 @@ export async function POST(request: Request) {
         taskType: 'reasoning',
         input: `${parsed.data.input}${priorContext}`,
         impactLevel: node.config?.impact ?? 'low',
+        profile: await requireWebAgentProfile(queryQuicksilverAgent.id),
+        memory: webAgentMemoryFor(queryQuicksilverAgent.id),
         signal: context.signal,
       })
       agentResults.set(node.id, agentResult)

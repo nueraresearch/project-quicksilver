@@ -8,10 +8,10 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { safeErrorName } from '@/lib/safe-log'
-import { estimateModelCostUsd, queryCompany } from '@quicksilver/agent'
-import { evaluateNqcRequest } from '@quicksilver/kernel'
+import { estimateModelCostUsd, executeGovernedAgent, queryQuicksilverAgent } from '@quicksilver/agent'
 import { persistEvaluations } from '@/lib/evaluation-store'
 import { guardWebRoute } from '@/lib/route-guard'
+import { requireWebAgentProfile, webAgentMemoryFor } from '@/lib/agent-profiles'
 import { persistTraceSpans } from '@/lib/telemetry-store'
 import type { TraceSpanInput } from '@/lib/telemetry'
 
@@ -37,23 +37,22 @@ export async function POST(req: Request) {
   const requestSpanId = randomUUID()
   const requestStartedAt = Date.now()
   try {
-    const result = await queryCompany(question)
-    const modelSpanId = randomUUID()
-    const modelDurationMs = Math.max(0, Date.now() - requestStartedAt)
-    const governance = evaluateNqcRequest({
-      agentId: 'nuera-quicksilver:query',
+    const profile = await requireWebAgentProfile(queryQuicksilverAgent.id)
+    const memory = webAgentMemoryFor(queryQuicksilverAgent.id)
+    const modelStartedAt = Date.now()
+    const governed = await executeGovernedAgent(queryQuicksilverAgent, {
+      agentId: queryQuicksilverAgent.id,
       taskType: 'reasoning',
-      modelId: result.modelId,
-      agentOutput: JSON.stringify({
-        question: result.question,
-        entities: result.entities.map(({ id, name, entityType }) => ({ id, name, entityType })),
-        capabilities: result.capabilities,
-        policies: result.policies,
-      }),
-      context: result.supportingContext,
-      toolCalls: result.toolCalls,
+      input: question,
       impactLevel: 'low',
+      profile,
+      memory,
+      signal: req.signal,
     })
+    const result = governed.output
+    const modelSpanId = randomUUID()
+    const modelDurationMs = Math.max(0, Date.now() - modelStartedAt)
+    const governance = governed.evaluation
     const audit = await persistEvaluations([
       {
         source: 'query',
@@ -75,14 +74,14 @@ export async function POST(req: Request) {
       },
       {
         traceId, spanId: modelSpanId, parentSpanId: requestSpanId, source: 'query', kind: 'model', name: 'query.model',
-        status: 'ok', startedAt: requestStartedAt, durationMs: modelDurationMs, requestedBy: requester.principalId,
+        status: 'ok', startedAt: modelStartedAt, durationMs: modelDurationMs, requestedBy: requester.principalId,
         agentId: 'nuera-quicksilver:query', modelId: result.modelId, inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens, totalTokens: result.usage.totalTokens,
         estimatedCostUsd: estimateModelCostUsd(result.modelId, result.usage.totalTokens),
       },
       ...result.toolCalls.map((toolCall): TraceSpanInput => ({
         traceId, parentSpanId: modelSpanId, source: 'query', kind: 'tool', name: 'query.tool',
-        status: toolCall.succeeded ? 'ok' : 'error', startedAt: Math.max(requestStartedAt, completedAt - (toolCall.durationMs ?? 0)),
+        status: toolCall.succeeded ? 'ok' : 'error', startedAt: Math.max(modelStartedAt, completedAt - (toolCall.durationMs ?? 0)),
         durationMs: toolCall.durationMs ?? 0, requestedBy: requester.principalId, agentId: 'nuera-quicksilver:query',
         toolName: toolCall.name, toolSucceeded: toolCall.succeeded,
       })),

@@ -23,6 +23,7 @@ import { assertAgentDispatch } from './governance.ts'
 import type { NueraQuicksilverAgent } from './contracts.ts'
 import { withMeasuredProviderFallback } from './provider-fallback.ts'
 import { normalizeModelTokenUsage } from './usage.ts'
+import { formatAgentContext } from './profile-context.ts'
 
 // NOTE: no `.default([])` on these array fields. A Zod default marks the field
 // optional in the generated JSON Schema, which fails Azure/OpenAI's strict
@@ -61,7 +62,7 @@ function unreviewed(reason: string): ReviewResult {
   }
 }
 
-async function reviewProposedActionWithModel(input: ReviewInput): Promise<{ review: ReviewResult; modelId: string; usage?: import('./contracts.ts').ModelTokenUsage }> {
+async function reviewProposedActionWithModel(input: ReviewInput, agentContext?: readonly string[]): Promise<{ review: ReviewResult; modelId: string; usage?: import('./contracts.ts').ModelTokenUsage }> {
   assertAgentDispatch('nuera-quicksilver:reviewer', 'evaluation')
   const { action, actor, capability, policies, evidence } = input
   let selectedModelId = resolveId('reviewer', getMode())
@@ -95,7 +96,7 @@ Reversible: ${action.reversible}
 Operational impact: ${action.operationalImpact}/5
 Uncertainty: ${action.uncertainty}/5
 
-Review this proposed action independently. Flag any policy conflicts, missing evidence, or risk concerns you see. Do not simply restate the kernel's own computation -- add what an independent reviewer would actually catch.`,
+Review this proposed action independently. Flag any policy conflicts, missing evidence, or risk concerns you see. Do not simply restate the kernel's own computation -- add what an independent reviewer would actually catch.${formatAgentContext(agentContext)}`,
       experimental_output: Output.object({ schema: ReviewResultSchema }),
       maxRetries: 1,
       } as Parameters<typeof generateText>[0])
@@ -121,7 +122,7 @@ export const reviewerQuicksilverAgent: NueraQuicksilverAgent<ReviewInput, Review
   version: 1,
   tasks: ['evaluation'],
   async execute(request) {
-    const { review, modelId, usage } = await reviewProposedActionWithModel(request.input)
+    const { review, modelId, usage } = await reviewProposedActionWithModel(request.input, request.context)
     return {
       output: review,
       modelId,
