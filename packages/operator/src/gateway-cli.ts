@@ -96,6 +96,7 @@ const gateway = new Gateway({
     const result = await runForPerson(envr, {
       goal: message.text,
       personId: person.id,
+      agentId: 'operator:gateway',
       mode: 'guarded',
       approver,
       preamble: [
