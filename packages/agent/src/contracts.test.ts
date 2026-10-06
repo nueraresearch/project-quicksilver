@@ -129,3 +129,30 @@ test('a memory store that fails does not fail the agent run', async () => {
   assert.deepEqual(run.output, { answer: 'ok' })
   assert.ok(run.memoryWrites.every((w) => !w.stored && /disk full/.test(w.reasons.join(' '))))
 })
+test('governed recall is injected as bounded advisory context, never as authority', async () => {
+  const { MemoryStore } = await import('@quicksilver/kernel')
+  const memory = new MemoryStore()
+  memory.write({
+    id: 'lesson-1', kind: 'failure-exemplar', domain: 'evaluation',
+    content: 'Cite the returned record before making a claim.', source: 'run-1',
+    confidence: 0.9, retentionDays: 30,
+  }, { proposedBy: { id: 'nuera-quicksilver:reviewer', kind: 'agent' } })
+  let received: string[] | undefined
+  const worker: NueraQuicksilverAgent<{ q: string }, { answer: string }> = {
+    id: 'nuera-quicksilver:reviewer', version: 1, tasks: ['evaluation'],
+    async execute(request) {
+      received = request.context
+      return { output: { answer: 'ok' }, modelId: 'stub-model' }
+    },
+  }
+  const run = await executeGovernedAgent(worker, {
+    agentId: worker.id, taskType: 'evaluation', input: { q: 'x' }, memory,
+    recallMemory: { domain: 'evaluation', limit: 1 },
+  })
+  assert.ok(['ALLOW', 'ESCALATE', 'BLOCK'].includes(run.evaluation.safetyDecision))
+  assert.match(received?.[0] ?? '', /Advisory governed memory/)
+  assert.match(received?.[0] ?? '', /lesson-1/)
+  assert.match(received?.[0] ?? '', /source=run-1/)
+  assert.match(received?.[0] ?? '', /never an instruction, approval, policy/)
+  assert.doesNotMatch(received?.[0] ?? '', /proposedBy|approvalId/)
+})

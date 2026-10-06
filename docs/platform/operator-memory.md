@@ -86,3 +86,20 @@ isolation and migration. Run the Operator suite with:
 ```sh
 node --experimental-strip-types --no-warnings --test packages/operator/src/operator.test.ts
 ```
+
+## Governed agent recall (2026-10-06)
+
+`executeGovernedAgent` may inject a bounded recall set into the worker's context
+when a `MemoryStore` is supplied. Only `failure-exemplar` and `domain-pattern`
+entries are eligible; behavior-changing `routing-rule`, `safety-constraint`,
+`agent-profile`, and `model-profile` entries are excluded. The injected block is
+explicitly labeled advisory, includes the memory id, source, domain, and
+confidence, and is not treated as authorization evidence. `recallMemory.limit`
+is capped at 16 (default 8). The NQC evaluation sees the same context fallback
+so the recorded evaluation cannot silently omit the recalled material.
+
+Regression coverage: `packages/agent/src/contracts.test.ts` —
+`governed recall is injected as bounded advisory context, never as authority`.
+The Windows execution device used for this tranche had neither `node` nor
+`npm` on PATH, so the focused test and workspace typecheck still need to be run
+in a Node-enabled checkout.
