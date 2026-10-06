@@ -10,9 +10,10 @@ import type { HostConfig } from './config.ts'
  * publications); otherwise it lives in memory and is lost on restart, which the
  * caller is told so it can warn.
  */
-export function buildGovernedMemory(config: Pick<HostConfig, 'tenantId' | 'store'>): { store: MemoryStore; persistent: boolean; path?: string } {
-  if (config.store.kind === 'file') {
-    const path = join(dirname(config.store.path), config.tenantId, 'memory.json')
+export function buildGovernedMemory(config: Pick<HostConfig, 'tenantId' | 'store'>, dataDir?: string): { store: MemoryStore; persistent: boolean; path?: string } {
+  const durableDir = dataDir ?? (config.store.kind === 'file' ? dirname(config.store.path) : undefined)
+  if (durableDir) {
+    const path = join(durableDir, config.tenantId, 'memory.json')
     return { store: new FileMemoryStore(path), persistent: true, path }
   }
   return { store: new MemoryStore(), persistent: false }

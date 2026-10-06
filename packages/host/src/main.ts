@@ -14,6 +14,7 @@
  *   QUICKSILVER_VAULT_KEY     vault master key (name configurable in the config)
  *   QUICKSILVER_AUTHORIZATION_AUDIT_PATH   durable JSONL audit path when no vault/file store path can supply a default
  *   DATABASE_URL              Postgres URL when store.kind is "postgres" (name configurable)
+ *   QUICKSILVER_DATA_DIR      mounted durable directory for auxiliary state when runs use Postgres (Render: /data)
  *   Model provider and SANITY_CONTEXT_* variables enable the read-only query agent.
  *   NEXT_PUBLIC_SANITY_PROJECT_ID + SANITY_WRITE_TOKEN (legacy: SANITY_AUTH_TOKEN) enable durable evaluation records.
  *   QUICKSILVER_SHADOW_STORE=sanity keeps shadow recommendations and Aura's verdict
@@ -54,6 +55,7 @@ import { taskSetup } from './tasks-setup.ts'
 import { createShutdownHandler } from './shutdown.ts'
 import { buildGovernedMemory } from './governed-memory.ts'
 import type { MemoryStore } from '@quicksilver/kernel'
+import { resolvePersistentDataDir } from './persistence.ts'
 
 /** Where the command was run from (npm sets INIT_CWD; workspace scripts run inside packages/host). */
 const baseDir = process.env.INIT_CWD ?? process.cwd()
@@ -107,14 +109,15 @@ async function buildStore(config: HostConfig, log: Logger): Promise<{ store: Wor
 }
 
 /**
- * Aura intent stores: next to the run store for a file store, in memory otherwise.
+ * Aura intent stores: in the configured auxiliary data directory, or in memory
+ * when no durable directory is explicitly configured.
  * QUICKSILVER_INTENT_PARSER=model uses the production parser: the model with the autonomy guard (needs a model provider).
  */
-async function buildIntent(config: HostConfig, log: Logger) {
+async function buildIntent(config: HostConfig, log: Logger, dataDir?: string) {
   const aura = await import('@quicksilver/aura')
   let graphs, ledger
-  if (config.store.kind === 'file') {
-    const dir = join(dirname(config.store.path), 'intent')
+  if (dataDir) {
+    const dir = join(dataDir, 'intent')
     graphs = new aura.FileIntentGraphStore(join(dir, 'graphs'))
     ledger = new aura.FileLedgerStore(join(dir, 'ledger'))
   } else {
@@ -130,7 +133,7 @@ async function buildIntent(config: HostConfig, log: Logger) {
     else log.warn('QUICKSILVER_INTENT_PARSER=model but no model provider is configured; using the rule-based parser')
   }
   const { fileRankerStore, memoryRankerStore } = await import('./ranker-store.ts')
-  const ranker = config.store.kind === 'file' ? fileRankerStore(join(dirname(config.store.path), 'intent', 'ranker.json')) : memoryRankerStore()
+  const ranker = dataDir ? fileRankerStore(join(dataDir, 'intent', 'ranker.json')) : memoryRankerStore()
   return { graphs, ledger, ranker, ...(parser ? { parser } : {}) }
 }
 
@@ -144,28 +147,28 @@ async function buildIntent(config: HostConfig, log: Logger) {
  * QUICKSILVER_COMPANY_ID names the company whose intent ledger holds the owner's decision
  * principles; when set, the agent is given them (read fresh on every generate).
  */
-async function buildShadowStore(config: HostConfig, log: Logger): Promise<ShadowStore> {
+async function buildShadowStore(config: HostConfig, log: Logger, dataDir?: string): Promise<ShadowStore> {
   if ((process.env.QUICKSILVER_SHADOW_STORE ?? '').trim() === 'sanity') {
     const client = await createSanityStoreClient()
     if (!client) throw new Error('QUICKSILVER_SHADOW_STORE=sanity needs NEXT_PUBLIC_SANITY_PROJECT_ID and SANITY_WRITE_TOKEN (or the legacy SANITY_AUTH_TOKEN).')
     log.info('shadow records are kept in Sanity')
     return new SanityShadowStore(client)
   }
-  return config.store.kind === 'file'
-    ? new FileShadowStore(join(dirname(config.store.path), 'intent', 'onboard'))
+  return dataDir
+    ? new FileShadowStore(join(dataDir, 'intent', 'onboard'))
     : new MemoryShadowStore()
 }
 
 /** Aura decision journal: data/intent/decisions.jsonl next to the intent graphs (where `npm run onboard -- decide` writes), in memory otherwise. */
-async function buildDecisions(config: HostConfig, shadow: ShadowApiDeps) {
+async function buildDecisions(config: HostConfig, shadow: ShadowApiDeps, dataDir?: string) {
   const aura = await import('@quicksilver/aura')
-  const store = config.store.kind === 'file' ? new aura.FileDecisionStore(join(dirname(config.store.path), 'intent', 'decisions.jsonl')) : new aura.MemoryDecisionStore()
+  const store = dataDir ? new aura.FileDecisionStore(join(dataDir, 'intent', 'decisions.jsonl')) : new aura.MemoryDecisionStore()
   return { store, shadow: { store: shadow.store, graphs: shadow.graphs } }
 }
 
-async function buildShadow(config: HostConfig, log: Logger, intent: { graphs: import('@quicksilver/aura').IntentGraphStore; ledger: import('@quicksilver/aura').LedgerStore }): Promise<ShadowApiDeps> {
+async function buildShadow(config: HostConfig, log: Logger, intent: { graphs: import('@quicksilver/aura').IntentGraphStore; ledger: import('@quicksilver/aura').LedgerStore }, dataDir?: string): Promise<ShadowApiDeps> {
   const { graphs } = intent
-  const store = await buildShadowStore(config, log)
+  const store = await buildShadowStore(config, log, dataDir)
   const agent = await import('@quicksilver/agent')
   if (!agent.isLlmConfigured()) {
     log.warn('no model provider is configured; shadow recommendations can only be entered by hand')
@@ -458,14 +461,15 @@ async function main(): Promise<void> {
 
   const log = new Logger({ level: parseLogLevel(process.env.QUICKSILVER_LOG_LEVEL ?? config.log.level) })
   const principals = principalsFromJson(process.env.QUICKSILVER_PRINCIPALS)
+  const dataDir = resolvePersistentDataDir(config, baseDir)
   const { store, close, ready } = await buildStore(config, log)
-  const intent = await buildIntent(config, log)
-  const shadow = await buildShadow(config, log, intent)
+  const intent = await buildIntent(config, log, dataDir)
+  const shadow = await buildShadow(config, log, intent, dataDir)
   const genesis = await buildGenesis(config, log)
   const hosting = buildHosting(config, genesis, log)
   const media = buildMedia(config, log)
   const actions = buildActions(config, log)
-  const memory = buildGovernedMemory(config)
+  const memory = buildGovernedMemory(config, dataDir)
   if (!memory.persistent) log.warn('governed memory is held in memory only and is lost on restart; use the file run store to keep it')
   const tasks = taskSetup(config, { baseDir })
   for (const note of tasks.notes) log.warn(note)
@@ -477,7 +481,7 @@ async function main(): Promise<void> {
     evaluationSink: await buildEvaluationSink(log),
     intent,
     shadow,
-    decisions: await buildDecisions(config, shadow),
+    decisions: await buildDecisions(config, shadow, dataDir),
     genesis,
     ...(hosting ? { hosting } : {}),
     ...(media ? { media } : {}),

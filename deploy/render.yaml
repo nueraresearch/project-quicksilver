@@ -25,6 +25,8 @@ services:
         value: "8787"
       - key: QUICKSILVER_HOST_CONFIG
         value: /etc/secrets/quicksilver.host.json   # add as a Render secret file
+      - key: QUICKSILVER_DATA_DIR
+        value: /data                         # intent, tasks, and governed memory
       - key: QUICKSILVER_TENANT_ID
         value: brodi                 # must equal the tenantId in every QUICKSILVER_PRINCIPALS entry
       - key: DATABASE_URL
