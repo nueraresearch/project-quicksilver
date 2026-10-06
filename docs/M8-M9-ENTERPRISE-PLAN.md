@@ -364,3 +364,17 @@ Maintain:
 
 Every item must have an owner, issue/PR, implementation location, automated
 evidence, operational evidence requirement, target milestone, and rollback plan.
+
+## M8-I — Product UI and operational UX
+
+The UI adoption track brings the strongest ideas from the separate frontend prototype into the production console without importing its simulated data or side effects.
+
+- Add provenance-aware telemetry KPI cards to `/monitoring` and `/monitoring/traces` using authenticated run, evaluation, queue, cost, and runtime contracts.
+- Add execution trace and artifact split views to workflow and agent detail surfaces with run IDs, workflow/agent digests, evaluation outcomes, safety decisions, requester identity, and simulation versus live-read-only status.
+- Upgrade `/entities` with filterable actor cards, heartbeat/status summaries, permission badges, and API-backed detail panels.
+- Add truthful chat starter prompts, artifact copy/export, and message telemetry to the governed chat entry point.
+- Add an evidence-backed benchmark matrix with model/runtime revision, hardware/configuration, timestamp, provenance, and reproducibility status.
+- Preserve route authentication, deep links, responsive navigation, focus handling, reduced motion, accessible states, and explicit unavailable/error/empty states.
+- Do not import mock CRM, finance, support, robotics, sandbox, GPU, or benchmark data as production behavior. External actions remain connector-backed, approval-bound, audited, and fail-closed.
+
+**M8-I exit:** adopted surfaces use versioned authenticated contracts, have component/route tests, and never claim an external side effect before backend confirmation. M9 evidence must cover telemetry freshness, execution-trace provenance, benchmark evidence, entity permission visibility, and chat artifact export.
