@@ -88,6 +88,34 @@ test('RBAC: only a human may hold authority — a service principal is refused t
   assert.equal(access.authorize(ana, 'decision:approve', acme).allowed, true, 'a human supervisor still may')
 })
 
+test('RBAC: the judge role is an evaluation credential, not a second supervisor', () => {
+  const access = new AccessController()
+  const judge: Principal = { id: 'entity-judge', kind: 'human', tenantId: 'acme', roles: ['judge'] }
+  const supervisor: Principal = { id: 'entity-sarah', kind: 'human', tenantId: 'acme', roles: ['supervisor'] }
+
+  // What an evaluator needs to run the demonstration.
+  for (const permission of ['decision:read', 'decision:approve', 'decision:execute', 'audit:read'] as const) {
+    assert.equal(access.authorize(judge, permission, acme).allowed, true, permission)
+  }
+
+  // What it must never carry. These are published to the internet in a write-up, so the
+  // role has to be worth as little as the demonstration needs.
+  for (const permission of [
+    'memory:approve', 'routing:approve', 'workflow:publish', 'agent:publish',
+    'finance:read', 'task:approve', 'decision:rollback', 'run:redrive', 'tenant:admin',
+  ] as const) {
+    assert.equal(access.authorize(judge, permission, acme).allowed, false, permission)
+  }
+
+  // It is a strict subset: everything supervisor has that judge lacks is a deliberate cut.
+  const judgePermissions = access.effectivePermissions(judge)
+  const supervisorOnly = [...access.effectivePermissions(supervisor).keys()].filter((p) => !judgePermissions.has(p))
+  assert.ok(supervisorOnly.length > 0, 'the judge role must actually be narrower')
+  for (const permission of supervisorOnly) {
+    assert.equal(access.authorize(judge, permission, acme).allowed, false, permission)
+  }
+})
+
 test('RBAC: dedicated agent catalog permissions follow least privilege', () => {
   const access = new AccessController()
   const auditor: Principal = { id: 'user:audit@acme.com', kind: 'human', tenantId: 'acme', roles: ['auditor'] }
