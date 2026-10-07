@@ -51,7 +51,8 @@ test('whoami: no credential or an unknown one is 401 with only an error message'
     const r = checkWhoami(auth, env)
     assert.equal(r.ok, false)
     assert.equal(r.status, 401, `auth=${JSON.stringify(auth)}`)
-    assert.deepEqual(Object.keys(r.body), ['error'])
+    assert.deepEqual(Object.keys(r.body).sort(), ['code', 'error'])
+    assert.equal(r.body.code, 'unauthenticated')
     assertNoSecrets(r.body, ALL_SECRETS)
   }
 })

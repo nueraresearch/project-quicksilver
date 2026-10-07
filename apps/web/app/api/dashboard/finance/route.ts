@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { guardWebRoute } from '@/lib/route-guard'
 import { publicationRefusal } from '@/lib/workflow-publication-http'
+import { apiErrorBody } from '@/lib/api-errors'
 import { getSanityClient } from '@/lib/sanity-client'
 import type { FinanceOverview } from '@/lib/business-dashboard'
 
@@ -24,6 +25,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ observedAt: new Date().toISOString(), ledger }, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     console.error('[dashboard-finance] ledger read failed', error instanceof Error ? error.name : 'UnknownError')
-    return NextResponse.json({ error: 'Could not load recorded ledger totals.' }, { status: 503, headers: { 'cache-control': 'no-store' } })
+    return NextResponse.json(apiErrorBody('Could not load recorded ledger totals.', 503), { status: 503, headers: { 'cache-control': 'no-store' } })
   }
 }

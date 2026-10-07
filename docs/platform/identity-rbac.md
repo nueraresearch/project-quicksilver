@@ -11,7 +11,7 @@ model, and so do the web app's supervisor decision routes.
 - **Principal:** `{ id, kind: 'human' | 'service' | 'agent', tenantId, roles, disabled? }`.
 - **Permission:** one of a fixed list. Examples: `run:enqueue`, `run:cancel`,
   `run:redrive`, `decision:approve`, `decision:rollback`, `workflow:publish`,
-  `memory:approve`, `routing:approve`, `secret:*`, `audit:read`,
+  `memory:read`, `memory:write`, `memory:approve`, `routing:approve`, `secret:*`, `audit:read`,
   `finance:read`, `tenant:admin`, `intent:provide`, `intent:rules`.
 - **Roles:** built in are `viewer`, `operator`, `developer`, `supervisor`,
   `auditor`, `tenant-admin`, `trigger` (enqueue runs and submit tasks), `task-client`, `agent-worker`,
@@ -27,6 +27,10 @@ model, and so do the web app's supervisor decision routes.
     `intent-provider` (the founder) and `supervisor`, and `trigger` can
     also submit tasks. `task:approve` is an authority permission. See the
     [task interface](tasks.md).
+  - The built-in `supervisor` role grants `memory:read` and `memory:write` for
+    the host's governed-memory API. The host additionally requires a human
+    principal for memory writes and forgetting. `memory:approve` is a separate
+    permission used by Operator memory review and stated-memory operations.
   Tenants can define **custom roles**. A custom role is scoped to one tenant
   and cannot redefine a built-in role.
 
@@ -68,6 +72,7 @@ The token is shown once. The printed JSON entry holds only the digest.
 | Web decision routes | When `QUICKSILVER_PRINCIPALS` is set, approve/reject needs `decision:approve` and rollback needs `decision:rollback`, from a **human** principal in `QUICKSILVER_TENANT_ID`. Each supervisor has their own token, and the principal id is that supervisor's Sanity entity id. If the variable is unset, the interim single `NQC_SUPERVISOR_TOKEN` still works. Approvals also pass the separation-of-duties check below. |
 | Plan, query and workflow routes | A valid bearer token is required (401 without one; 503 when neither `QUICKSILVER_PRINCIPALS` nor the shared token is configured): `/api/plan` needs `decision:propose`, `/api/query` `decision:read`, `/api/workflows/validate` and `/simulate` `workflow:read`, `/api/workflows/run` `run:enqueue` (403 otherwise). The verified principal is recorded as the decision's `requestedBy` or the evaluation record's requester; nothing in the body can name one (threat model A-3, `apps/web/lib/route-guard.ts`). |
 | Hosted runtime | Every `/api` route on the host needs a bearer token and the matching permission; see [hosted runtime](hosted-runtime.md). The host refuses principals from any other tenant. |
+| Host governed memory | `GET /api/memory` requires `memory:read`; `POST /api/memory` and `POST /api/memory/:id/forget` require `memory:write` and a human actor. The host validates the source decision and sends writes through the memory governor; see [hosted runtime](hosted-runtime.md#management-api). |
 | Secrets vault | `secret:use`, `secret:read` and `secret:write`, checked on every vault operation. |
 | Operator memory CLI | `--memory review|feedback|export|restore` and `--remember` require a bearer token for a human principal with `memory:approve` in `QUICKSILVER_PRINCIPALS`; the raw CLI credential is `QUICKSILVER_OPERATOR_TOKEN`. Allow and deny decisions are appended to the workspace's hash-chained Operator audit log before the operation. |
 

@@ -35,16 +35,17 @@
   <img src="docs/images/architecture.png" alt="Agents propose, a kernel authorizes, a different human approves; every step is recorded in Sanity" width="900">
 </p>
 
-> **Current build status:** Nuera Quicksilver keeps the tested decision-governance foundation it inherited from the challenge build as its regression baseline. NQC evaluation and governance, tool contracts, a draft workflow builder, and an in-process graph runner are implemented foundations. Quicksilver Engine also provides a bounded, provider-neutral final-answer stress harness for multi-step arithmetic and logic traps; it does not request or retain private chain-of-thought. The editor visualizes graph connections and exposes agent retry and handler timeout settings. The runner supports opt-in bounded concurrency for independent low/moderate-impact agent steps; the read-only query route caps this at three. The read-only query worker uses a shared governed-agent contract and returns its full NQC evaluation response. Workflow drafts autosave locally, support validated JSON import/export, and can run an opt-in read-only query-agent path through NQC evaluation. Workflow tools remain blocked. A durable run queue and worker (`@quicksilver/kernel/runtime`) now provide idempotent admission, backpressure, leases, cancellation, retries, and a dead-letter queue, with in-memory, journaled-file, or PostgreSQL storage; cron schedules and signed webhooks can start runs. A single-tenant host process (`@quicksilver/host`) now runs the worker pool, schedules and signed webhooks from configuration, with a bearer-token management API, an encrypted secrets vault, structured logs and Prometheus metrics. Kernel RBAC (tenant isolation, deny-by-default roles, no authority for agents) guards queue operations, the host API and, when configured, per-person supervisor credentials. Decision approvals enforce separation of duties, with an audited sole-operator override, and every query and workflow evaluation is stored as an `evaluationRecord`. Internal TypeScript and dependency-free Python/Go SDK foundations cover workflow validation, safe preview, and opt-in read-only runs; none is published as a stable public API. A first declarative Nuera Quicksilver Agent catalog now supports versioned draft/review/publish governance with dedicated catalog RBAC and rollback-to-draft; it does not install executable plugins or change runtime dispatch. SSO/accounts UI, multi-tenant hosting, distributed traces, model/cost dashboards, runtime agent registration, and a marketplace remain unimplemented.
+> **Current build status:** Nuera Quicksilver keeps the tested decision-governance foundation it inherited from the challenge build as its regression baseline. NQC evaluation and governance, tool contracts, a draft workflow builder, and an in-process graph runner are implemented foundations. Quicksilver Engine also provides a bounded, provider-neutral final-answer stress harness for multi-step arithmetic and logic traps; it does not request or retain private chain-of-thought. The editor visualizes graph connections and exposes agent retry and handler timeout settings. The runner supports opt-in bounded concurrency for independent low/moderate-impact agent steps; the read-only query route caps this at three. The read-only query worker uses a shared governed-agent contract and returns its full NQC evaluation response. Workflow drafts autosave locally, support validated JSON import/export, and can run an opt-in read-only query-agent path through NQC evaluation. Workflow tools remain blocked. A durable run queue and worker (`@quicksilver/kernel/runtime`) now provide idempotent admission, backpressure, leases, cancellation, retries, and a dead-letter queue, with in-memory, journaled-file, or PostgreSQL storage; cron schedules and signed webhooks can start runs. A single-tenant host process (`@quicksilver/host`) now runs the worker pool, schedules and signed webhooks from configuration, with a bearer-token management API, an encrypted secrets vault, structured logs and Prometheus metrics. Kernel RBAC (tenant isolation, deny-by-default roles, no authority for agents) guards queue operations, the host API and, when configured, per-person supervisor credentials. Decision approvals enforce separation of duties, with an audited sole-operator override, and every query and workflow evaluation is stored as an `evaluationRecord`. Internal TypeScript and dependency-free Python/Go SDK foundations cover workflow validation, safe preview, and opt-in read-only runs; none is published as a stable public API. A first declarative Nuera Quicksilver Agent catalog now supports versioned draft/review/publish governance with dedicated catalog RBAC and rollback-to-draft; it does not install executable plugins or change runtime dispatch. Persistent principal/role administration, multi-tenant hosting, distributed traces, model/cost dashboards, runtime agent registration, and a marketplace remain unimplemented.
 >
 > Canonical product docs: [Product definition](./docs/NUERA-QUICKSILVER-PRODUCT.md) · [Documentation index](./docs/README.md) · [NQC Kernel](./docs/nqc/README.md) · [Platform](./docs/platform/README.md) · [Spec coverage](./docs/NUERA-QUICKSILVER-SPEC-COVERAGE.md) · [Roadmap](./docs/NUERA-QUICKSILVER-ROADMAP.md)
 
 ## Current status
 
-> **Status update — 2026-10-06:** Browser OIDC/session foundations and a
-> single-tenant Render deployment have been added since the long-form build
-> summary above. See the maintained [current status](./docs/CURRENT-STATUS.md)
-> for the done/not-done distinction and the outstanding CI failure.
+> **Status update — 2026-10-07:** The browser OIDC sign-in/session path is
+> covered (P-108), and single-tenant Render health/persistence wiring is
+> validated in a narrow scope. See the maintained [current status](./docs/CURRENT-STATUS.md)
+> for the done/not-done distinction. PR #92 is merged; the project owner
+> reports its test checks passed. This is not a claim of operational readiness.
 
 The repository is a **tested platform foundation**, not a hosted production
 service. Its single-tenant Render host is live for health, readiness, and
@@ -60,21 +61,22 @@ live-agent paths also need model credentials.
 | NQC Kernel, policy, capability, process and workflow governance | Built and tested | `npm run kernel:test` |
 | Durable run queue, worker, triggers and stores | Built and tested | Kernel runtime and store-contract suites |
 | Single-tenant host, vault, management API, logs and metrics | Built; Render deployment wiring validated | `npm run host:test` and [Render evidence](./docs/platform/render-operational-evidence-2026-10-05.md) |
+| Governed agent profiles and host memory API | Implemented and regression-tested; still partial for production resources and full memory recall | [Agent profiles](./docs/platform/agent-profiles.md), parity items P-017/P-018 |
 | Aura intent and provenance layer | Built foundation and tested | `npm run aura:test` |
 | Web console and API routes | Builds and security-tested | `npm run build` and `npm run seed:test` |
 | Sanity Studio, schema deployment and seed data | Requires dedicated project configuration | `SANITY_STUDIO_PROJECT_ID` and Sanity auth |
 | Live Context MCP and model-backed planning | Requires external credentials | `npm run verify:mcp` and `npm run verify:llm` |
-| Public hosting, browser OIDC and multi-tenant hosting | Render and browser-OIDC foundations exist; operationally incomplete | [Current status](./docs/CURRENT-STATUS.md), parity items P-014, P-107 and P-108 |
+| Public hosting, browser OIDC and multi-tenant hosting | Render has narrow health/persistence evidence; browser OIDC sign-in and sessions are covered (P-108); multi-tenant hosting remains incomplete | [Current status](./docs/CURRENT-STATUS.md), parity items P-014, P-107 and P-108 |
 | Effectful external actions (email, signed webhook) | Built behind human approval; dry run by default; never run against a live provider | [Approved actions](./docs/platform/approved-actions.md), parity item P-095 |
 
 ### What has not been proven
 
 Stated plainly, because it is the part a cold reader most needs:
 
-- **CI is not currently green.** PR #88's Ubuntu and Windows `verify` jobs
-  failed in the shared regression/type-check step. The Ubuntu log identifies
-  `host:test`; GitHub exposes no precise Windows assertion in its annotation.
-  Treat the branch as awaiting a fresh diagnostic run, not release-verified.
+- **CI status is a point-in-time signal.** PR #92 was merged on 2026-10-06
+  after the project owner reported its test checks passed. Check the current
+  GitHub Actions status for later changes; a passing merge check does not prove
+  live business-provider execution or 1.0.0 operational readiness.
 - **No real email or webhook has been sent by this code.** The approved-action
   adapters (Resend email, signed webhook) have only been exercised against
   fakes, so there is no operational evidence yet. They ship as dry runs.

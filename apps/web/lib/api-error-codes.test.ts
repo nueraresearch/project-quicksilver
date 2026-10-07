@@ -22,7 +22,7 @@ const { WorkflowPublicationFault } = await import('./workflow-publication-store.
 const { AgentCatalogFault } = await import('./agent-catalog-contract.ts')
 
 const API_DIR = fileURLToPath(new URL('../app/api/', import.meta.url))
-const SCOPE = /^(agents|workflows|decisions|entities)(\/|$)/
+const SCOPE = /^(agents|workflows|decisions|entities|plan|query|chat|inbox|monitoring|auth|dashboard)(\/|$)/
 
 test('errorCode maps every status the API emits to one stable code', () => {
   assert.deepEqual(

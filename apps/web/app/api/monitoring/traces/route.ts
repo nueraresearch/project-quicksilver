@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { guardWebRoute } from '@/lib/route-guard'
 import { publicationFailure, publicationRefusal } from '@/lib/workflow-publication-http'
+import { apiErrorBody } from '@/lib/api-errors'
 import { evaluateTelemetryAlerts } from '@/lib/telemetry'
 import { telemetryAlertThresholds } from '@/lib/telemetry-settings'
 import { listRecentTraceSpans } from '@/lib/telemetry-store'
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
   if (!caller.ok) return publicationRefusal(caller)
 
   const parsed = limitSchema.safeParse(new URL(request.url).searchParams.get('limit') ?? undefined)
-  if (!parsed.success) return NextResponse.json({ error: 'limit must be an integer from 1 to 500.' }, { status: 400 })
+  if (!parsed.success) return NextResponse.json(apiErrorBody('limit must be an integer from 1 to 500.', 400), { status: 400 })
 
   try {
     const spans = await listRecentTraceSpans(parsed.data)

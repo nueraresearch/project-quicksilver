@@ -16,6 +16,7 @@ import { appFetchFor } from '@/lib/chat-app-fetch'
 import { PAGE_HINT } from '@/lib/chat-request'
 import { persistEvaluations } from '@/lib/evaluation-store'
 import { guardWebRoute } from '@/lib/route-guard'
+import { apiErrorBody, errorCode } from '@/lib/api-errors'
 import { persistTraceSpans } from '@/lib/telemetry-store'
 import type { TraceSpanInput } from '@/lib/telemetry'
 
@@ -26,10 +27,10 @@ export async function POST(req: Request) {
   if (!requester.ok) return NextResponse.json(requester.body, { status: requester.status, headers: requester.headers })
 
   let body: unknown
-  try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+  try { body = await req.json() } catch { return NextResponse.json(apiErrorBody('Invalid JSON body', 400), { status: 400 }) }
   const { message, history, page } = (body ?? {}) as { message?: unknown; history?: unknown; page?: unknown }
   if (typeof message !== 'string' || message.trim().length < 2 || message.length > 2_000) {
-    return NextResponse.json({ error: 'message must be a string of 2 to 2,000 characters.' }, { status: 400 })
+    return NextResponse.json(apiErrorBody('message must be a string of 2 to 2,000 characters.', 400), { status: 400 })
   }
   const turns = Array.isArray(history)
     ? history.slice(-6).filter((t): t is { question: string; answer: string } => !!t && typeof t === 'object' && typeof (t as { question?: unknown }).question === 'string' && typeof (t as { answer?: unknown }).answer === 'string')
@@ -79,6 +80,6 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error('[/api/chat]', safeErrorName(err))
     const telemetry = await persistTraceSpans([{ traceId, spanId: requestSpanId, source: 'query', kind: 'request', name: 'chat.request', status: 'error', startedAt, durationMs: Date.now() - startedAt, requestedBy: requester.principalId }])
-    return NextResponse.json({ error: 'Chat failed', detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } }, { status: 500 })
+    return NextResponse.json({ error: 'Chat failed', code: errorCode(500), detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } }, { status: 500 })
   }
 }

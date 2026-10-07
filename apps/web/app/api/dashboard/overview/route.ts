@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { guardWebRoute } from '@/lib/route-guard'
 import { publicationRefusal } from '@/lib/workflow-publication-http'
+import { apiErrorBody } from '@/lib/api-errors'
 import { getSanityClient } from '@/lib/sanity-client'
 import type { BusinessOverview, DecisionSnapshot, ExperimentSnapshot, OperatingMetric } from '@/lib/business-dashboard'
 
@@ -62,6 +63,6 @@ export async function GET(request: Request) {
     return NextResponse.json(overview, { headers: { 'cache-control': 'no-store' } })
   } catch (error) {
     console.error('[dashboard-overview] data load failed', error instanceof Error ? error.name : 'UnknownError')
-    return NextResponse.json({ error: 'Could not load the business overview. Check the configured Quicksilver read data source.' }, { status: 503, headers: { 'cache-control': 'no-store' } })
+    return NextResponse.json(apiErrorBody('Could not load the business overview. Check the configured Quicksilver read data source.', 503), { status: 503, headers: { 'cache-control': 'no-store' } })
   }
 }

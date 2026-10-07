@@ -15,6 +15,7 @@ import { appFetchFor } from '@/lib/app-read-routes'
 import { attentionCounts, buildAttention, type DecisionInput, type SourceStatus } from '@/lib/attention'
 import { currentPolicySnapshotVersion, decisionActionFingerprint } from '@/lib/nqc-approval'
 import { guardWebRoute } from '@/lib/route-guard'
+import { apiErrorBody } from '@/lib/api-errors'
 import { getSanityClient } from '@/lib/sanity-client'
 
 export const dynamic = 'force-dynamic'
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
   const who = await fetchApp('/api/whoami')
   const identity = who.body as { principalId?: string; permissions?: string[] } | null
   if (who.status !== 200 || typeof identity?.principalId !== 'string' || !Array.isArray(identity.permissions)) {
-    return NextResponse.json({ error: 'Could not check what you are allowed to do.' }, { status: 503, headers: { 'cache-control': 'no-store' } })
+    return NextResponse.json(apiErrorBody('Could not check what you are allowed to do.', 503), { status: 503, headers: { 'cache-control': 'no-store' } })
   }
   const me = identity.principalId
   const permissions = identity.permissions

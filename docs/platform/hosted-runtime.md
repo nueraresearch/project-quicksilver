@@ -174,7 +174,7 @@ in the host config; the table marks which class each route is in:
 
 | Class | Default | Routes |
 |---|---|---|
-| `write` | burst 60, then 120 a minute | Every route that changes state: task cancel/approve/deny, intent answers and dismissals, the intent ledger, shadow recommendations, verdicts and outcomes, the decision journal, every Genesis write, run cancel, secrets, reload |
+| `write` | burst 60, then 120 a minute | Every route that changes state: task cancel/approve/deny, intent answers and dismissals, the intent ledger, shadow recommendations, verdicts and outcomes, the decision journal, every Genesis write, governed-memory write/forget, run cancel, secrets, reload |
 | `model` | burst 10, then 20 a minute | Routes that call a model or enqueue a run that does: `POST /api/intents`, `POST /api/shadow/:id/generate`, `POST /api/runs`, `POST /api/runs/:id/redrive` |
 | `webhook` | burst 60, then 120 a minute, **per endpoint** | `POST /webhooks/:id`, counted before the signature is checked; override one endpoint with `webhooks[].rateLimit` |
 | tasks | burst 10, then 30 a minute (`tasks.rateLimit`) | `POST /api/tasks`, per client |
@@ -211,6 +211,9 @@ added for a shared count; if one is ever needed, put the limit at the edge
 | `GET /metrics` | `audit:read` | Public only with `http.metricsPublic: true` on a private network |
 | `POST /webhooks/:id` | HMAC signature | Same contract as [triggers](triggers.md) |
 | `GET /api/whoami` | any principal | Grants nothing |
+| `GET /api/memory?kind=&domain=&limit=` | `memory:read` (built-in supervisor role) | Lists unexpired entries from this host tenant's governed store; optional kind/domain filters; limit defaults to 50 and is capped at 200 |
+| `POST /api/memory` | `memory:write` (built-in supervisor role); human only | `{ id, kind, domain, content, sourceDecisionId, confidence?, retentionDays? }`. The source decision must exist in this host's journal. Caller-supplied approvals are ignored; the memory governor decides or records a refusal. |
+| `POST /api/memory/:id/forget` | `memory:write` (built-in supervisor role); human only | Human-requested, audited forgetting of one tenant memory entry. Requires the host memory feature/store to be configured. |
 | `GET /api/runs?status=&workflow=&limit=` | `run:read` | Summaries, newest first |
 | `POST /api/runs` | `run:enqueue` | `{ workflow, input, idempotencyKey?, priority? }`. Only configured workflows; arbitrary graphs are refused |
 | `GET /api/runs/:id` | `run:read` | Result and event history |
@@ -230,6 +233,14 @@ added for a shared count; if one is ever needed, put the limit at the edge
 | `POST /api/genesis/money` `{ kind, amountUsd, category, description, source: { type, ref }, experimentId?, confirm? }` | `intent:provide`, humans only | **Records** money that already moved; never moves money. Spend and compute go through `decideSpend`: reject → 422 with reasons; founder decision without `confirm: true` → 409 with reasons |
 
 No API route returns a secret value.
+
+The host's governed-memory endpoints above are distinct from the web console's
+product-memory endpoints. They share the `/api/memory` path only because they
+are served by separate processes; the web-only [OpenAPI contract](../api/api-contract.md)
+describes product memory, not this host API. The host validates every submitted
+`sourceDecisionId` against its own tenant decision journal before calling the
+governor. Behavior-changing memory kinds can be refused by the governor; those
+refusals are not bypassed by a caller-supplied `approvalId`.
 
 ## Secrets vault
 

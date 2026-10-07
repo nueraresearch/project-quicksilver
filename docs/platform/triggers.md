@@ -1,9 +1,10 @@
-# Triggers: schedules and signed webhooks
+# Triggers: schedules, business events and signed webhooks
 
-`@quicksilver/kernel/triggers` starts workflow runs from a cron schedule or
-from a signed HTTP webhook. Both go through `WorkflowRunQueue.enqueue`, so
-every run triggered this way gets the same admission checks, idempotency,
-backpressure and RBAC as any other run. Each trigger should act as a
+`@quicksilver/kernel/triggers` starts workflow runs from cron schedules, signed
+HTTP webhooks, and matched business events or metric samples. All three go
+through `WorkflowRunQueue.enqueue`, so every run triggered this way gets the
+same admission checks, idempotency, backpressure and RBAC as any other run.
+Each trigger should act as a
 **service principal that holds only the `trigger` role**. That role can
 start runs and do nothing else.
 
@@ -34,6 +35,53 @@ scheduler.start()      // polls every 30 s; scheduler.stop() for shutdown
   missed slot, and only if it's inside `catchUpWindowMs` (1 hour by default).
 - **Retries:** a slot rejected by backpressure is retried on the next tick. A
   slot refused by RBAC or graph validation is not retried.
+
+## Business events and metric samples
+
+`BusinessTriggerRegistry` matches in-process event or metric definitions and
+enqueues matching work through the same governed `WorkflowRunQueue`. It does
+not add a host management route or durable trigger-definition store: the caller
+registers definitions at startup and calls `emitEvent` or `observeMetric` when
+it receives the corresponding business signal.
+
+```ts
+import { BusinessTriggerRegistry } from '@quicksilver/kernel/triggers'
+
+const business = new BusinessTriggerRegistry(queue)
+business.add({
+  id: 'late-orders', tenantId: 'acme', eventType: 'order.late', graph,
+  principal: { id: 'svc:business-trigger', kind: 'service', tenantId: 'acme', roles: ['trigger'] },
+})
+business.add({
+  id: 'high-downtime', tenantId: 'acme', metric: 'production.downtime',
+  operator: 'gte', threshold: 20, graph,
+  principal: { id: 'svc:business-trigger', kind: 'service', tenantId: 'acme', roles: ['trigger'] },
+})
+
+await business.emitEvent({
+  tenantId: 'acme', eventType: 'order.late', eventId: 'evt-42', payload: { orderId: 'o-42' },
+})
+await business.observeMetric({
+  tenantId: 'acme', metric: 'production.downtime', value: 22, sampleId: 'sample-9',
+})
+```
+
+- Event definitions match exact tenant and event type. Metric definitions match
+  exact tenant and metric name, then apply one of `gt`, `gte`, `lt`, `lte`,
+  `eq` or `neq` against the configured threshold. Non-matching signals enqueue
+  nothing.
+- The queue applies tenant checks, RBAC, graph validation, backpressure and
+  idempotency. Event keys are `business:event:<triggerId>:<eventId>`; metric
+  keys are `business:metric:<triggerId>:<sampleId>`.
+- **Retry the same signal with identical queue input.** Reuse the same
+  event/sample ID and do not change its payload, metric value, or optional
+  timestamp on retry. If `at` is supplied, it becomes `occurredAt` or
+  `measuredAt`; when omitted, the registry does not add a fresh wall-clock time.
+  This keeps a retry identical so the queue returns the existing run instead
+  of refusing a reused key with changed input.
+- Definitions live only in the registry instance. There is not yet a hosted
+  trigger-management API, durable definition store, event-bus adapter or
+  filesystem trigger.
 
 ## Signed webhooks
 
