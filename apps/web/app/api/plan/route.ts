@@ -57,6 +57,7 @@ import { getSanityClient } from '@/lib/sanity-client'
 import { z } from 'zod'
 import { decisionActionFingerprint, policySnapshotVersion } from '@/lib/nqc-approval'
 import { guardWebRoute } from '@/lib/route-guard'
+import { apiErrorBody, errorCode } from '@/lib/api-errors'
 import { PLAN_NDJSON, countDetail, encodePlanLine, type PlanStepName, type PlanStepStatus } from '@/lib/plan-stream'
 import { requireWebAgentProfile, webAgentMemoryFor } from '@/lib/agent-profiles'
 import {
@@ -286,27 +287,27 @@ export async function POST(req: Request) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return NextResponse.json(apiErrorBody('Invalid JSON body', 400), { status: 400 })
   }
 
   const parsed = BodySchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Validation failed', issues: parsed.error.issues }, { status: 400 })
+    return NextResponse.json({ ...apiErrorBody('Validation failed', 400), issues: parsed.error.issues }, { status: 400 })
   }
   const { objective } = parsed.data
 
   if (!isLlmConfigured()) {
     return NextResponse.json(
-      {
-        error:
-          'No LLM configured on the server. Set AZURE_API_KEY and AZURE_RESOURCE_NAME (or OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) in the root .env.',
-      },
+      apiErrorBody(
+        'No LLM configured on the server. Set AZURE_API_KEY and AZURE_RESOURCE_NAME (or OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) in the root .env.',
+        500,
+      ),
       { status: 500 },
     )
   }
   if (!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
     return NextResponse.json(
-      { error: 'Sanity project ID not configured.' },
+      apiErrorBody('Sanity project ID not configured.', 500),
       { status: 500 },
     )
   }
@@ -671,7 +672,7 @@ async function executePlan(
     }])
     return {
       status: 500,
-      body: { error: 'Plan failed', detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } },
+      body: { error: 'Plan failed', code: errorCode(500), detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } },
     }
   }
 }

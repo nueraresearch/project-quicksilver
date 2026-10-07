@@ -13,6 +13,7 @@ that every operating mode depends on.
 - [Workflow publication lifecycle (M8 foundation)](workflow-publication.md)
 - [Workflow monitoring dashboard](observability.md)
 - [Governed Nuera Quicksilver Agent catalog](agent-catalog.md)
+- [Web governed-agent profiles, reviewed skills, routines and memory](agent-profiles.md)
 - [Operator memory governance (M8 part 2)](operator-memory.md)
 - [Public web search and research boundary (P-024 foundation)](web-research.md)
 - [Durable workflow runs: queue, worker, dead letters](durable-runs.md)

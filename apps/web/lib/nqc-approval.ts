@@ -462,7 +462,7 @@ export interface WhoamiBody {
 
 export type WhoamiResult =
   | { ok: true; status: 200; body: WhoamiBody }
-  | { ok: false; status: 401 | 503; body: { error: string } }
+  | { ok: false; status: 401 | 503; body: { error: string; code: string } }
 
 
 /**
@@ -472,7 +472,7 @@ export type WhoamiResult =
  */
 /** The same answer for a principal that is already authenticated, such as a signed-in browser session. */
 export function checkWhoamiPrincipal(principal: Principal, env: CredentialEnv): WhoamiResult {
-  if (validatePrincipal(principal).length) return { ok: false, status: 503, body: { error: 'Authenticated principal data is invalid.' } }
+  if (validatePrincipal(principal).length) return { ok: false, status: 503, body: { error: 'Authenticated principal data is invalid.', code: 'unavailable' } }
   const tenantId = tenantOf(env)
   const permissions = PERMISSIONS.filter((permission) => quietAccessController.authorize(principal, permission, { tenantId, kind: 'decision' }).allowed)
   return {
@@ -494,16 +494,16 @@ export function checkWhoami(authorization: string | null, env: CredentialEnv): W
   try {
     provider = principalProvider(env)
   } catch {
-    return { ok: false, status: 503, body: { error: 'Principals are misconfigured.' } }
+    return { ok: false, status: 503, body: { error: 'Principals are misconfigured.', code: 'unavailable' } }
   }
   const tenantId = tenantOf(env)
   if (provider) {
     const principal = provider.authenticateHeader(authorization)
-    if (!principal) return { ok: false, status: 401, body: { error: 'A valid credential is required.' } }
+    if (!principal) return { ok: false, status: 401, body: { error: 'A valid credential is required.', code: 'unauthenticated' } }
     return checkWhoamiPrincipal(principal, env)
   }
   const shared = checkSharedSupervisorToken(authorization, env)
-  if (!shared.ok) return { ok: false, status: shared.status === 503 ? 503 : 401, body: { error: shared.reason } }
+  if (!shared.ok) return { ok: false, status: shared.status === 503 ? 503 : 401, body: { error: shared.reason, code: shared.status === 503 ? 'unavailable' : 'unauthenticated' } }
   return {
     ok: true,
     status: 200,

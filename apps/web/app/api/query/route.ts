@@ -11,6 +11,7 @@ import { safeErrorName } from '@/lib/safe-log'
 import { estimateModelCostUsd, executeGovernedAgent, queryQuicksilverAgent } from '@quicksilver/agent'
 import { persistEvaluations } from '@/lib/evaluation-store'
 import { guardWebRoute } from '@/lib/route-guard'
+import { apiErrorBody, errorCode } from '@/lib/api-errors'
 import { requireWebAgentProfile, webAgentMemoryFor } from '@/lib/agent-profiles'
 import { persistTraceSpans } from '@/lib/telemetry-store'
 import type { TraceSpanInput } from '@/lib/telemetry'
@@ -25,12 +26,12 @@ export async function POST(req: Request) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return NextResponse.json(apiErrorBody('Invalid JSON body', 400), { status: 400 })
   }
 
   const { question } = (body ?? {}) as { question?: string }
   if (!question || typeof question !== 'string') {
-    return NextResponse.json({ error: 'Missing required field: question' }, { status: 400 })
+    return NextResponse.json(apiErrorBody('Missing required field: question', 400), { status: 400 })
   }
 
   const traceId = randomUUID()
@@ -113,7 +114,7 @@ export async function POST(req: Request) {
       startedAt: requestStartedAt, durationMs: Date.now() - requestStartedAt, requestedBy: requester.principalId,
     }])
     return NextResponse.json(
-      { error: 'Query failed', detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } },
+      { error: 'Query failed', code: errorCode(500), detail: safeErrorName(err), telemetry: { traceId, persisted: telemetry.persisted } },
       { status: 500 },
     )
   }

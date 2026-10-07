@@ -29,7 +29,7 @@ export async function GET(req: Request) {
       }
     } catch (error) {
       console.error('[oidc] session lookup failed', error instanceof Error ? error.name : 'UnknownError')
-      return NextResponse.json({ error: 'Browser session storage is unavailable.' }, { status: 503, headers })
+      return NextResponse.json({ error: 'Browser session storage is unavailable.', code: 'unavailable' }, { status: 503, headers })
     }
   }
   const result = checkWhoami(authorization, process.env)
