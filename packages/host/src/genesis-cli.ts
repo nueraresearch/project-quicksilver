@@ -15,6 +15,8 @@
  *   npm run genesis -- review <file-or-"text"> --channel <c> [--experiment <id>] pass|revise|block ["note"]
  *   npm run genesis -- reviews
  *   npm run genesis -- check-content <file-or-"text"> [--proposer <actorId>]
+ *   npm run genesis -- research import <dataset.json> --confirm-prior-import --note <review-note>
+ *   npm run genesis -- research priors
  *
  * These commands RECORD money that has already moved and apply the fixed
  * rules. They never move money. Data lives in data/genesis/<runId>/ (gitignored),
@@ -27,7 +29,7 @@
  * the reviewer). It is never a WAES run and is always labeled as manual. The
  * review commands send and publish nothing.
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 
@@ -55,7 +57,7 @@ import { loadHostConfig } from './config.ts'
 import { contentStatus, createManualReview, MANUAL_REVIEW_LABEL, parseContentReviewInput, readContentArg, reviewSummary } from './genesis-reviews.ts'
 import { genesisStoresFromEnv, MoneyLedgerIntegrityError, runStartedAt } from './genesis-store.ts'
 import { parseMoney } from './genesis-api.ts'
-import { exportGenesisResearchTrajectories } from './genesis-research.ts'
+import { createGenesisResearchPriorImport, exportGenesisResearchTrajectories, verifyGenesisResearchPriorImport } from './genesis-research.ts'
 import { SecretsVault } from './vault.ts'
 import { CLI_VALUE_FLAGS, parseCommandArgs } from './cli-args.ts'
 
@@ -305,7 +307,72 @@ switch (cmd) {
   }
   case 'research': {
     const [sub] = positional
-    if (sub !== 'export') fail('Usage: research export --confirm-privacy-review --note "<privacy review note>"')
+    if (sub === 'priors') {
+      if (actorId !== config.owner) fail(`Research priors are available only to the configured owner (${config.owner}).`)
+      const priorPath = join(dataDir, tenantId, config.runId, 'research-priors.json')
+      const existing = await readJson<unknown[]>(priorPath, [])
+      if (!Array.isArray(existing) || existing.some((entry) => !verifyGenesisResearchPriorImport(entry))) fail('The Genesis prior store is invalid; refusing to display priors.')
+      const priorImports = existing as ReturnType<typeof createGenesisResearchPriorImport>[]
+      const trajectories = priorImports.flatMap((entry) => entry.trajectories)
+      const outcomes = new Map<string, number>()
+      const decisions = new Map<string, number>()
+      for (const trajectory of trajectories) {
+        outcomes.set(trajectory.outcome.status, (outcomes.get(trajectory.outcome.status) ?? 0) + 1)
+        for (const decision of trajectory.decisions) decisions.set(decision.verdict, (decisions.get(decision.verdict) ?? 0) + 1)
+      }
+      const formatCounts = (counts: Map<string, number>) => [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => `${name}=${count}`).join(', ') || 'none'
+      console.log(`Reviewed Genesis priors: ${trajectories.length} trajectories across ${priorImports.length} imported dataset(s).`)
+      console.log(`Outcomes: ${formatCounts(outcomes)}; decisions: ${formatCounts(decisions)}.`)
+      for (const prior of priorImports) console.log(`Source ${prior.sourceDatasetDigest}; reviewed by ${prior.reviewedBy} at ${prior.importedAt}.`)
+      console.log('These summaries are advisory context only; an owner still fixes every experiment threshold and starts each experiment.')
+      break
+    }
+    if (sub === 'import') {
+      if (actorId !== config.owner) fail(`Research prior imports require the configured owner (${config.owner}).`)
+      if (!args.includes('--confirm-prior-import')) fail('Review the structured trajectories and pass --confirm-prior-import before importing them as Genesis priors.')
+      const sourceArg = positional[1]
+      if (!sourceArg) fail('Usage: research import <dataset.json> --confirm-prior-import --note "<prior review note>"')
+      const reviewNote = flag('--note')
+      if (!reviewNote?.trim()) fail('A prior-review note is required with --note; its text is hashed and is not included in the import.')
+      let rawDataset: unknown
+      try { rawDataset = JSON.parse(await readFile(resolve(root, sourceArg), 'utf8')) as unknown }
+      catch (error) { fail(`Could not read the research dataset: ${error instanceof Error ? error.message : 'invalid JSON'}`) }
+      let prior: ReturnType<typeof createGenesisResearchPriorImport>
+      try { prior = createGenesisResearchPriorImport({ dataset: rawDataset, reviewer: founder, reviewNote, now: new Date() }) }
+      catch (error) { fail(error instanceof Error ? error.message : 'Research prior import refused.') }
+
+      const priorDir = join(dataDir, tenantId, config.runId)
+      const priorPath = join(priorDir, 'research-priors.json')
+      await mkdir(priorDir, { recursive: true, mode: 0o700 })
+      let lock: Awaited<ReturnType<typeof open>>
+      try { lock = await open(`${priorPath}.lock`, 'wx', 0o600) }
+      catch { fail('The Genesis prior store is locked or has a stale lock; refusing to overwrite prior history.') }
+      let storeError: string | undefined
+      try {
+        const existing = await readJson<unknown[]>(priorPath, [])
+        if (!Array.isArray(existing) || existing.some((entry) => !verifyGenesisResearchPriorImport(entry))) {
+          throw new Error('The existing Genesis prior store is invalid; import refused.')
+        }
+        const priorImports = existing as ReturnType<typeof createGenesisResearchPriorImport>[]
+        if (priorImports.some((entry) => entry.sourceDatasetDigest === prior.sourceDatasetDigest)) {
+          throw new Error('This research dataset has already been imported as a Genesis prior.')
+        }
+        await writeJson(priorPath, [...priorImports, prior])
+      } catch (error) {
+        storeError = error instanceof Error ? error.message : 'The Genesis prior store could not be updated.'
+      } finally {
+        await lock.close()
+        await unlink(`${priorPath}.lock`)
+      }
+      if (storeError) fail(storeError)
+      console.log(`Imported ${prior.trajectories.length} human-reviewed Genesis research prior trajectory/trajectories.`)
+      console.log(`Private prior store: ${priorPath}`)
+      console.log(`Source dataset digest: ${prior.sourceDatasetDigest}`)
+      console.log(`Reviewed by: ${prior.reviewedBy}; review note digest: ${prior.review.noteDigest}`)
+      console.log('Import does not change experiment thresholds, money, decisions, or execution authority.')
+      break
+    }
+    if (sub !== 'export') fail('Usage: research export --confirm-privacy-review --note "<privacy review note>" | research import <dataset.json> --confirm-prior-import --note "<prior review note>" | research priors')
     if (actorId !== config.owner) fail(`Research exports require the configured owner (${config.owner}).`)
     if (!args.includes('--confirm-privacy-review')) fail('Review the included structured data and pass --confirm-privacy-review before exporting a training dataset.')
     const privacyNote = flag('--note')
@@ -330,5 +397,5 @@ switch (cmd) {
     break
   }
   default:
-    console.log('Commands: check, experiment draft|start, measure, evaluate, decide, spend, compute, revenue, refund, status, review, reviews, check-content, research export. See the header of packages/host/src/genesis-cli.ts.')
+    console.log('Commands: check, experiment draft|start, measure, evaluate, decide, spend, compute, revenue, refund, status, review, reviews, check-content, research export|import|priors. See the header of packages/host/src/genesis-cli.ts.')
 }
