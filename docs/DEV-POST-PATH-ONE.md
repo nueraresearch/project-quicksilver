@@ -1,3 +1,11 @@
+> **Historical record: the withdrawn Sanity Challenge entry.** This document belongs to
+> **Quicksilver**, our Sanity Challenge 2026 entry, which has since been withdrawn and
+> lives at [nuerainc/quicksilver-sanity-challenge](https://github.com/nuerainc/quicksilver-sanity-challenge).
+> A copy is kept here because Nuera Quicksilver was built from that submission and is
+> the entry in its place, in both challenge paths.
+> It does not describe this repository, and the live demo it mentions is the
+> withdrawn deployment, not a deployment of Nuera Quicksilver.
+
 <!--
 DEV.to submission post -- Path One ("Ship an Agent That Queries Real Content").
 How to publish: open the challenge's prefilled Path One template on DEV. Keep

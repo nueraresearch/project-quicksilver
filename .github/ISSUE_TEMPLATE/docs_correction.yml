@@ -1,0 +1,44 @@
+name: Documentation or status correction
+description: A document contradicts the code, or two documents contradict each other.
+labels: ["docs-stale"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most documentation defects here are contradictions, not missing prose. If
+        two documents disagree, say which one is wrong, not just that they do.
+
+  - type: textarea
+    id: contradiction
+    attributes:
+      label: What contradicts what
+      description: Quote the two statements and give file paths and line numbers.
+      placeholder: |
+        CONTRIBUTING.md:7 says Node 20+, but package.json engines says >=22.6
+        and 19 scripts use node --experimental-strip-types, which needs 22.6+.
+    validations:
+      required: true
+
+  - type: textarea
+    id: truth
+    attributes:
+      label: Which is correct, and what is the evidence
+      description: |
+        Point at code, a test, a CI run, or live behavior. "It seems newer" is not
+        evidence.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of mismatch
+      options:
+        - Code and documentation disagree
+        - Two documents disagree
+        - A status claim is no longer true (built vs. proven)
+        - A prerequisite is missing or wrong
+        - A document is not reachable from any index
+        - A historical document lacks a "this is history" banner
+    validations:
+      required: true

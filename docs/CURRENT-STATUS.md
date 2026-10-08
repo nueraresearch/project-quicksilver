@@ -7,6 +7,30 @@ This is a concise operational and implementation snapshot. It separates code tha
 exists from live evidence that has been collected, so it must not be read as a
 1.0.0 readiness claim.
 
+## Where each piece runs
+
+Three different targets appear in this repository's documentation. They are
+different layers, not successive attempts at one thing.
+
+| Layer | Target | What runs there | Status |
+|---|---|---|---|
+| Web console and API routes | **Vercel** — `https://project-quicksilver.vercel.app` | `apps/web`, the Next.js console and its governed API routes | Live; deployed by the Vercel GitHub App on every PR |
+| Hosted runtime | **Render** — single-tenant host service | `packages/host`: worker pool, schedules, signed webhooks, management API, vault | Health, readiness, and persistence wiring validated 2026-10-05/06 |
+| Host, alternative | **Azure** — not provisioned | `deploy/azure/main.bicep`, the container host option | Documented and compiler-checked; **never applied to a subscription** |
+
+The Vercel and Render deployments are independent services that share this
+repository, not two names for one deployment. Azure is a third option that is
+written down but not standing up; see
+[Azure: the host and the services behind it](platform/azure-deploy.md).
+
+## About the snapshot header
+
+The `Snapshot date` and `Repository baseline` above describe when this page was
+last reconciled by hand, not the current state of `main`. For the live status,
+read the repository's GitHub Actions page and the open pull requests. This page
+records the semantic difference between built and proven; the commit it was
+reconciled against is a bookkeeping detail that goes stale on its own.
+
 ## Confirmed complete or built
 
 | Area | Current evidence | Classification |
@@ -33,6 +57,15 @@ exists from live evidence that has been collected, so it must not be read as a
 2. **Define principal/role administration.** Decide and implement the durable, audited management path; do not treat the completed P-108 sign-in experience as covering administrative lifecycle needs.
 3. **Prepare, do not start, the pilots.** The next large evidence gaps are organizational rather than coding tasks: entity/payment-account decisions for Genesis and the scheduled Onboard shadow-mode pilot.
 4. **Keep P-017/P-018 operational work explicit.** Production-owned profile resources, live model runs, trusted request-derived tenant identity, shared memory coordination, and complete recall remain open; see the parity matrix.
+
+## Version numbering
+
+`package.json` currently reads `0.4.0` across the workspace packages, while this
+page refers to 0.8.0 implementation-complete and the [parity matrix](platform/parity-tests.md)
+frames 0.9.0 and 1.0.0 gates. These are two different things and the divergence is
+intentional for now: the manifest version is a placeholder that does not track the
+release gates. Use the parity matrix, not `package.json`, to judge where the
+project actually is. The manifest will be brought into line when releases are cut.
 
 ## Source of truth
 

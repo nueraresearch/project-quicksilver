@@ -41,11 +41,20 @@
 
 ## Current status
 
-> **Status update — 2026-10-07:** The browser OIDC sign-in/session path is
-> covered (P-108), and single-tenant Render health/persistence wiring is
-> validated in a narrow scope. See the maintained [current status](./docs/CURRENT-STATUS.md)
-> for the done/not-done distinction. PR #92 is merged; the project owner
-> reports its test checks passed. This is not a claim of operational readiness.
+> **Current status:** The browser OIDC sign-in/session path is covered (P-108),
+> and single-tenant host health/persistence wiring is validated in a narrow
+> scope. This is not a claim of operational readiness.
+>
+> The maintained source for what is built versus what is operationally proven is
+> [docs/CURRENT-STATUS.md](./docs/CURRENT-STATUS.md). For the current state of
+> `main`, read the repository's Actions page and open pull requests rather than
+> trusting a status line that was true on the day it was written.
+>
+> **Where each piece runs:** the web console and API routes are on **Vercel**,
+> the single-tenant hosted runtime is on **Render**, and **Azure** is documented
+> as an alternative host but has not been provisioned. They are three separate
+> layers, not three attempts at one deployment. The same table is in the
+> [current status](./docs/CURRENT-STATUS.md).
 
 The repository is a **tested platform foundation**, not a hosted production
 service. Its single-tenant Render host is live for health, readiness, and

@@ -1,0 +1,41 @@
+# CODEOWNERS
+#
+# These paths mirror the package boundaries in CONTRIBUTING.md and AGENTS.md. The
+# boundaries are a governance rule, not a convenience: a change that crosses one
+# needs a second reader, because that is where authority can quietly move.
+#
+# One owner for now. The value is the routing — the right change gets the right
+# reviewer — not the review quota. Replace these with real handles as the
+# maintainer count grows.
+
+# ── Defaults ────────────────────────────────────────────────────────────────
+*                       @nueraresearch
+
+# ── Authority: the kernel must never depend on an LLM ───────────────────────
+/packages/kernel/      @nueraresearch
+/apps/web/app/api/     @nueraresearch
+
+# ── Effectful and privileged surfaces ────────────────────────────────────────
+/packages/host/        @nueraresearch
+/packages/operator/    @nueraresearch
+/packages/sdk/         @nueraresearch
+/packages/sdk-go/      @nueraresearch
+/packages/sdk-python/  @nueraresearch
+
+# ── Governance invariants: changing these changes the rules ────────────────
+/packages/kernel/src/policy-snapshot.ts   @nueraresearch
+/packages/kernel/src/authority.ts         @nueraresearch
+/packages/kernel/src/identity/            @nueraresearch
+
+# ── Contracts that must stay in step with their documentation ───────────────
+/docs/api/openapi.json         @nueraresearch
+/apps/web/app/api/             @nueraresearch
+/docs/platform/parity-tests.md @nueraresearch
+
+# ── Deployment and CI ───────────────────────────────────────────────────────
+/.github/workflows/     @nueraresearch
+/deploy/               @nueraresearch
+
+# ── Credential and environment handling ─────────────────────────────────────
+/.env.example          @nueraresearch
+/quicksilver.host.json @nueraresearch
