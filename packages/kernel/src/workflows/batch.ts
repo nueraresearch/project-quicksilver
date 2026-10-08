@@ -79,17 +79,27 @@ export async function executeBoundedBatch<T, O>(
       const controller = new AbortController()
       const abortFromParent = () => controller.abort(parent?.reason)
       parent?.addEventListener('abort', abortFromParent, { once: true })
-      const timer = setTimeout(() => controller.abort(new Error(`Batch item timed out after ${timeoutMs} ms.`)), timeoutMs)
       let deadlineTimer: ReturnType<typeof setTimeout> | undefined
+      let removeCancellationListener = () => {}
       try {
         if (controller.signal.aborted) throw abortError(controller.signal)
-        const output = await Promise.race([
-          execute(item, { id: workspaceId, path: workspacePath, signal: controller.signal }),
-          new Promise<never>((_, reject) => { deadlineTimer = setTimeout(() => {
-            controller.abort(new Error(`Batch item timed out after ${timeoutMs} ms.`))
-            reject(new Error(`Batch item timed out after ${timeoutMs} ms.`))
-          }, timeoutMs) }),
-        ])
+        const work = execute(item, { id: workspaceId, path: workspacePath, signal: controller.signal })
+        const timeout = new Promise<never>((_, reject) => {
+          deadlineTimer = setTimeout(() => {
+            const error = new Error(`Batch item timed out after ${timeoutMs} ms.`)
+            reject(error)
+            controller.abort(error)
+          }, timeoutMs)
+        })
+        const cancelled = parent ? new Promise<never>((_, reject) => {
+          const onCancel = () => reject(abortError(parent))
+          if (parent.aborted) onCancel()
+          else {
+            parent.addEventListener('abort', onCancel, { once: true })
+            removeCancellationListener = () => parent.removeEventListener('abort', onCancel)
+          }
+        }) : null
+        const output = await Promise.race(cancelled ? [work, timeout, cancelled] : [work, timeout])
         results[index] = { id: item.id, status: 'completed', output }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Batch item failed.'
@@ -97,8 +107,8 @@ export async function executeBoundedBatch<T, O>(
         const wasCancelled = parent?.aborted || controller.signal.aborted && !timedOut
         results[index] = { id: item.id, status: timedOut ? 'timed-out' : wasCancelled ? 'cancelled' : 'failed', error: message }
       } finally {
-        clearTimeout(timer)
         if (deadlineTimer) clearTimeout(deadlineTimer)
+        removeCancellationListener()
         parent?.removeEventListener('abort', abortFromParent)
         try { await rm(workspacePath, { recursive: true, force: true }) } catch (error) {
           if (results[index]?.status === 'completed') results[index] = { id: item.id, status: 'failed', error: `Workspace cleanup failed: ${error instanceof Error ? error.message : 'unknown error'}` }
@@ -108,7 +118,11 @@ export async function executeBoundedBatch<T, O>(
   }
 
   await Promise.all(Array.from({ length: Math.min(maxConcurrency, Math.max(items.length, 1)) }, () => worker()))
-  const completedResults = results.filter((result): result is BatchItemResult<O> => result !== undefined)
+  const completedResults = items.map((item, index) => results[index] ?? {
+    id: item.id,
+    status: 'cancelled' as const,
+    error: 'Batch item was not started because the batch was cancelled.',
+  })
   if (parent?.aborted || cancelled) return { status: 'cancelled', results: completedResults }
   const completed = results.filter((result) => result?.status === 'completed').length
   return { status: completed === items.length ? 'completed' : completed === 0 ? 'failed' : 'partial', results: completedResults }
