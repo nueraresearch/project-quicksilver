@@ -1,0 +1,34 @@
+# Line endings and file types.
+#
+# The repository index already stores LF (git ls-files --eol shows i/lf for
+# tracked files), because normalization is currently inherited from each
+# contributor's core.autocrlf setting. That is the problem: two people on the
+# same checkout can get different results, and a Windows contributor with
+# autocrlf=false would start committing CRLF.
+#
+# These rules make the normalization explicit and local to this repository, so
+# it no longer depends on anyone's global Git configuration.
+
+# Normalize text to LF in the repository, and check out LF in the worktree.
+* text=auto eol=lf
+
+# Images are binary: never normalize, never diff.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+
+# Lockfiles and generated data must never be rewritten by a checkout.
+package-lock.json -text
+*.svg text eol=lf
+
+# Shell scripts must stay LF even on Windows, or they fail to run under bash.
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows-native scripts are checked out with CRLF, which is what they need.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

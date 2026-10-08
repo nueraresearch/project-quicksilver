@@ -66,6 +66,6 @@
     "operator:auto": "node --experimental-strip-types --no-warnings packages/operator/src/automations-cli.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.6"
   }
 }

@@ -4,7 +4,9 @@ Thanks for contributing. Nuera Quicksilver is a TypeScript monorepo for a govern
 
 ## Before you start
 
-- Node.js **20 or newer** is required.
+- Node.js **22.6 or newer** is required. The regression suites run TypeScript
+  directly through `node --experimental-strip-types`, which is not available
+  before 22.6. CI pins Node 22; `.nvmrc` records the same major.
 - Run commands from the repository root.
 - Do not commit `.env`, tokens, vault keys, Sanity credentials, model keys, or generated runtime data.
 - The default regression suite does not require Sanity or model credentials.
