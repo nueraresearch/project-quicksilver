@@ -28,7 +28,7 @@
     "@quicksilver/agent": "*",
     "@quicksilver/aura": "*",
     "@quicksilver/kernel": "*",
-    "@sanity/client": "^6.22.5",
+    "@sanity/client": "^8.9.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
