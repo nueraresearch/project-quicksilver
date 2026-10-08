@@ -1,0 +1,61 @@
+# Dependency updates.
+#
+# Three ecosystems are tracked because three are built and tested in CI:
+# the npm workspace, the Go SDK, and the Python SDK. GitHub Actions are
+# tracked too, since the workflows are pinned by tag and a tag can move.
+#
+# Grouped minor and patch updates keep the diff reviewable; this repository has
+# ~1 MB of documentation and 750 tracked files, so ungrouped noise is real.
+# Dependabot is configured with a monthly schedule because this is a
+# single-maintainer project and security fixes arrive via vulnerability alerts,
+# not via the update PR.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    # package-lock.json is committed with CRLF and is marked -text in
+    # .gitattributes so normalization cannot rewrite it. Dependabot writes a
+    # lockfile in its own encoding; that is expected here.
+    commit-message:
+      prefix: "deps(npm)"
+
+  - package-ecosystem: gomod
+    directory: /packages/sdk-go
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "deps(go)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    # Actions in this repository are pinned to major tags. SHA-pinning them is
+    # tracked separately; until then, keep tag bumps visible in one place.
+    commit-message:
+      prefix: "deps(actions)"
+
+  - package-ecosystem: pip
+    directory: /packages/sdk-python
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(python)"

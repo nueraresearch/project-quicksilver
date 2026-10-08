@@ -1,6 +1,12 @@
 # Builds the host image and rolls the Azure host to it. Manual only: nothing deploys on a push.
-# Needs a one-time setup (docs/platform/azure-deploy.md): an Entra app registration with a federated
-# credential for this repository, and these repository VARIABLES (not secrets): AZURE_CLIENT_ID,
+#
+# STATUS: not provisioned. The `azure-host` environment this workflow declares does not exist on
+# the repository, and none of the six variables below are set, so a dispatch today fails before it
+# builds anything. See docs/platform/azure-deploy.md for the one-time setup, and for why Azure is
+# an alternative host rather than the current one (the live host is Render).
+#
+# Needs a one-time setup: an Entra app registration with a federated
+# credential for this repository, these repository VARIABLES (not secrets): AZURE_CLIENT_ID,
 # AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, AZURE_REGISTRY_NAME, AZURE_HOST_APP_NAME.
 name: Deploy host to Azure
 
@@ -20,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: azure-host
     steps:
-      - uses: actions/checkout@v5
-      - uses: azure/login@v2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}

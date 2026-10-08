@@ -91,4 +91,24 @@ npm run typecheck
 
 ## Reporting security issues
 
-Do not publish credentials, private datasets, exploit details, or sensitive logs in an issue. Follow the private reporting process described in `SECURITY.md` when available, or contact the repository owner directly.
+Do not publish credentials, private datasets, exploit details, or sensitive logs in an issue. Follow the private reporting process in [SECURITY.md](SECURITY.md). Private vulnerability reporting is enabled on this repository, so the Security tab opens a private advisory that only you and the maintainers can see.
+
+## Updating pinned GitHub Actions
+
+The workflows reference actions by commit SHA, with the version in a trailing
+comment. A tag can be moved after you trust it; a SHA cannot. Dependabot does not
+open PRs for tag moves, so bumps are deliberate:
+
+```bash
+# 1. Resolve the tag you want to move to.
+gh api repos/actions/checkout/git/ref/tags/v5 --jq .object.sha
+
+# 2. Update every `uses:` line in .github/workflows, keeping the version comment.
+#    An annotated tag resolves to a tag object; follow .object.sha to the commit.
+
+# 3. Confirm nothing is left on a floating tag.
+grep -rn 'uses:.*@v[0-9]' .github/workflows   # must return nothing
+```
+
+Keep the `# vX` comment accurate. It is the only human-readable record of what a
+SHA corresponds to, and the SHA alone tells a reader nothing.

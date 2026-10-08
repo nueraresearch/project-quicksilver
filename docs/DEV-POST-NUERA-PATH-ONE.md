@@ -1,3 +1,8 @@
+> **Status: a published submission post, not current documentation.** This is the
+> Path One post written for Nuera Quicksilver itself. It describes the entry as it
+> stood when it was published. For what the platform does today, see the
+> [current status](CURRENT-STATUS.md) and the [documentation index](README.md).
+
 ---
 title: "Nuera Quicksilver: an agent that reads your company through Sanity Context, and can't approve its own work"
 tags: sanitychallenge, devchallenge, ai, typescript

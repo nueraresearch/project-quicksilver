@@ -1,0 +1,80 @@
+name: Bug report
+description: Something does not behave as the documentation says it behaves.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository fails closed on purpose, so "it refused" is often correct
+        behavior. If you are unsure whether a refusal is a bug, say so below and
+        describe what you expected instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, including the exact error or refusal message.
+      placeholder: |
+        The kernel refused to authorize `capability:approve` because the policy
+        snapshot had no matching rule.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which boundary is involved
+      options:
+        - packages/kernel — deterministic authorization, risk, process, workflow, NQC
+        - packages/agent — model config, MCP, prompts, governed workers
+        - packages/host — worker, management API, vault, logs, metrics
+        - packages/aura — intent and provenance
+        - packages/operator — CLI, channels, automations
+        - apps/web — console and API routes
+        - apps/studio — Sanity schemas, seed, demo scripts
+        - SDKs
+        - CI or repository setup
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: governance
+    attributes:
+      label: Governance impact
+      description: |
+        Did authority move somewhere it should not, a fail-closed check fail open,
+        a human approval gate get satisfied without a human, or a tenant boundary
+        get crossed? Answer "none" if not.
+      placeholder: None.
+
+  - type: input
+    id: repro
+    attributes:
+      label: Smallest reproduction
+      description: A command, a route, a request body, or a failing test.
+      placeholder: npm run verify
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      value: |
+        - Node version:
+        - Branch or commit:
+        - Sanity/model credentials present: yes/no (never paste the values)
+
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Security
+      options:
+        - label: This may be a security issue. Do not continue here — follow SECURITY.md and report privately.
+          required: false

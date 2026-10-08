@@ -1,0 +1,63 @@
+name: Parity item
+description: Work tracked against the release gate matrix in docs/platform/parity-tests.md.
+labels: ["parity"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The parity matrix is the release gate. A P-0xx identifier is assigned there
+        first; do not invent one in the issue.
+
+  - type: input
+    id: item
+    attributes:
+      label: Parity item
+      placeholder: P-0xx
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: What exists today
+      description: The built state, and the test or evidence for it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: needed
+    attributes:
+      label: What is missing
+      description: |
+        Distinguish what is missing from what is unproven. "Not built" and
+        "built but not operationally evidenced" are different states and the
+        matrix tracks them separately.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What would prove it
+      description: |
+        A passing test, a live observation, a recorded decision. Be specific
+        about what counts as done.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Primary boundary
+      options:
+        - packages/kernel
+        - packages/agent
+        - packages/host
+        - packages/aura
+        - packages/operator
+        - apps/web
+        - apps/studio
+        - SDKs
+        - Cross-cutting
+    validations:
+      required: true
