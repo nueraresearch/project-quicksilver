@@ -823,6 +823,41 @@ test('Batch: cancellation stops scheduling, records every item, and cleans activ
   }
 })
 
+test('Batch: a cancellation landing during workspace setup never starts the item', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'quicksilver-batch-race-'))
+  const controller = new AbortController()
+  let started = false
+  try {
+    // newWorkspaceId is called after the workspace is created and before the parent
+    // listener is attached: exactly the window where the parent can abort and a
+    // freshly attached listener would never fire. The batch status is already
+    // `cancelled` either way, so assert on whether the work started at all.
+    const result = await executeBoundedBatch(
+      [{ id: 'a', input: 1 }],
+      async () => {
+        started = true
+        return 'ran'
+      },
+      {
+        workspaceRoot: root,
+        maxConcurrency: 1,
+        signal: controller.signal,
+        newWorkspaceId: () => {
+          controller.abort(new Error('cancelled during workspace setup'))
+          return 'race-workspace'
+        },
+      },
+    )
+    assert.equal(started, false, 'the item executor must not run once the parent is aborted')
+    assert.equal(result.status, 'cancelled')
+    assert.deepEqual(result.results.map((item) => item.status), ['cancelled'])
+    assert.deepEqual(await readdir(root), [], 'the workspace must still be cleaned up')
+  } finally {
+    controller.abort()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('Batch: timeout aborts the executor and records a timed-out result after cleanup', async () => {
   const root = await mkdtemp(join(tmpdir(), 'quicksilver-batch-timeout-'))
   try {
