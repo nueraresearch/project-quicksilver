@@ -78,7 +78,12 @@ export async function executeBoundedBatch<T, O>(
       const workspaceId = options.newWorkspaceId?.(item as BatchItem<unknown>, index) ?? `subagent-${index + 1}`
       const controller = new AbortController()
       const abortFromParent = () => controller.abort(parent?.reason)
-      parent?.addEventListener('abort', abortFromParent, { once: true })
+      // The parent may have aborted while the workspace was being created above,
+      // after the loop's `aborted` check. Attaching a listener to an already
+      // aborted signal never fires it, so the item would run to completion
+      // despite the cancellation; propagate it explicitly instead.
+      if (parent?.aborted) abortFromParent()
+      else parent?.addEventListener('abort', abortFromParent, { once: true })
       let deadlineTimer: ReturnType<typeof setTimeout> | undefined
       let removeCancellationListener = () => {}
       try {
