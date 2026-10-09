@@ -196,6 +196,11 @@ resource host 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'QUICKSILVER_PRINCIPALS', value: '${kvRef}quicksilver-principals)' }
         { name: 'SANITY_CONTEXT_TOKEN', value: '${kvRef}sanity-context-token)' }
         { name: 'SANITY_WRITE_TOKEN', value: '${kvRef}sanity-write-token)' }
+        // Measured model routing (P-050). Both are unset by default, so routing stays
+        // off until someone adds them; setting only the history path refuses dispatch.
+        // See docs/platform/routed-model-enablement.md.
+        { name: 'QUICKSILVER_ROUTING_CONFIG', value: '${kvRef}quicksilver-routing-config)' }
+        { name: 'QUICKSILVER_ROUTING_HISTORY_PATH', value: '/data/routing/model-history.json' }
         { name: 'AZURE_API_KEY', value: '${kvRef}azure-openai-api-key)' }
         { name: 'NEXT_PUBLIC_SANITY_PROJECT_ID', value: sanityProjectId }
         { name: 'SANITY_CONTEXT_MCP_URL', value: sanityContextMcpUrl }

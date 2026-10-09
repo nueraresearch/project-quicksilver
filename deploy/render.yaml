@@ -48,6 +48,22 @@ services:
         value: /etc/secrets/actions.json
       - key: QUICKSILVER_ACTIONS_DIR         # proposals live on the disk, or a restart loses them
         value: /data/actions
+      # Measured model routing (P-050). Set these together or leave both unset.
+      #
+      # withMeasuredProviderFallback throws rather than dispatch if
+      # QUICKSILVER_ROUTING_HISTORY_PATH is set without QUICKSILVER_ROUTING_CONFIG
+      # ("refusing unmeasured routing"), so the history path is deliberately NOT
+      # given a default value here: it becomes live only when you set both in the
+      # Render dashboard, which is also the kill switch (unset either one).
+      #
+      # The history is a SHA-256 digest chain bound to the digest of the profiles
+      # in QUICKSILVER_ROUTING_CONFIG, so EDITING the profiles invalidates an
+      # existing history file and refuses dispatch until the file is removed or
+      # rolled back. See docs/platform/routed-model-enablement.md.
+      - key: QUICKSILVER_ROUTING_CONFIG
+        sync: false             # JSON: {"profiles":[{modelId,supportedTasks,taskAccuracy,successRate,averageCostPer1kTokens,p95LatencyMs,available}]}
+      - key: QUICKSILVER_ROUTING_HISTORY_PATH
+        sync: false             # on the disk, or a restart loses the learned outcomes
       - key: QUICKSILVER_EMAIL_API_KEY       # your Resend key; enter it in the Render dashboard only
         sync: false
       - key: SANITY_CONTEXT_MCP_URL

@@ -53,6 +53,7 @@ every operating mode depends on.
 ## Hosting and runtime
 
 - [Hosted runtime: host process, management API, secrets vault, logs and metrics](hosted-runtime.md)
+- [Enabling measured model routing in production (P-050): the two variables, the four fail-closed traps, and the kill switch](routed-model-enablement.md)
 - [Render operational evidence (2026-10-05/06)](render-operational-evidence-2026-10-05.md)
 - [Always-on hosting](always-on-hosting.md)
 - [Azure: the host and the services behind it](azure-deploy.md)
