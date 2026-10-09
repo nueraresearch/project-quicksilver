@@ -38,7 +38,7 @@
     "@ai-sdk/openai": "^3.0.0",
     "@ai-sdk/openai-compatible": "^2.0.0",
     "@quicksilver/kernel": "*",
-    "ai": "^6.0.0",
+    "ai": "^7.0.127",
     "zod": "^3.25.76",
     "@quicksilver/aura": "*"
   },
