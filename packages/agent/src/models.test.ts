@@ -108,14 +108,19 @@ test('Azure mode without credentials fails with an actionable message', () => {
   })
 })
 
-test('Cloud and local providers also produce spec v3 models (Claude/Ollama used to be v1)', () => {
+test('Cloud providers produce spec v3 models (Claude/Gemini used to be v1)', () => {
   withEnv({ ANTHROPIC_API_KEY: 'sk-ant-test', OPENAI_API_KEY: 'sk-test', GOOGLE_GENERATIVE_AI_API_KEY: 'g-test' }, () => {
     for (const id of ['claude-sonnet-5', 'gpt-5.6-sol', 'gemini-3.8-flash']) {
       assert.equal((languageModelForId(id, 'cloud') as { specificationVersion?: string }).specificationVersion, 'v3', id)
     }
   })
+})
+
+test('The local Ollama provider tracks the openai-compatible spec version, currently v4', () => {
   withEnv({}, () => {
-    assert.equal((languageModelForId('qwen2.5:7b', 'local') as { specificationVersion?: string }).specificationVersion, 'v3')
+    // @ai-sdk/openai-compatible 3.x moved its model spec from v3 to v4. The
+    // cloud providers above are unaffected and stay on v3.
+    assert.equal((languageModelForId('qwen2.5:7b', 'local') as { specificationVersion?: string }).specificationVersion, 'v4')
   })
 })
 
