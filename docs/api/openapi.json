@@ -354,24 +354,7 @@
           "403": { "$ref": "#/components/responses/ErrorResponse" },
           "404": { "$ref": "#/components/responses/ErrorResponse" },
           "503": { "$ref": "#/components/responses/ErrorResponse" },
-          "2XX": {
-            "description": "The audit file, sent as an attachment.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["schema", "exportedAt", "exportedBy", "decision", "integrity"],
-                  "properties": {
-                    "schema": { "const": "quicksilver.decision-audit/1" },
-                    "exportedAt": { "type": "string", "format": "date-time" },
-                    "exportedBy": { "type": "string" },
-                    "decision": { "type": "object", "description": "The decision as recorded, as returned by getDecision without the viewer and approval-readiness fields." },
-                    "integrity": { "type": "object", "required": ["algorithm", "digest", "covers"], "properties": { "algorithm": { "const": "sha256" }, "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "covers": { "const": "decision" } } }
-                  }
-                }
-              }
-            }
-          }
+          "2XX": { "$ref": "#/components/responses/DecisionAuditExportResponse" }
         }
       }
     },
@@ -1727,6 +1710,18 @@
         "description": "Common error fields where emitted; validation issues are present on some 400 responses. `error` is on every error body and `code` on every error body from the decision, workflow, agent and company-data routes; other fields are not guaranteed across all routes.",
         "additionalProperties": true
       },
+      "DecisionAuditExport": {
+        "type": "object",
+        "required": ["schema", "exportedAt", "exportedBy", "decision", "integrity"],
+        "description": "The downloadable audit record built by buildDecisionAudit.",
+        "properties": {
+          "schema": { "const": "quicksilver.decision-audit/1" },
+          "exportedAt": { "type": "string", "format": "date-time" },
+          "exportedBy": { "type": "string" },
+          "decision": { "type": "object", "description": "The decision as recorded, as returned by getDecision without the viewer and approval-readiness fields." },
+          "integrity": { "type": "object", "required": ["algorithm", "digest", "covers"], "properties": { "algorithm": { "const": "sha256" }, "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "covers": { "const": "decision" } } }
+        }
+      },
       "DecisionProcess": {
         "type": "object",
         "required": ["engine"],
@@ -3069,6 +3064,15 @@
         "required": ["approve"],
         "properties": { "approve": { "type": "boolean" } },
         "additionalProperties": false
+      },
+      "ProductMemoryWriteResult": {
+        "type": "object",
+        "required": ["entry"],
+        "description": "The entry a memory write acted on. `approved` is present only on POST /api/memory/{id}/review, which echoes the decision it applied; POST /api/memory returns the entry alone. `entry` is null when a review rejected an entry that was no longer pending.",
+        "properties": {
+          "entry": { "oneOf": [{ "$ref": "#/components/schemas/ProductMemoryEntry" }, { "type": "null" }] },
+          "approved": { "type": "boolean" }
+        }
       }
     },
     "requestBodies": {
@@ -3165,6 +3169,7 @@
       "ChatResponse": { "description": "The assistant's answer, with links to pages of the app.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } } },
       "DecisionListResponse": { "description": "Recent decisions.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionList" } } } },
       "DecisionDetailResponse": { "description": "One decision.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionDetail" } } } },
+      "DecisionAuditExportResponse": { "description": "The audit file, sent as an attachment.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionAuditExport" } } } },
       "ActionsToolsResponse": { "description": "What this deployment can and cannot do.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionsDisclosure" } } } },
       "RateLimitResponse": {
         "content": {
@@ -3305,7 +3310,7 @@
       },
       "ProductMemoryEntryResponse": {
         "description": "A product-memory entry after creation or review.",
-        "content": { "application/json": { "schema": { "type": "object", "properties": { "entry": { "$ref": "#/components/schemas/ProductMemoryEntry" }, "approved": { "type": "boolean" } } } } }
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProductMemoryWriteResult" } } }
       }
     },
     "parameters": {

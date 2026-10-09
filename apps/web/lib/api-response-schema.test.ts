@@ -22,40 +22,20 @@ register('./route-test-loader.mjs', import.meta.url)
 //
 // OpenAPI 3.1 response schemas are JSON Schema 2020-12, which is why this uses
 // ajv's 2020 dialect rather than the default draft-07 build.
+//
+// Every operation must declare its success response, so the assertion below is
+// an empty list rather than a pinned one. It used to pin 14 operations awaiting a
+// schema, but all 14 already declared one: the gap was in this detector, which
+// resolved the contract by the substituted request path (/api/decisions/test-id
+// for the contract's /api/decisions/{id}) and matched only a hardcoded 200, so
+// every dynamic route and every 201 read as undeclared. Three auth routes
+// declare a bodyless 303 redirect, which is a success with no body to validate.
 
-/**
- * Operations that return a success response but do not yet declare one in
- * docs/api/openapi.json.
- *
- * The parity matrix claims every operation declares a named success response
- * schema; this test found 14 that do not, so that claim is too strong. Rather
- * than let the gap pass unnoticed or block every contract edit, the debt is
- * pinned here. Adding a new undeclared operation fails immediately; removing a
- * declared schema fails immediately. The list only ever shrinks.
- *
- * Remove an entry when its schema is added to the contract.
- */
-const OPERATIONS_AWAITING_A_SUCCESS_SCHEMA = new Set([
-  'GET /api/auth/oidc/callback',
-  'GET /api/auth/oidc/start',
-  'GET /api/decisions/[id]',
-  'GET /api/decisions/[id]/audit',
-  'POST /api/auth/logout',
-  'POST /api/agents/drafts',
-  'POST /api/agents/rollback',
-  'POST /api/decisions/[id]/action',
-  'POST /api/decisions/[id]/execute',
-  'POST /api/decisions/[id]/observe',
-  'POST /api/decisions/[id]/resume',
-  'POST /api/decisions/[id]/rollback',
-  'POST /api/memory',
-  'POST /api/memory/[id]/review',
-])
 const API_DIR = fileURLToPath(new URL('../app/api/', import.meta.url))
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 
 type Handler = (req: Request, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>
-interface RouteHandler { key: string; path: string; method: string; handler: Handler }
+interface RouteHandler { key: string; path: string; contractPath: string; method: string; handler: Handler }
 
 interface Contract {
   paths: Record<string, Record<string, { responses: Record<string, unknown> }>>
@@ -108,7 +88,17 @@ async function loadHandlers(): Promise<{ routes: RouteHandler[]; unimportable: s
     }
     for (const method of HTTP_METHODS) {
       if (typeof mod[method] === 'function') {
-        routes.push({ key: `${method} /api/${rel}`, path: `/api/${rel}`.replace(/\[([^\]]+)\]/g, 'test-$1'), method, handler: mod[method] as Handler })
+        // Two path forms: the request needs a concrete segment, the contract is
+        // keyed by the `{param}` template. Resolving the contract by the
+        // substituted path silently missed every dynamic route.
+        const template = `/api/${rel}`.replace(/\[([^\]]+)\]/g, '{$1}')
+        routes.push({
+          key: `${method} /api/${rel}`,
+          path: `/api/${rel}`.replace(/\[([^\]]+)\]/g, 'test-$1'),
+          contractPath: template,
+          method,
+          handler: mod[method] as Handler,
+        })
       }
     }
   }
@@ -126,11 +116,25 @@ function resolvePointer(pointer: string): unknown {
 }
 
 /**
+ * Whether the contract declares a success response at all for an operation.
+ *
+ * Success is 2xx, or the 3xx redirect that the OIDC start, callback and logout
+ * routes return instead of a body. An operation declaring neither is undeclared.
+ */
+function declaresSuccessResponse(operation: { responses: Record<string, unknown> } | undefined): boolean {
+  if (!operation) return false
+  return Object.keys(operation.responses).some((code) => /^(2|3)\d\d$/.test(code) || /^2[Xx][Xx]$/.test(code) || /^3[Xx][Xx]$/.test(code))
+}
+
+/**
  * The schema the contract declares for a successful response. The document uses
  * an OpenAPI 3.1 `2XX` wildcard for most operations and exact codes (200, 201,
  * 303) for the rest, so try the exact status first and fall back to the wildcard.
+ *
+ * A 3xx that carries no JSON content is a declared success with nothing to
+ * validate, so it resolves to null-but-declared rather than "undeclared".
  */
-function declaredSuccessSchema(status: number, operation: { responses: Record<string, unknown> } | undefined): { schema: unknown; via: string } | null {
+function declaredSuccessSchema(status: number, operation: { responses: Record<string, unknown> } | undefined): { schema: unknown; via: string } | 'no-body' | null {
   if (!operation) return null
   const candidates = [String(status), '2XX', '2xx']
   for (const code of candidates) {
@@ -140,8 +144,13 @@ function declaredSuccessSchema(status: number, operation: { responses: Record<st
     const response = (ref ? resolvePointer(ref) : entry) as { content?: Record<string, { schema?: unknown }> } | null
     const schema = response?.content?.['application/json']?.schema
     if (schema) return { schema, via: ref ? `${code} -> ${ref}` : code }
+    // Declared, but a redirect or empty body: there is no JSON to check.
+    return 'no-body'
   }
-  return null
+  // A redirect-only success (the OIDC start/callback and logout routes) has no
+  // 2XX at all. It is still a declared success response.
+  const redirect = Object.keys(operation.responses).find((code) => /^3\d\d$/.test(code))
+  return redirect ? 'no-body' : null
 }
 
 /**
@@ -189,9 +198,8 @@ test('P-118: a successful API response validates against its declared response s
 
   try {
     for (const route of routes) {
-      const operation = contract.paths[route.path]?.[route.method.toLowerCase()]
-      const declared = declaredSuccessSchema(200, operation)
-      if (!declared) {
+      const operation = contract.paths[route.contractPath]?.[route.method.toLowerCase()]
+      if (!declaresSuccessResponse(operation)) {
         withoutSuccessSchema.push(route.key)
         continue
       }
@@ -204,9 +212,24 @@ test('P-118: a successful API response validates against its declared response s
       const res = await route.handler(req, { params: Promise.resolve({ id: 'test-id' }) })
 
       // Only successful responses are in scope; a refusal or an unconfigured
-      // dependency is not evidence about the success schema.
-      if (res.status < 200 || res.status >= 300) {
+      // dependency is not evidence about the success schema. A 3xx redirect is
+      // the success response for the OIDC and logout routes.
+      if (res.status < 200 || res.status >= 400) {
         notSuccessful.push(`${route.key} (${res.status})`)
+        continue
+      }
+
+      // Resolve against the status actually returned, not an assumed 200: the
+      // contract declares 201 for the create routes and 303 for the redirects.
+      const declared = declaredSuccessSchema(res.status, operation)
+      if (declared === 'no-body') {
+        const body = await res.text()
+        if (body.length > 0) failures.push(`${route.key}: declared a redirect with no content but returned a body`)
+        else validated.push(route.key)
+        continue
+      }
+      if (!declared) {
+        failures.push(`${route.key}: returned ${res.status}, which the contract does not declare`)
         continue
       }
 
@@ -234,9 +257,9 @@ test('P-118: a successful API response validates against its declared response s
     `expected at least one real response to validate; validated=${validated.length} notSuccessful=${notSuccessful.length}`,
   )
   assert.deepEqual(
-    [...withoutSuccessSchema].sort(),
-    [...OPERATIONS_AWAITING_A_SUCCESS_SCHEMA].sort(),
-    'an operation gained or lost its declared success response schema; add the schema to docs/api/openapi.json, or update the pinned debt list if the debt was settled',
+    withoutSuccessSchema,
+    [],
+    'every operation must declare a success response in docs/api/openapi.json; a bodyless 3xx redirect counts, anything else must declare a schema',
   )
 
   if (process.env.QS_SCHEMA_REPORT) {
