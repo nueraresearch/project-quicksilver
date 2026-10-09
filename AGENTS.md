@@ -59,10 +59,16 @@ These are the invariants. They are not preferences.
 
 ## Before opening a pull request
 
-Run `npm run verify`. It is the credential-free regression chain plus type
-checks, and it is what CI runs. On Node < 22.6 the test scripts fail, because
-they execute TypeScript directly through `node --experimental-strip-types`;
-`engines` in `package.json` and `.nvmrc` state the requirement.
+Run `npm run verify` **and** `npm run build --workspace=@quicksilver/web`. The
+first is the credential-free regression chain plus type checks; the second is
+the bundle. Both are required CI checks, and both are credential-free. Verify
+alone is not enough: it type-checks but never bundles, so a change can pass every
+test and still fail to deploy. That is not theoretical — the TypeScript 7 bump
+passed all four original checks and broke only at build time.
+
+On Node < 22.6 the test scripts fail, because they execute TypeScript directly
+through `node --experimental-strip-types`; `engines` in `package.json` and
+`.nvmrc` state the requirement.
 
 Behavior changes ship with tests — including a test that proves the **refusal**
 for authorization, identity, tenant isolation, credentials, and route-access

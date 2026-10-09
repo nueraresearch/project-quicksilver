@@ -8,7 +8,7 @@
 
 **NQC Kernel governs. Quicksilver Engine evaluates. Nuera Quicksilver Agents do the work.**
 
-![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Sanity](https://img.shields.io/badge/Sanity-Content_Lake_%2B_Context_MCP-F03E2F?logo=sanity&logoColor=white)
 ![AI SDK 6](https://img.shields.io/badge/AI_SDK-6-000000?logo=vercel&logoColor=white)
@@ -272,6 +272,7 @@ model-provider checks remain separate because they require external credentials.
 | Check | Command | Credentials |
 |---|---|---|
 | Kernel, agent, host, Aura, seed/web suites and type checks | `npm run verify` | No |
+| Web console production build | `npm run build --workspace=@quicksilver/web` | No |
 | Full workspace build | `npm run build` | Dedicated Sanity project for Studio |
 | Sanity Context MCP verification | `npm run verify:mcp` | Context MCP credentials |
 | Model provider verification | `npm run verify:llm` | Model credentials |
@@ -288,7 +289,7 @@ The challenge-era stress test found real bugs: a risk formula that scored nearly
 
 | Layer | Choice |
 |---|---|
-| App | Next.js 15 (App Router), TypeScript, Tailwind; the public app is deployed to Vercel with controlled access |
+| App | Next.js 16 (App Router), TypeScript 7, Tailwind; the public app is deployed to Vercel with controlled access |
 | Content & state | Dedicated Nuera Quicksilver Sanity project (`f87t11g1`), isolated from the public challenge dataset; Studio schema deployment remains pending |
 | Agent read path | Sanity **Context MCP**, in both GROQ mode (live dataset) and Knowledge Base mode (cited, with contradiction detection) |
 | Agent harness | AI SDK 6 + `@ai-sdk/mcp`, role-based models (planner + independent reviewer; Azure OpenAI in production) |
