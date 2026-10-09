@@ -62,7 +62,7 @@ Ordered by what actually unblocks the most, not by effort.
 2. **Close A-7, the last threat-model P0 blocker.** Confirm `SANITY_READ_TOKEN` and `SANITY_WRITE_TOKEN` are set in Vercel and Render, delete the old combined `SANITY_AUTH_TOKEN` in sanity.io/manage, and review who holds Editor or higher in Studio. No Sanity credential exists in any local env file (`.env`, `.env.local`), so nothing can be verified from a developer machine. This is independent of the Sanity Challenge: the Challenge project `d280bqjc` is refused by the code, and the combined token belongs to the Quicksilver project `f87t11g1`.
 3. **Run the live decision loop (P-121).** `npm run e2e:live` already exists and refuses correctly without credentials. With `NEXT_PUBLIC_SANITY_PROJECT_ID=f87t11g1`, `SANITY_WRITE_TOKEN` and `QUICKSILVER_SUPERVISOR_TOKEN` in `.env` it runs against the deployed Vercel app by default. Recording a dated pass closes an evidence item outright.
 4. **Enable measured routing (P-050).** Set both `QUICKSILVER_ROUTING_CONFIG` and `QUICKSILVER_ROUTING_HISTORY_PATH` in Render, on the mounted disk. Both must be set together: the history path alone makes every measured call throw. The procedure, the four fail-closed traps and the three kill switches are in [enabling measured model routing](platform/routed-model-enablement.md).
-5. **Decide the 1.0.0 deprecation window.** The promise is decided as mandatory; the remaining work is listed in [the API contract](api/api-contract.md#what-a-100-promise-still-requires). The window length is the only input that is purely a product-owner decision. There is no CHANGELOG in the repository and all three SDKs sit at 0.4.0, so the SDK compatibility policy has to be written too.
+5. **Decide the 1.0.0 deprecation window.** The promise is decided as mandatory; the remaining work is listed in [the API contract](api/api-contract.md#what-a-100-promise-still-requires). The window length is the only input that is purely a product-owner decision. The root `CHANGELOG.md` now records releases, but it does not express per-SDK compatibility, so that policy still has to be written.
 6. **Read the Render service logs for the Genesis persistence signal.** Health, readiness, and the unauthenticated identity refusal were rechecked read-only on 2026-10-08. The remaining gap is the startup log: confirm `QUICKSILVER_GENESIS_DIR` is resolved and that the Genesis in-memory warning is absent. This needs Render access, not a code change. Keep it read-only; a sentinel write and restart needs a separately approved recovery plan.
 7. **Define principal/role administration.** Decide and implement the durable, audited management path; do not treat the completed P-108 sign-in experience as covering administrative lifecycle needs.
 8. **Prepare, do not start, the pilots.** The next large evidence gaps are organizational rather than coding tasks: entity/payment-account decisions for Genesis and the scheduled Onboard shadow-mode pilot.
@@ -70,12 +70,21 @@ Ordered by what actually unblocks the most, not by effort.
 
 ## Version numbering
 
-`package.json` currently reads `0.4.0` across the workspace packages, while this
-page refers to 0.8.0 implementation-complete and the [parity matrix](platform/parity-tests.md)
-frames 0.9.0 and 1.0.0 gates. These are two different things and the divergence is
-intentional for now: the manifest version is a placeholder that does not track the
-release gates. Use the parity matrix, not `package.json`, to judge where the
-project actually is. The manifest will be brought into line when releases are cut.
+`package.json` reads `0.8.0` across the eight Quicksilver packages, matching
+`info.version` in [`openapi.json`](api/openapi.json) and the roadmap's verified
+milestone baseline: M1 through M7 are implementation-complete, with M7 verified by
+[M7 release evidence](platform/m7-release-evidence.md). `@quicksilver/aura` stays
+at `0.1.0` and is versioned separately, because Aura runs its own ladder and its
+evaluation files are hash-frozen by tests.
+
+`[CHANGELOG.md](../CHANGELOG.md)` records what changed in each release. It did not
+exist before 0.8.0; earlier versions are in the repository history and the
+roadmap's milestone table, and no earlier entry has been reconstructed.
+
+The manifest version is still **not** the thing that decides readiness. The
+[parity matrix](platform/parity-tests.md) frames the 0.9.0 and 1.0.0 gates, and it
+states that tests alone are not the 1.0.0 bar — operational evidence is. Use the
+matrix to judge where the project actually is.
 
 ## Source of truth
 

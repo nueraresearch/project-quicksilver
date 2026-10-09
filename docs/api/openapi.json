@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "version": "0.4.0",
+    "version": "0.8.0",
     "description": "Contract for the current Next.js HTTP routes. Version follows the repository release line. This project is pre-1.0: request and response details may change between releases. See api-contract.md for supported guarantees and known gaps.",
     "title": "Nuera Quicksilver HTTP API",
     "summary": "Pre-1.0 API contract; not a stable compatibility promise."
