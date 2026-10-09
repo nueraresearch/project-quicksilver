@@ -7,7 +7,7 @@
  *
  * - `script-src`: only scripts carrying this response's nonce, plus what they
  *   load (`'strict-dynamic'`). Next.js reads the nonce from the request's
- *   `Content-Security-Policy` header (set in middleware.ts) and stamps it on
+ *   `Content-Security-Policy` header (set in proxy.ts) and stamps it on
  *   its own inline and bundle scripts. No host allow-list, no wildcard, no
  *   third-party script hosts, and no `'unsafe-eval'` outside `next dev`.
  * - `style-src 'self' 'unsafe-inline'`: Next.js and React emit inline styles
@@ -45,7 +45,7 @@ export function contentSecurityPolicy({ nonce, development = false }: CspOptions
   return directives.map(([name, values]) => `${name} ${values.join(' ')}`).join('; ')
 }
 
-/** Companion headers middleware.ts sends with the CSP on every page and API response. */
+/** Companion headers proxy.ts sends with the CSP on every page and API response. */
 export const STATIC_SECURITY_HEADERS: ReadonlyArray<{ key: string; value: string }> = Object.freeze([
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'no-referrer' },

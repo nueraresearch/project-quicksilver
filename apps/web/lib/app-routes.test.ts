@@ -7,7 +7,7 @@
  *   with a valid principal that holds no permission (403). The only route a
  *   permissionless principal may call is the reviewed `GET /api/whoami`.
  * - Per-principal rate limits: 429 with Retry-After on model and write routes.
- * - The cross-site check in middleware.ts: JSON only, same origin only.
+ * - The cross-site check in proxy.ts: JSON only, same origin only.
  *
  * Handlers are called directly; nothing here reaches Sanity or a model (the
  * credential check comes first, and the model and Sanity settings are cleared).
@@ -396,19 +396,19 @@ test('cross-site check (A-3, T-30): state-changing API requests must be JSON and
   assert.deepEqual(checkApiRequest(req('POST', '/api/plan', { ...json, origin: 'https://quicksilver.example' }), { QUICKSILVER_WEB_ALLOWED_ORIGINS: 'https://quicksilver.example, not a url' }), { ok: true })
 })
 
-test('cross-site check (A-3): middleware refuses before any route handler, with the security headers', async () => {
+test('cross-site check (A-3): the proxy refuses before any route handler, with the security headers', async () => {
   const { NextRequest } = await import('next/server.js')
-  const { middleware } = await import('../middleware.ts')
-  const refused = middleware(new NextRequest('http://localhost:3000/api/plan', { method: 'POST', headers: { 'content-type': 'text/plain', origin: 'https://evil.example' }, body: '{}' }))
+  const { proxy } = await import('../proxy.ts')
+  const refused = proxy(new NextRequest('http://localhost:3000/api/plan', { method: 'POST', headers: { 'content-type': 'text/plain', origin: 'https://evil.example' }, body: '{}' }))
   assert.equal(refused.status, 403)
   assert.equal((await refused.json()).code, 'cross-site')
   assert.ok(refused.headers.get('content-security-policy'))
   assert.equal(refused.headers.get('x-frame-options'), 'DENY')
-  const plainText = middleware(new NextRequest('http://localhost:3000/api/plan', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' }))
+  const plainText = proxy(new NextRequest('http://localhost:3000/api/plan', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' }))
   assert.equal(plainText.status, 415)
-  const ok = middleware(new NextRequest('http://localhost:3000/api/plan', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:3000', 'sec-fetch-site': 'same-origin' }, body: '{}' }))
+  const ok = proxy(new NextRequest('http://localhost:3000/api/plan', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:3000', 'sec-fetch-site': 'same-origin' }, body: '{}' }))
   assert.equal(ok.status, 200, 'passed on to the route (NextResponse.next)')
-  const page = middleware(new NextRequest('http://localhost:3000/', { method: 'GET' }))
+  const page = proxy(new NextRequest('http://localhost:3000/', { method: 'GET' }))
   assert.equal(page.status, 200)
 })
 

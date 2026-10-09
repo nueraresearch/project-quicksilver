@@ -1,6 +1,6 @@
 /**
  * Cross-site request checks for every state-changing API call (threat model
- * A-3, T-30). middleware.ts runs this once for every `/api/*` request, before
+ * A-3, T-30). proxy.ts runs this once for every `/api/*` request, before
  * any route handler.
  *
  * For any method other than GET, HEAD and OPTIONS:

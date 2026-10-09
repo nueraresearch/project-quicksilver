@@ -1,6 +1,6 @@
 /**
  * Threat model T-67: the web app's Content-Security-Policy and companion
- * headers (lib/security-headers.ts, applied by middleware.ts). Run by the root
+ * headers (lib/security-headers.ts, applied by proxy.ts). Run by the root
  * `seed:test` script.
  */
 import { test } from 'node:test'
@@ -43,15 +43,21 @@ test('CSP (T-67): same-origin connections only, no framing, no plugins, companio
   assert.deepEqual(headers, { 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' })
 })
 
-test('CSP (T-67): unsafe-eval appears only for next dev, and middleware enables it only when NODE_ENV is development', () => {
+test('CSP (T-67): unsafe-eval appears only for next dev, and the proxy enables it only when NODE_ENV is development', () => {
   const dev = directives(contentSecurityPolicy({ nonce: generateNonce(), development: true }))
   assert.ok(dev.get('script-src')!.includes("'unsafe-eval'"))
-  const middleware = readFileSync(new URL('../middleware.ts', import.meta.url), 'utf8')
-  assert.match(middleware, /development: process\.env\.NODE_ENV === 'development'/)
-  assert.match(middleware, /response\.headers\.set\('content-security-policy', policy\)/)
-  assert.match(middleware, /requestHeaders\.set\('content-security-policy', policy\)/)
-  assert.match(middleware, /STATIC_SECURITY_HEADERS/)
-  assert.match(middleware, /runtime: 'nodejs'/, 'middleware must use Node.js runtime for Vercel Services')
+  const proxySource = readFileSync(new URL('../proxy.ts', import.meta.url), 'utf8')
+  assert.match(proxySource, /development: process\.env\.NODE_ENV === 'development'/)
+  assert.match(proxySource, /response\.headers\.set\('content-security-policy', policy\)/)
+  assert.match(proxySource, /requestHeaders\.set\('content-security-policy', policy\)/)
+  assert.match(proxySource, /STATIC_SECURITY_HEADERS/)
+  // Vercel Services rejects Edge output. Next.js 16 removed the `runtime` key from
+  // Proxy config because Proxy is always Node.js, so the boundary is now
+  // structural. Assert both halves of that: no runtime override may reappear,
+  // and the matcher must still cover every non-static route.
+  assert.doesNotMatch(proxySource, /runtime:\s*'edge'/, 'the proxy must never request the Edge runtime for Vercel Services')
+  assert.doesNotMatch(proxySource, /export\s+\{[^}]*\bruntime\b/, 'Next.js 16 rejects route segment config in a Proxy file')
+  assert.match(proxySource, /matcher:\s*\[\{\s*source:\s*'\/\(\(\?!_next\/static/, 'the proxy must keep covering every non-static route')
 })
 
 test('CSP (T-67): nonces are fresh, base64 and validated', () => {

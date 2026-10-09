@@ -17,7 +17,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { checkApiRequest } from './lib/request-guard'
 import { STATIC_SECURITY_HEADERS, contentSecurityPolicy, generateNonce } from './lib/security-headers'
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const nonce = generateNonce()
   const policy = contentSecurityPolicy({ nonce, development: process.env.NODE_ENV === 'development' })
 
@@ -41,10 +41,12 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Vercel Services currently rejects Edge middleware output. Next.js 15.5
-  // supports Node.js middleware, which preserves this security boundary while
-  // emitting a Node runtime function for the web service.
-  runtime: 'nodejs',
+  // No `runtime` key: Next.js 16 rejects route segment config in a Proxy file
+  // because Proxy always runs on the Node.js runtime. That is the same boundary
+  // this file previously asked for with `runtime: 'nodejs'`, and it is now
+  // guaranteed by the framework rather than asserted here. Vercel Services
+  // rejects Edge output, so this matters: keep it on the Proxy convention and
+  // do not reintroduce an Edge-only middleware file.
   // Everything except Next's hashed static assets and image optimiser.
   matcher: [{ source: '/((?!_next/static|_next/image|favicon.ico).*)' }],
 }
