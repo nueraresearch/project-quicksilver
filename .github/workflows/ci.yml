@@ -39,6 +39,34 @@ jobs:
       - name: Run regression suites and type checks
         run: npm run verify
 
+  # `npm run verify` runs the regression suites and `tsc --noEmit`, but it never
+  # ran `next build`. A change could therefore pass every required check and
+  # still break the deployment - which is exactly what happened with the
+  # TypeScript 7 bump: tests were green while `next build` failed because the Go
+  # compiler no longer ships the JavaScript compiler API that Next.js needs.
+  #
+  # This job builds the web console only. Building every workspace would pull in
+  # apps/studio, which requires Sanity credentials; this one stays credential-free.
+  web-build:
+    name: web-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web console
+        run: npm run build --workspace=@quicksilver/web
+
   go-sdk:
     name: go-sdk
     runs-on: ubuntu-latest
