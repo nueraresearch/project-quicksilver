@@ -97,21 +97,28 @@ access (threat model A-7):
 | read | `SANITY_READ_TOKEN` | Viewer | The web decision log page; `npm run smoke`; the dataset export in `npm run reset:history` |
 | write | `SANITY_WRITE_TOKEN` | Editor | `/api/plan`, the decision routes, evaluation records (web and host), the host's Sanity stores, `npm run seed`, `seed:processes`, `reset:history`, `e2e:live` |
 
-Until both are set, each falls back to the old combined `SANITY_AUTH_TOKEN`
-and prints a warning once per process naming the missing variable (never the
-token). A read path never borrows the write token, and a write path never
-borrows the read token. `SANITY_DATASET_PUBLIC=on` lets read paths use no
-token at all, only if the founder has made the dataset public (it is private
-today; leave this unset). Schema deploys keep their own `SANITY_DEPLOY_TOKEN`
-or a `sanity login` session. `npm test` checks that no other file creates a
+Both split tokens are created and in use (founder confirmation, 2026-10-09).
+`SANITY_AUTH_TOKEN` is no longer declared in `deploy/render.yaml` or
+`.env.example`, and a test fails if either reintroduces it. The fallback in
+`resolveSanityToken` remains only until the founder deletes the combined token in
+sanity.io/manage: if one split token is ever missing, that path prints a warning
+once per process naming the missing variable (never the token) and keeps working
+until the fallback is removed. A read path never borrows the write token, and a
+write path never borrows the read token. `SANITY_DATASET_PUBLIC=on` lets read
+paths use no token at all, only if the founder has made the dataset public (it is
+private today; leave this unset). Schema deploys keep their own
+`SANITY_DEPLOY_TOKEN` or a `sanity login` session. `npm test` checks that no other
+file creates a
 Sanity client or reads these variables (`sanity-tokens.test.ts`).
 
 **Status:** `SANITY_READ_TOKEN` (Viewer) and `SANITY_WRITE_TOKEN` (Editor)
 have been created in [sanity.io/manage](https://sanity.io/manage) and are in
-use. Remaining founder follow-up: confirm both are set in every environment
-that runs this code (root `.env`, Vercel, the Azure hosting environment once
-chosen) so no process still falls back with the warning, then delete the old
-combined token in sanity.io/manage and remove `SANITY_AUTH_TOKEN` everywhere.
+use (founder confirmation, 2026-10-09). The declarations are gone from
+`deploy/render.yaml` and `.env.example`. Remaining founder follow-up: check the
+Render logs for any `SANITY_READ_TOKEN is not set` warning — the fallback prints
+one per process, so its absence is the direct evidence that nothing is falling
+back — then delete the old combined token in sanity.io/manage, after which the
+fallback in `resolveSanityToken` can be removed.
 
 **Founder decision (not changed from code):** anyone with an Editor token, or
 with an Editor role in Studio, can write an `approvalRecord`, `approvedBy`, a
