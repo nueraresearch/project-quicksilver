@@ -4,7 +4,7 @@ import { AppNavigation } from '@/components/app-navigation'
 import { DemoBanner } from '@/components/demo-banner'
 import { AgentChatWidget } from '@/components/agent-chat-widget'
 
-// Render per request so each page gets the CSP nonce middleware.ts sets
+// Render per request so each page gets the CSP nonce proxy.ts sets
 // (threat model T-67); a prerendered page would carry no nonce and its
 // scripts would be blocked.
 export const dynamic = 'force-dynamic'

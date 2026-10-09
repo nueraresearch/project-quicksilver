@@ -54,7 +54,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
+    "typescript": "^7.0.2",
     "@electric-sql/pglite": "^0.5.8"
   }
 }
