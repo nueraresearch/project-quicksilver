@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { appendMoney, experimentDigest, type Experiment, type MoneyLedger } from '@quicksilver/kernel/playbooks/economics'
 import { createManualReview } from './genesis-reviews.ts'
-import { exportGenesisResearchTrajectories, verifyGenesisResearchDataset } from './genesis-research.ts'
+import { createGenesisResearchPriorImport, exportGenesisResearchTrajectories, verifyGenesisResearchDataset, verifyGenesisResearchPriorImport } from './genesis-research.ts'
 
 const exec = promisify(execFile)
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -83,6 +83,30 @@ test('Genesis research export provides outcome trajectories without free text or
   assert.equal(verifyGenesisResearchDataset({ ...dataset, includedCount: 10 }), false)
 })
 
+test('Genesis prior import requires human review and copies only safe structured fields', () => {
+  const dataset = exportGenesisResearchTrajectories({
+    runId, experiments: [experiment()], ledger: ledger(), reviews: [], reviewer,
+    privacyNote: 'Reviewed for structured outcome use only.', now,
+  })
+  const prior = createGenesisResearchPriorImport({
+    dataset, reviewer, reviewNote: 'Reviewed all included outcome trajectories for prior use.', now,
+  })
+  assert.equal(verifyGenesisResearchPriorImport(prior), true)
+  assert.equal(prior.sourceDatasetDigest, dataset.digest)
+  assert.equal(prior.reviewedBy, reviewer.id)
+  assert.match(prior.trajectories[0]!.trajectoryId, /^prior-[a-f0-9]{24}$/)
+  const serialized = JSON.stringify(prior)
+  for (const secret of ['Private hypothesis', 'Private customer metric label', 'private-metric-id', 'private://customer-list', 'Private decision note', 'Private transaction description', 'private-source-ref', 'Reviewed all included outcome trajectories']) {
+    assert.equal(serialized.includes(secret), false, `prior import leaked ${secret}`)
+  }
+  const extended = structuredClone(prior) as unknown as { trajectories: Array<Record<string, unknown>> }
+  extended.trajectories[0]!.hypothesis = 'unreviewed free text'
+  assert.equal(verifyGenesisResearchPriorImport(extended), false, 'the verified import schema rejects unallowlisted fields')
+  assert.throws(() => createGenesisResearchPriorImport({ dataset, reviewer: { id: 'agent', kind: 'agent' }, reviewNote: 'Reviewed.', now }), /Only a named human owner/)
+  assert.throws(() => createGenesisResearchPriorImport({ dataset, reviewer, reviewNote: ' ', now }), /prior-review note/)
+  assert.throws(() => createGenesisResearchPriorImport({ dataset: { ...dataset, digest: '0'.repeat(64) }, reviewer, reviewNote: 'Reviewed.', now }), /integrity check failed/)
+})
+
 test('Genesis research export excludes undecided experiments and is digest-bound to the verified sources', () => {
   const draft = experiment({ status: 'draft', startedAt: undefined, startedBy: undefined, endsAt: undefined, decisions: [], measurements: [] })
   const args = { runId, experiments: [experiment(), draft], ledger: ledger(), reviews: [], reviewer, privacyNote: 'Reviewed.', now }
@@ -124,6 +148,7 @@ test('Genesis CLI requires explicit owner privacy review and writes the bounded 
     QUICKSILVER_GENESIS_DIR: dataDir,
     QUICKSILVER_GENESIS_STORE: 'file',
     QUICKSILVER_GENESIS_ACTOR: reviewer.id,
+    QUICKSILVER_TENANT_ID: 'default',
     QUICKSILVER_HOST_CONFIG: join(dir, 'no-host.json'),
   }
   const cli = join(repo, 'packages', 'host', 'src', 'genesis-cli.ts')
@@ -138,6 +163,22 @@ test('Genesis CLI requires explicit owner privacy review and writes the bounded 
     const exported = JSON.parse(await readFile(outputPath!, 'utf8')) as ReturnType<typeof exportGenesisResearchTrajectories>
     assert.equal(exported.trajectories.length, 1)
     assert.equal(JSON.stringify(exported).includes('Private hypothesis'), false)
+    await assert.rejects(run('research', 'import', outputPath!, '--note', 'Reviewed.'), /pass --confirm-prior-import/)
+    const { stdout: importStdout } = await run('research', 'import', outputPath!, '--confirm-prior-import', '--note', 'Reviewed for future Genesis priors.')
+    assert.match(importStdout, /Imported 1 human-reviewed Genesis research prior trajectory/)
+    assert.match(importStdout, /does not change experiment thresholds, money, decisions, or execution authority/)
+    const imported = JSON.parse(await readFile(join(runDir, 'research-priors.json'), 'utf8')) as Array<ReturnType<typeof createGenesisResearchPriorImport>>
+    assert.equal(imported.length, 1)
+    assert.equal(imported[0]!.sourceDatasetDigest, exported.digest)
+    assert.equal(imported[0]!.reviewedBy, reviewer.id)
+    assert.equal(JSON.stringify(imported).includes('Private hypothesis'), false)
+    assert.equal(JSON.stringify(imported).includes('Reviewed for future Genesis priors'), false)
+    const { stdout: priorSummary } = await run('research', 'priors')
+    assert.match(priorSummary, /Reviewed Genesis priors: 1 trajectories across 1 imported dataset/)
+    assert.match(priorSummary, /Outcomes: completed=1; decisions: continue=1/)
+    assert.match(priorSummary, /advisory context only; an owner still fixes every experiment threshold/)
+    assert.equal(priorSummary.includes('Private hypothesis'), false)
+    await assert.rejects(run('research', 'import', outputPath!, '--confirm-prior-import', '--note', 'Reviewed again.'), /already been imported/)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

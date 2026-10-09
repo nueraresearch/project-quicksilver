@@ -1,5 +1,7 @@
 export { MODELS, estimateModelCostUsd } from './models.ts'
 export type { QuicksilverModelRole } from './models.ts'
+export { appendModelRoutingOutcome, loadModelRoutingProfiles, rollbackModelRoutingHistory, RoutingHistoryIntegrityError } from './routing-history.ts'
+export type { RoutingHistoryEntry, RoutingOutcomeEntry, RoutingRollbackEntry } from './routing-history.ts'
 export {
   PLANNER_SYSTEM_PROMPT,
   REVIEWER_SYSTEM_PROMPT,
