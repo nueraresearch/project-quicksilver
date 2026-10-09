@@ -1,13 +1,13 @@
 # Nuera Quicksilver HTTP API contract
 
-The machine-readable contract is [openapi.json](openapi.json) (OpenAPI 3.1.0). Its `info.version` is `0.4.0`, matching the repository release line. This is a **pre-1.0 contract**, not a stable API promise. Every operation now declares a named success schema, but the version does not assert that those shapes are frozen, and most of those schemas are derived from the handlers rather than verified against live responses.
+The machine-readable contract is [openapi.json](openapi.json) (OpenAPI 3.1.0). Its `info.version` is `0.8.0`, matching the repository release line. This is a **pre-1.0 contract**, not a stable API promise. Every operation now declares a named success schema, but the version does not assert that those shapes are frozen, and most of those schemas are derived from the handlers rather than verified against live responses.
 
 ## Compatibility and versioning policy (pre-1.0)
 
 This is the current state. The 1.0.0 promise is **not** made here, and the
 requirements to make it are listed under "What a 1.0.0 promise still requires".
 
-- **Where the version lives.** `info.version` in `openapi.json` is the only API version. It is the repository release line (`0.4.0`). There is no version in the URL, no version header, and no content negotiation; a client cannot ask for an older shape.
+- **Where the version lives.** `info.version` in `openapi.json` is the only API version. It is the repository release line (`0.8.0`). There is no version in the URL, no version header, and no content negotiation; a client cannot ask for an older shape.
 - **What a release may change.** Before 1.0.0, route paths and methods are kept in sync with the checked-in OpenAPI file, but request and response shapes may change incompatibly in a minor or patch release. That includes renaming or removing a field, tightening validation, changing a status code, and changing which error a condition produces.
 - **What is enforced.** Two suites cover the contract. `apps/web/lib/app-routes.test.ts` fails when the exported method and path inventory drifts from `openapi.json`, when an operation ID is missing, when a write operation lacks a request body schema, when a local `$ref` does not resolve, and when any operation's success response is the generic placeholder. `apps/web/lib/api-response-schema.test.ts` calls each route handler and validates a successful body against the declared schema. Its coverage is partial: 42 of 46 handlers return 401/503 without Sanity credentials, so only the four bodyless auth responses are exercised in a credential-free run. Every other schema is derived from the handler and its helpers. The handler is authoritative; correct the schema in the same change.
 - **Optional and nullable fields.** Where a code path omits a field, the schema leaves it out of `required` (for example the `process` object on decision responses, which exists only when the process engine ran). Clients must tolerate absent optional fields and must ignore fields they do not know: response objects are not closed to additions, so additive fields can appear in any release.
@@ -27,7 +27,8 @@ editing this section; each item below is a real piece of work.
    minimum: how long a deprecated operation keeps answering, and in what release it
    is removed. Nothing here implies a number.
 3. **Write the SDK compatibility policy.** The TypeScript, Go and Python SDKs are
-   all at `0.4.0` and there is no `CHANGELOG` anywhere in the repository. A promise
+   all at `0.8.0` and, while a `CHANGELOG` now exists at the repository root, it
+   records Quicksilver releases rather than per-SDK compatibility. A promise
    about the HTTP contract that says nothing about the SDKs it ships with is
    incomplete; the policy needs to state whether an SDK may break within a stable
    HTTP major, and how a client learns about a deprecation.
