@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
+import { AccessController } from '@quicksilver/kernel/identity'
 import { generateToken, type TokenPrincipalConfig } from '@quicksilver/kernel/identity/tokens'
 import type { GenesisRunConfig } from '@quicksilver/kernel/playbooks/genesis'
 
@@ -19,6 +20,7 @@ import { parseHostConfig } from './config.ts'
 import { FileGenesisStore } from './genesis-api.ts'
 import { QuicksilverHost } from './host.ts'
 import { Logger } from './log.ts'
+import { generateMasterKey, SecretsVault } from './vault.ts'
 
 const exec = promisify(execFile)
 const here = dirname(fileURLToPath(import.meta.url))
@@ -65,9 +67,19 @@ const CASES: Case[] = [
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(), 'qs-parity-'))
   const config = JSON.parse(await readFile(join(repo, 'deploy', 'genesis', 'genesis-500.json'), 'utf8')) as GenesisRunConfig
-  const shared = { ...config, prerequisites: { entityApproved: true, paymentAccounts: ['genesis-payments', 'genesis-card'] } }
+  const paymentAccounts = ['genesis-payments', 'genesis-card']
+  const shared = { ...config, prerequisites: { entityApproved: true, paymentAccounts } }
   const configPath = join(dir, 'genesis.json')
   await writeFile(configPath, JSON.stringify(shared))
+  const hostConfigPath = join(dir, 'host.json')
+  const vaultPath = join(dir, 'vault.json')
+  const vaultKeyEnv = 'QUICKSILVER_PARITY_VAULT_KEY'
+  const vaultMasterKey = generateMasterKey()
+  await writeFile(hostConfigPath, JSON.stringify({ tenantId: 'nuera', vault: { path: vaultPath, keyEnv: vaultKeyEnv } }))
+  const cliVault = new SecretsVault({ path: vaultPath, masterKey: vaultMasterKey, tenantId: 'nuera', access: new AccessController() })
+  await cliVault.open()
+  const vaultAdmin = { id: 'genesis-parity-test', kind: 'human' as const, tenantId: 'nuera', roles: ['tenant-admin'] }
+  for (const name of paymentAccounts) await cliVault.put(vaultAdmin, name, 'test-only-placeholder')
   const credentials = generateToken()
   const founder: TokenPrincipalConfig = { id: 'entity-founder', kind: 'human', tenantId: 'nuera', roles: ['intent-provider', 'viewer'], tokenDigest: credentials.tokenDigest }
   const cliData = join(dir, 'cli-data')
@@ -78,10 +90,24 @@ async function setup() {
     genesis: { config: shared, store: new FileGenesisStore(apiData, 'nuera'), vaultNames: async () => ['genesis-payments', 'genesis-card'] },
   })
   const env = {
-    ...process.env, INIT_CWD: repo, QUICKSILVER_GENESIS_CONFIG: configPath, QUICKSILVER_GENESIS_DIR: cliData, QUICKSILVER_GENESIS_STORE: 'file',
-    QUICKSILVER_GENESIS_ACTOR: 'entity-founder', QUICKSILVER_HOST_CONFIG: join(dir, 'no-host.json'), QUICKSILVER_TENANT_ID: 'nuera',
+    ...process.env, [vaultKeyEnv]: vaultMasterKey, INIT_CWD: repo, QUICKSILVER_GENESIS_CONFIG: configPath, QUICKSILVER_GENESIS_DIR: cliData, QUICKSILVER_GENESIS_STORE: 'file',
+    QUICKSILVER_GENESIS_ACTOR: 'entity-founder', QUICKSILVER_HOST_CONFIG: hostConfigPath, QUICKSILVER_TENANT_ID: 'nuera',
   }
   const { port } = await host.start()
+  const runCliExperiment = (...args: string[]) => exec(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args], { cwd: repo, env })
+  const runCliDraft = async (definition: Record<string, unknown>) => {
+    const definitionPath = join(dir, 'experiment-definition.json')
+    await writeFile(definitionPath, JSON.stringify(definition))
+    return runCliExperiment('experiment', 'draft', definitionPath)
+  }
+  const runApiDraft = (definition: Record<string, unknown>) => fetch(`http://127.0.0.1:${port}/api/genesis/experiments`, {
+    method: 'POST', headers: { authorization: `Bearer ${credentials.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ definition }),
+  })
+  const runApiExperimentAction = (id: string, action: string, body: Record<string, unknown> = {}) => fetch(`http://127.0.0.1:${port}/api/genesis/experiments/${encodeURIComponent(id)}/${action}`, {
+    method: 'POST', headers: { authorization: `Bearer ${credentials.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
   const runCli = async (c: Case): Promise<Outcome> => {
     const hasCategory = c.kind === 'spend' || c.kind === 'refund'
     const args = [c.kind, String(c.amountUsd), ...(hasCategory ? [c.category ?? ''] : []), c.description, ...(c.source !== undefined ? ['--source', c.source] : []), ...(c.experimentId ? ['--experiment', c.experimentId] : []), ...(c.confirm ? ['--confirm'] : [])]
@@ -107,7 +133,7 @@ async function setup() {
       return entries.map((e) => ({ kind: e.kind, amountUsd: e.amountUsd, category: e.category, description: e.description, source: e.source }))
     } catch { return [] }
   }
-  return { runCli, runApi, ledger, cliData, apiData, stop: async () => { await host.stop({ abort: true }); await rm(dir, { recursive: true, force: true }) } }
+  return { runCli, runApi, runCliExperiment, runCliDraft, runApiDraft, runApiExperimentAction, ledger, cliData, apiData, runId: config.runId as string, stop: async () => { await host.stop({ abort: true }); await rm(dir, { recursive: true, force: true }) } }
 }
 
 test('Genesis money: the CLI and the HTTP API reach the same outcome for the same input', async () => {
@@ -123,5 +149,68 @@ test('Genesis money: the CLI and the HTTP API reach the same outcome for the sam
     const recorded = await h.ledger(h.apiData, 'nuera')
     assert.ok(recorded.length >= 4, `the comparison covers real entries (${recorded.length})`)
     assert.deepEqual(await h.ledger(h.cliData, 'nuera'), recorded)
+  } finally { await h.stop() }
+})
+
+test('Genesis experiments: CLI and HTTP API share draft/start/measure/decide behavior and refuse a mismatched playbook', async () => {
+  const h = await setup()
+  const definition = {
+    id: 'exp-cli-api-parity',
+    hypothesis: 'The CLI and HTTP API apply the same experiment draft rules.',
+    playbookId: 'genesis',
+    metric: { id: 'parity-score', label: 'Parity score', direction: 'higher-is-better', kill: 0.1, hold: 0.5, scale: 1 },
+    budgetUsd: 25,
+    durationDays: 7,
+    customerFacing: false,
+    proposedBy: 'entity-founder',
+  }
+  try {
+    await h.runCliDraft(definition)
+    const apiResponse = await h.runApiDraft(definition)
+    const apiBody = await apiResponse.json() as { experiment: unknown }
+    assert.equal(apiResponse.status, 201)
+
+    const cliExperiments = JSON.parse(await readFile(join(h.cliData, 'nuera', h.runId, 'experiments.json'), 'utf8')) as unknown[]
+    assert.equal(cliExperiments.length, 1)
+    assert.deepEqual(cliExperiments[0], apiBody.experiment, 'the same valid definition produces the same persisted draft')
+
+    const id = definition.id
+    await h.runCliExperiment('experiment', 'start', id)
+    assert.equal((await h.runApiExperimentAction(id, 'start')).status, 200)
+    await h.runCliExperiment('measure', id, '0.05', 'shared parity fixture')
+    assert.equal((await h.runApiExperimentAction(id, 'measurements', { value: 0.05, source: 'shared parity fixture' })).status, 201)
+    await h.runCliExperiment('decide', id, 'P-117 parity fixture')
+    assert.equal((await h.runApiExperimentAction(id, 'decide', { note: 'P-117 parity fixture' })).status, 200)
+
+    type ExperimentSnapshot = {
+      startedAt?: string
+      endsAt?: string
+      measurements: Array<Record<string, unknown>>
+      decisions: Array<Record<string, unknown>>
+      [key: string]: unknown
+    }
+    const stripTimestamp = (record: Record<string, unknown>) => {
+      const stable = { ...record }
+      delete stable.at
+      delete stable.startedAt
+      delete stable.endsAt
+      return stable
+    }
+    const readExperiments = async (root: string) => JSON.parse(await readFile(join(root, 'nuera', h.runId, 'experiments.json'), 'utf8')) as ExperimentSnapshot[]
+    const normalize = (experiments: ExperimentSnapshot[]) => experiments.map((experiment) => ({
+      ...stripTimestamp(experiment),
+      measurements: experiment.measurements.map(stripTimestamp),
+      decisions: experiment.decisions.map(stripTimestamp),
+    }))
+    assert.deepEqual(normalize(await readExperiments(h.cliData)), normalize(await readExperiments(h.apiData)), 'the CLI and API persist equivalent experiment lifecycle state')
+
+    const invalid = { ...definition, id: 'exp-cli-api-invalid', playbookId: 'another-playbook' }
+    await assert.rejects(h.runCliDraft(invalid), (error: Error & { stderr?: string }) => {
+      assert.match(error.stderr ?? error.message, /belongs to playbook/)
+      return true
+    })
+    const refused = await h.runApiDraft(invalid)
+    assert.equal(refused.status, 422, 'the HTTP API refuses the same playbook mismatch')
+    assert.equal((await readExperiments(h.cliData)).length, 1, 'the refused CLI draft is not persisted')
   } finally { await h.stop() }
 })

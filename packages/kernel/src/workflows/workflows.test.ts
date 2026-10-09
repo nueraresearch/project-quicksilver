@@ -796,3 +796,63 @@ test('Batch: bounded concurrent items receive isolated workspaces that are clean
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('Batch: cancellation stops scheduling, records every item, and cleans active workspaces', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'quicksilver-batch-cancel-'))
+  const controller = new AbortController()
+  let markStarted!: () => void
+  const started = new Promise<void>((resolve) => { markStarted = resolve })
+  try {
+    const resultPromise = executeBoundedBatch(
+      [{ id: 'a', input: 1 }, { id: 'b', input: 2 }, { id: 'c', input: 3 }],
+      async (_item, workspace) => new Promise<never>((_, reject) => {
+        workspace.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
+        markStarted()
+      }),
+      { workspaceRoot: root, maxConcurrency: 1, signal: controller.signal },
+    )
+    await started
+    controller.abort(new Error('operator cancelled the batch'))
+    const result = await resultPromise
+    assert.equal(result.status, 'cancelled')
+    assert.deepEqual(result.results.map((item) => item.status), ['cancelled', 'cancelled', 'cancelled'])
+    assert.deepEqual(await readdir(root), [])
+  } finally {
+    controller.abort()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Batch: timeout aborts the executor and records a timed-out result after cleanup', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'quicksilver-batch-timeout-'))
+  try {
+    const result = await executeBoundedBatch(
+      [{ id: 'slow', input: 1 }],
+      async (_item, workspace) => new Promise<never>((_, reject) => {
+        workspace.signal.addEventListener('abort', () => reject(new Error('executor aborted')), { once: true })
+      }),
+      { workspaceRoot: root, timeoutMs: 20 },
+    )
+    assert.equal(result.status, 'failed')
+    assert.equal(result.results[0]?.status, 'timed-out')
+    assert.match(result.results[0]?.error ?? '', /timed out after 20 ms/)
+    assert.deepEqual(await readdir(root), [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+test('Batch: maxItems rejects before invoking workers or creating workspaces', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'quicksilver-batch-limit-'))
+  let calls = 0
+  try {
+    await assert.rejects(executeBoundedBatch(
+      [{ id: 'a', input: 1 }, { id: 'b', input: 2 }],
+      async () => { calls += 1; return 'unexpected' },
+      { workspaceRoot: root, maxItems: 1 },
+    ), /maximum is 1/)
+    assert.equal(calls, 0)
+    assert.deepEqual(await readdir(root), [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

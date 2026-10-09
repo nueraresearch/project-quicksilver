@@ -131,3 +131,114 @@ export function exportGenesisResearchTrajectories(input: {
   if (!verifyGenesisResearchDataset(dataset)) throw new Error('The generated research dataset failed its own integrity check.')
   return dataset
 }
+
+export interface GenesisResearchPriorImport {
+  schemaVersion: 1
+  kind: 'quicksilver.genesis-research-prior-import'
+  importedAt: string
+  sourceDatasetDigest: string
+  reviewedBy: string
+  review: { declaration: 'owner-reviewed-structured-priors-only'; noteDigest: string }
+  trajectories: GenesisResearchTrajectory[]
+  digest: string
+}
+
+const PRIOR_VERDICTS = new Set(['kill', 'hold', 'continue', 'scale', 'expired', 'over-budget'])
+const PRIOR_STATUSES = new Set<Experiment['status']>(['draft', 'running', 'killed', 'held', 'scaled', 'completed'])
+const PRIOR_AUTHORITIES = new Set(['human', 'kernel', 'other'])
+const PRIOR_CHANNELS = new Set(['landing-page', 'email', 'ad', 'sms', 'website', 'social-post', 'other'])
+const PRIOR_REVIEW_KINDS = new Set(['manual', 'waes'])
+const PRIOR_REVIEW_VERDICTS = new Set(['pass', 'revise', 'block'])
+const SHA256 = /^[a-f0-9]{64}$/
+
+function onlyKeys(value: unknown, keys: string[]): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.keys(value).every((key) => keys.includes(key))
+}
+
+function safePriorTrajectory(value: unknown): value is GenesisResearchTrajectory {
+  if (!onlyKeys(value, ['trajectoryId', 'playbookIdDigest', 'metricDirection', 'plannedDurationDays', 'customerFacing', 'observations', 'decisions', 'contentReviewSignals', 'outcome'])) return false
+  const t = value
+  return typeof t.trajectoryId === 'string' && /^prior-[a-f0-9]{24}$/.test(t.trajectoryId)
+    && typeof t.playbookIdDigest === 'string' && SHA256.test(t.playbookIdDigest)
+    && (t.metricDirection === 'higher-is-better' || t.metricDirection === 'lower-is-better')
+    && Number.isInteger(t.plannedDurationDays) && (t.plannedDurationDays as number) >= 1 && (t.plannedDurationDays as number) <= 90
+    && typeof t.customerFacing === 'boolean'
+    && Array.isArray(t.observations) && t.observations.length <= 5_000 && t.observations.every((entry) => onlyKeys(entry, ['day', 'signal'])
+      && Number.isInteger(entry.day) && (entry.day as number) >= 0 && (entry.day as number) <= 100_000
+      && typeof entry.signal === 'string' && ['kill', 'hold', 'continue', 'scale'].includes(entry.signal))
+    && Array.isArray(t.decisions) && t.decisions.length <= 5_000 && t.decisions.every((entry) => onlyKeys(entry, ['day', 'verdict', 'applied', 'authority'])
+      && Number.isInteger(entry.day) && (entry.day as number) >= 0 && (entry.day as number) <= 100_000
+      && typeof entry.verdict === 'string' && PRIOR_VERDICTS.has(entry.verdict)
+      && typeof entry.applied === 'string' && PRIOR_STATUSES.has(entry.applied as Experiment['status'])
+      && typeof entry.authority === 'string' && PRIOR_AUTHORITIES.has(entry.authority))
+    && Array.isArray(t.contentReviewSignals) && t.contentReviewSignals.length <= 5_000 && t.contentReviewSignals.every((entry) => onlyKeys(entry, ['channel', 'kind', 'verdict'])
+      && typeof entry.channel === 'string' && PRIOR_CHANNELS.has(entry.channel)
+      && typeof entry.kind === 'string' && PRIOR_REVIEW_KINDS.has(entry.kind)
+      && typeof entry.verdict === 'string' && PRIOR_REVIEW_VERDICTS.has(entry.verdict))
+    && onlyKeys(t.outcome, ['status', 'durationDays', 'budgetUseRatio', 'revenueToBudgetRatio'])
+    && typeof t.outcome.status === 'string' && PRIOR_STATUSES.has(t.outcome.status as Experiment['status'])
+    && (t.outcome.durationDays === null || Number.isInteger(t.outcome.durationDays) && (t.outcome.durationDays as number) >= 0 && (t.outcome.durationDays as number) <= 100_000)
+    && typeof t.outcome.budgetUseRatio === 'number' && Number.isFinite(t.outcome.budgetUseRatio) && t.outcome.budgetUseRatio >= 0 && t.outcome.budgetUseRatio <= 1_000_000
+    && typeof t.outcome.revenueToBudgetRatio === 'number' && Number.isFinite(t.outcome.revenueToBudgetRatio) && t.outcome.revenueToBudgetRatio >= 0 && t.outcome.revenueToBudgetRatio <= 1_000_000
+}
+
+/** Verify that an imported prior contains only the declared allowlisted fields. */
+export function verifyGenesisResearchPriorImport(value: unknown): value is GenesisResearchPriorImport {
+  if (!onlyKeys(value, ['schemaVersion', 'kind', 'importedAt', 'sourceDatasetDigest', 'reviewedBy', 'review', 'trajectories', 'digest'])) return false
+  const prior = value
+  if (prior.schemaVersion !== 1 || prior.kind !== 'quicksilver.genesis-research-prior-import'
+    || typeof prior.importedAt !== 'string' || !Number.isFinite(Date.parse(prior.importedAt))
+    || typeof prior.sourceDatasetDigest !== 'string' || !SHA256.test(prior.sourceDatasetDigest)
+    || typeof prior.reviewedBy !== 'string' || !prior.reviewedBy.trim()
+    || !onlyKeys(prior.review, ['declaration', 'noteDigest'])
+    || prior.review.declaration !== 'owner-reviewed-structured-priors-only'
+    || typeof prior.review.noteDigest !== 'string' || !SHA256.test(prior.review.noteDigest)
+    || !Array.isArray(prior.trajectories) || prior.trajectories.length < 1 || prior.trajectories.length > 5_000
+    || !prior.trajectories.every(safePriorTrajectory) || typeof prior.digest !== 'string') return false
+  const { digest: supplied, ...core } = prior as unknown as GenesisResearchPriorImport
+  return supplied === sha256(core)
+}
+
+/** Import a dataset only after explicit review; free text and source trajectory IDs are never copied. */
+export function createGenesisResearchPriorImport(input: {
+  dataset: unknown
+  reviewer: { id: string; kind: 'human' | 'agent' | 'service' }
+  reviewNote: string
+  now: Date
+}): GenesisResearchPriorImport {
+  if (!verifyGenesisResearchDataset(input.dataset)) throw new Error('Research dataset integrity check failed; prior import refused.')
+  const dataset = input.dataset
+  if (dataset.privacyReview?.declaration !== 'structured-only-no-free-text' || !SHA256.test(dataset.digest)
+    || dataset.includedCount !== dataset.trajectories.length || dataset.trajectories.length < 1 || dataset.trajectories.length > 5_000) {
+    throw new Error('Research dataset declaration or trajectory count is invalid; prior import refused.')
+  }
+  if (input.reviewer.kind !== 'human' || !input.reviewer.id.trim()) throw new Error('Only a named human owner can review Genesis research priors.')
+  if (!input.reviewNote.trim() || input.reviewNote.length > 500) throw new Error('A prior-review note of 1 to 500 characters is required.')
+  if (!Number.isFinite(input.now.getTime())) throw new Error('Prior-import time is invalid.')
+
+  const trajectories = dataset.trajectories.map((trajectory): GenesisResearchTrajectory => ({
+    trajectoryId: `prior-${sha256(`${dataset.digest}:${trajectory.trajectoryId}`).slice(0, 24)}`,
+    playbookIdDigest: trajectory.playbookIdDigest,
+    metricDirection: trajectory.metricDirection,
+    plannedDurationDays: trajectory.plannedDurationDays,
+    customerFacing: trajectory.customerFacing,
+    observations: trajectory.observations.map(({ day, signal }) => ({ day, signal })),
+    decisions: trajectory.decisions.map(({ day, verdict, applied, authority }) => ({ day, verdict, applied, authority })),
+    contentReviewSignals: trajectory.contentReviewSignals.map(({ channel, kind, verdict }) => ({ channel, kind, verdict })),
+    outcome: { ...trajectory.outcome },
+  }))
+  if (!trajectories.every(safePriorTrajectory)) throw new Error('Research dataset contains fields outside the safe prior allowlist; import refused.')
+  const core = {
+    schemaVersion: 1 as const,
+    kind: 'quicksilver.genesis-research-prior-import' as const,
+    importedAt: input.now.toISOString(),
+    sourceDatasetDigest: dataset.digest,
+    reviewedBy: input.reviewer.id,
+    review: { declaration: 'owner-reviewed-structured-priors-only' as const, noteDigest: sha256(input.reviewNote.trim()) },
+    trajectories,
+  }
+  const prior = { ...core, digest: sha256(core) }
+  if (!verifyGenesisResearchPriorImport(prior)) throw new Error('The Genesis prior import failed its own integrity check.')
+  return prior
+}
