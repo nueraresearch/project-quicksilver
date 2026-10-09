@@ -1,15 +1,46 @@
 # Nuera Quicksilver HTTP API contract
 
-The machine-readable contract is [openapi.json](openapi.json) (OpenAPI 3.1.0). Its `info.version` is `0.4.0`, matching the repository release line. This is a **pre-1.0 contract**, not a stable API promise. Every operation now declares a named success schema, but the version does not assert that those shapes are frozen.
+The machine-readable contract is [openapi.json](openapi.json) (OpenAPI 3.1.0). Its `info.version` is `0.4.0`, matching the repository release line. This is a **pre-1.0 contract**, not a stable API promise. Every operation now declares a named success schema, but the version does not assert that those shapes are frozen, and most of those schemas are derived from the handlers rather than verified against live responses.
 
 ## Compatibility and versioning policy (pre-1.0)
 
+This is the current state. The 1.0.0 promise is **not** made here, and the
+requirements to make it are listed under "What a 1.0.0 promise still requires".
+
 - **Where the version lives.** `info.version` in `openapi.json` is the only API version. It is the repository release line (`0.4.0`). There is no version in the URL, no version header, and no content negotiation; a client cannot ask for an older shape.
 - **What a release may change.** Before 1.0.0, route paths and methods are kept in sync with the checked-in OpenAPI file, but request and response shapes may change incompatibly in a minor or patch release. That includes renaming or removing a field, tightening validation, changing a status code, and changing which error a condition produces.
-- **What is enforced.** The web regression suite (`apps/web/lib/app-routes.test.ts`) fails when the exported method and path inventory drifts from `openapi.json`, when an operation ID is missing, when a write operation lacks a request body schema, when a local `$ref` does not resolve, and when any operation's success response is the generic placeholder. It does not compare response schemas against live handler output, so a schema can still lag the code; the handler is authoritative and the schema should be corrected in the same change.
+- **What is enforced.** Two suites cover the contract. `apps/web/lib/app-routes.test.ts` fails when the exported method and path inventory drifts from `openapi.json`, when an operation ID is missing, when a write operation lacks a request body schema, when a local `$ref` does not resolve, and when any operation's success response is the generic placeholder. `apps/web/lib/api-response-schema.test.ts` calls each route handler and validates a successful body against the declared schema. Its coverage is partial: 42 of 46 handlers return 401/503 without Sanity credentials, so only the four bodyless auth responses are exercised in a credential-free run. Every other schema is derived from the handler and its helpers. The handler is authoritative; correct the schema in the same change.
 - **Optional and nullable fields.** Where a code path omits a field, the schema leaves it out of `required` (for example the `process` object on decision responses, which exists only when the process engine ran). Clients must tolerate absent optional fields and must ignore fields they do not know: response objects are not closed to additions, so additive fields can appear in any release.
 - **Machine-readable changes.** There is no changelog of API changes separate from the repository history. Review the diff of `docs/api/openapi.json` between releases.
-- **Not promised.** A 1.0.0 stability promise, a deprecation window, and an SDK compatibility policy do not exist. Whether and when to make the 1.0.0 promise is a product-owner decision; this document does not make it and nothing here should be read as implying it. Publishing a 1.0.0 contract would additionally need a compatibility review of every schema and a decision on the remaining error-code, conflict and pagination gaps listed at the end of this file.
+
+## What a 1.0.0 promise still requires
+
+The product owner has decided the promise is mandatory, so the work is listed
+here rather than the promise being written early. Making it is not a matter of
+editing this section; each item below is a real piece of work.
+
+1. **Close the response-schema coverage gap.** Of 46 operations, 4 are exercised in
+   a credential-free run. A stable contract needs the rest verified against real
+   bodies, which needs an injectable transport; the options and the trade-offs are
+   in [routed-model-enablement.md](../platform/routed-model-enablement.md#exercising-the-api-contract-without-credentials).
+2. **Decide the deprecation window.** No window exists. A promise needs a stated
+   minimum: how long a deprecated operation keeps answering, and in what release it
+   is removed. Nothing here implies a number.
+3. **Write the SDK compatibility policy.** The TypeScript, Go and Python SDKs are
+   all at `0.4.0` and there is no `CHANGELOG` anywhere in the repository. A promise
+   about the HTTP contract that says nothing about the SDKs it ships with is
+   incomplete; the policy needs to state whether an SDK may break within a stable
+   HTTP major, and how a client learns about a deprecation.
+4. **Decide what "stable" covers.** Open items below: error `code` is still absent
+   on some endpoint-local errors, error wording is not stable, there is no `ETag`
+   or conditional request, only `/api/decisions` paginates, retry safety is a
+   by-product of state guards rather than idempotency keys, and decision execute is
+   still not atomic. Each needs either a fix or an explicit exclusion.
+5. **Add a mechanism, not just a sentence.** A promise with no test that fails on a
+   breaking change is documentation. The compatibility check should compare
+   `openapi.json` against the last published version and fail on a removed or
+   renamed field, a changed type, a new required field, a narrowed status code, or
+   a removed operation, unless the release is a major one.
 
 ## Authentication, tenancy and rate limits
 
@@ -147,7 +178,7 @@ The business overview uses authenticated `GET /api/dashboard/overview` for decis
 
 ## Not specified or not guaranteed yet
 
-- **Stability:** no 1.0.0 promise, deprecation window or SDK compatibility policy exists; see the versioning policy above. These are product-owner decisions.
+- **Stability:** no 1.0.0 promise, deprecation window or SDK compatibility policy exists yet. The promise has been decided as mandatory, and the work it requires is listed under "What a 1.0.0 promise still requires" above.
 - **Schema fidelity:** response schemas are written from the handlers but are not verified against live responses by a test. Some kernel-internal structures are described loosely on purpose (the capability graph finding and the risk arithmetic in `/api/plan` are open objects), and the live workflow run response still varies with runtime outcomes.
 - **Error contract:** `error` is the only error field guaranteed on every route. `code` is guaranteed on the decision, workflow, agent and company-data routes only; plan, query, chat, inbox, whoami, monitoring, dashboard and auth routes do not send it yet. Error wording is not stable.
 - **Conflict semantics:** there is no client-supplied revision, `ETag` or conditional request. The decision fingerprint is the only caller-visible precondition.
