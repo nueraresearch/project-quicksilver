@@ -17,7 +17,7 @@
   "dependencies": {
     "@quicksilver/kernel": "*",
     "@quicksilver/agent": "*",
-    "ai": "^6.0.0",
+    "ai": "^7.0.127",
     "zod": "^3.25.76"
   },
   "devDependencies": {
