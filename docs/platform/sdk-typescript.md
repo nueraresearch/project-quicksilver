@@ -18,4 +18,7 @@ foundation is documented in the [Go SDK guide](sdk-go.md).
 Run the offline client contract suite with `npm run sdk:test`. It checks URL
 transport policy, request and response shapes, safety-mode invariants, NQC
 evaluation fields, structured errors, and cancellation forwarding. The suite is
-also part of `npm run verify` and the Ubuntu/Windows CI matrix.
+also part of `npm run verify` and the Ubuntu/Windows CI matrix. The CI matrix
+requires five checks on every pull request: `verify` on both operating systems,
+`go-sdk`, `python-sdk`, and `web-build` (a production build of the web console,
+which `npm run verify` does not cover).

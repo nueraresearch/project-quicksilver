@@ -16,11 +16,18 @@ Thanks for contributing. Nuera Quicksilver is a TypeScript monorepo for a govern
 ```bash
 npm ci
 npm run verify
+npm run build --workspace=@quicksilver/web
 ```
 
 `npm run verify` runs the credential-free regression suites and TypeScript checks. It does not deploy schemas, seed Sanity, call an LLM provider, or build the Sanity Studio.
 
-For the full workspace build, a configured dedicated Sanity project is required:
+**Run the web build too.** `verify` type-checks but never bundles, so a change can pass every test and still fail to deploy. CI runs `web-build` as a required check for exactly this reason; reproduce it locally before opening a pull request:
+
+```bash
+npm run build --workspace=@quicksilver/web
+```
+
+That build is credential-free. The full workspace build is not, because Studio needs a configured dedicated Sanity project:
 
 ```bash
 npm run build
@@ -33,6 +40,7 @@ The web application can build without live credentials. The Studio build require
 | Command | Purpose | Credentials required |
 |---|---|---:|
 | `npm run verify` | Regression suites and type checks | No |
+| `npm run build --workspace=@quicksilver/web` | Build the web console (CI's `web-build`) | No |
 | `npm run build` | Build all workspaces | Dedicated Sanity project for Studio |
 | `npm run dev:web` | Start the Next.js console | Usually yes for live routes |
 | `npm run dev:studio` | Start Sanity Studio | Dedicated Sanity project |

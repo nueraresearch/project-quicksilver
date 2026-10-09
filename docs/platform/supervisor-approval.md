@@ -79,7 +79,7 @@ workflow runs.
 Every `POST` to `/api/*` must also send `Content-Type: application/json`
 (415 otherwise), and a browser request must come from the app's own origin:
 `Origin` and `Sec-Fetch-Site`, when present, must match (403 otherwise).
-`middleware.ts` checks this once, before any route; set
+`proxy.ts` checks this once, before any route; set
 `QUICKSILVER_WEB_ALLOWED_ORIGINS` (comma-separated) only if a proxy serves the
 app under another origin. Model routes (plan, query, live runs) and the
 decision routes are rate-limited per principal (see

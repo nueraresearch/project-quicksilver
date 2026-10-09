@@ -20,8 +20,30 @@ provider workflow.
 - Persistent disk: `quicksilver-data`, 1 GB, mounted at `/data`
 
 > **Important:** PR #88 subsequently added Genesis persistence under
-> `/data/genesis`. This record does not claim a post-PR #88 live check; that
-> remains the next read-only validation step.
+> `/data/genesis`. This record does not claim a post-PR #88 live check.
+
+## Read-only recheck, 2026-10-08
+
+Run against the **currently deployed** service, not the deployment inspected
+above. That deployment (`dep-db28nhbbc2fs73fmj8c0`, commit `be2d439`, PR #87) is
+many merges old; this recheck says nothing about it and everything about what is
+serving traffic now.
+
+| Request | Result | Body |
+|---|---|---|
+| `GET /healthz` | 200 | `{"status":"ok"}` |
+| `GET /readyz` | 200 | `{"status":"ready"}` |
+| `GET /api/whoami` (no credentials) | 401 | expected unauthenticated refusal |
+
+All three match the 2026-10-05 baseline, so the host has stayed healthy and
+still refuses unauthenticated identity across the merges since.
+
+**What this does not prove.** Nothing here is evidence about Genesis persistence.
+The startup persistence signal and the absence of the Genesis in-memory warning
+appear in the Render service logs, which this recheck cannot read. No bearer
+token was used, no sentinel was written, and no restart was performed. The
+Genesis persistence gap is unchanged: it needs Render log access, or a
+separately approved sentinel write/restart/read plan.
 
 ## Results
 
