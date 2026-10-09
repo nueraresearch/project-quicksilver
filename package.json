@@ -8,6 +8,10 @@
     "apps/*",
     "packages/*"
   ],
+  "overrides": {
+    "sharp": "0.35.5",
+    "source-map-js": "1.2.2"
+  },
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",
     "dev:web": "npm run dev --workspace=@quicksilver/web",
@@ -18,6 +22,7 @@
     "verify": "node scripts/verify.mjs",
     "resend:check": "node scripts/resend-check.mjs",
     "parity:test": "node --test scripts/parity-matrix.test.mjs scripts/test-registration.test.mjs scripts/azure-template.test.mjs scripts/principal-token.test.mjs scripts/resend-check.test.mjs",
+    "audit:deps": "node scripts/dependency-audit.mjs",
     "sdk:test": "node --experimental-strip-types --no-warnings --test packages/sdk/src/index.test.ts",
     "schema:deploy": "npm run schema:deploy --workspace=@quicksilver/studio --",
     "smoke": "npm run smoke --workspace=@quicksilver/studio",

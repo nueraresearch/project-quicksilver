@@ -67,6 +67,30 @@ jobs:
       - name: Build the web console
         run: npm run build --workspace=@quicksilver/web
 
+  # P-109: no high-severity advisory in a serving dependency path, and every
+  # advisory has a recorded decision. This is separate from `verify` because it
+  # inspects the dependency tree rather than the code, and because a failure here
+  # names a package rather than an assertion.
+  dependency-audit:
+    name: dependency-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit runtime dependencies and check recorded decisions
+        run: npm run audit:deps
+
   go-sdk:
     name: go-sdk
     runs-on: ubuntu-latest

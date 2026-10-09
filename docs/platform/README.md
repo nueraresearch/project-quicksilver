@@ -17,6 +17,7 @@ every operating mode depends on.
 - [Approved actions: email and signed webhook](approved-actions.md)
 - [Tool registry](tool-registry.md)
 - [Threat model: assets, trust boundaries, STRIDE and LLM threats, prioritized actions](threat-model.md)
+- [Dependency advisory decisions (P-109): runtime versus build-time, and the recorded decision for each](dependency-advisories.md)
 
 ## Agents and memory
 
