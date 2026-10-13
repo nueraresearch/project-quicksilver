@@ -79,7 +79,14 @@ live-agent paths also need model credentials.
 
 Stated plainly, because it is the part a cold reader most needs:
 
-- **CI status is verified green across all platforms.** The credential-free suite (`npm run verify`) exercises 1,330+ tests across all workspaces without requiring third-party API keys.
+- **CI status was verified green on 2026-10-13** at merge commit `c8938d6`: all six
+  CI jobs passed, with the full regression suite and type checks running on both
+  Ubuntu and Windows. The credential-free suite (`npm run verify`) exercises 1,360
+  tests across all eight npm workspaces without third-party API keys. Two limits on
+  that claim: CI has no macOS runner, so "every platform" means Ubuntu and Windows;
+  and Windows runs only `verify`, so the web build, dependency audit and the Go and
+  Python SDK suites are Linux-only. This is a point-in-time signal — check GitHub
+  Actions for later changes.
 - **No real email or webhook has been sent by this code.** The approved-action
   adapters (Resend email, signed webhook) have only been exercised against
   fakes, so there is no operational evidence yet. They ship as dry runs.
