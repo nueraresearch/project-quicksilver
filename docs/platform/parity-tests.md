@@ -355,7 +355,7 @@ the security, observability and developer-experience groups below.
 | P-111 | Logs are one JSON object per line, with levels and bindings. | automated test | `observability.test.ts` "logs are one JSON object per line with bindings and levels", "redact handles cycles and depth" | covered | |
 | P-112 | Metrics render in Prometheus format with bounded labels and need `audit:read` unless configured public. | automated test | `observability.test.ts` "metrics render Prometheus text with escaped labels, histograms and collectors"; `host.test.ts` "metrics need audit:read unless configured public", "signed webhooks start runs; bad signatures are refused and counted" | covered | |
 | P-113 | Access decisions are kept in a durable audit store. | automated test | Web: `authorization-audit-store.test.ts` verifies durable Sanity append-before-action; host/kernel: `authorization-audit.test.ts` and `identity.test.ts` verify fsynced hash-chained replay/tamper detection and fail-closed authorization | covered | Host JSONL integrity assumes durable mounted storage and one writer per path; a privileged operator replacing both log and checkpoint is outside its threat boundary. Not a compliance attestation. |
-| P-114 | Traces, dashboards and alerts cover runs, decisions, tool calls, model usage and cost. | automated test | `apps/web/lib/telemetry.test.ts` covers metadata-only query and specialist-agent trace construction, nullable provider usage and measured-rate cost estimates, alert rules and fail-closed persistence; `apps/web/lib/app-routes.test.ts` enumerates and authorizes the trace endpoint; OpenAPI route drift check covers `GET /api/monitoring/traces`; `apps/web/lib/chat-reads-app.test.ts` (the chat route is a guarded model route) | partial | Web query, plan, specialist-agent and read-only workflow paths write tenant-scoped request/model/tool/evaluation/decision spans; `/monitoring/traces` shows a bounded sample and evaluates in-app alerts. Host queue/schedule/webhook traces, external alert delivery, complete history/retention, live-provider evidence, and provider-billed cost reconciliation remain open. Cost is estimated only when an operator supplies measured per-model rates. Added 2026-10-03: the chat assistant's calls write request, model, tool and evaluation spans (`chat.*`), so its tool use and cost appear in `/monitoring/traces`. The 'needs you' list (`GET /api/inbox`) shows failed workflow runs and trace alerts to people with the matching permission, so an alert reaches a person inside the app. It is a check about once a minute, not a live feed, and external alert delivery is still open. |
+| P-114 | Traces, dashboards and alerts cover runs, decisions, tool calls, model usage and cost. | automated test | `apps/web/lib/telemetry.test.ts` covers metadata-only query and specialist-agent trace construction, nullable provider usage and measured-rate cost estimates, alert rules and fail-closed persistence; `apps/web/lib/app-routes.test.ts` enumerates and authorizes the trace endpoint; OpenAPI route drift check covers `GET /api/monitoring/traces`; `apps/web/lib/chat-reads-app.test.ts` (the chat route is a guarded model route); `packages/host/src/telemetry.test.ts` covers host queue/schedule/webhook span construction, accept-versus-refused status mapping, span-name sanitization, tenant-scoped document ids, fail-closed validation, and sink-failure containment | partial | Web query, plan, specialist-agent and read-only workflow paths write tenant-scoped request/model/tool/evaluation/decision spans; `/monitoring/traces` shows a bounded sample and evaluates in-app alerts. Added 2026-10-13: `packages/host/src/telemetry.ts` adds host-side span construction for queue dispatches, schedule ticks and webhook intake, with tenant-scoped ids and no payloads, secrets or headers. It fixed a defect in its own first draft, where an accepted dispatch (`enqueued`/`deduplicated`) was recorded as an `error` span. **Host traces are still not operationally closed**: `QuicksilverHost` constructs the tracer without a sink, so every one of the three call sites returns `undefined` and persists nothing. The only span sink in the repository is `apps/web/lib/telemetry-store.ts`, on the Vercel side. Closing this needs a chosen host persistence path (Sanity `telemetryTraceSpan`, a JSONL file, or Prometheus), which is an architectural decision, not a code default. External alert delivery, complete history/retention, live-provider evidence, and provider-billed cost reconciliation also remain open. Cost is estimated only when an operator supplies measured per-model rates. Added 2026-10-03: the chat assistant's calls write request, model, tool and evaluation spans (`chat.*`), so its tool use and cost appear in `/monitoring/traces`. The 'needs you' list (`GET /api/inbox`) shows failed workflow runs and trace alerts to people with the matching permission, so an alert reaches a person inside the app. It is a check about once a minute, not a live feed, and external alert delivery is still open. |
 
 ### X. Developer experience
 
@@ -427,6 +427,7 @@ Each test file maps to at least one requirement.
 | `packages/host/src/department-executor.test.ts` | 3 | P-071, P-095 |
 | `packages/host/src/onboard-cli.test.ts` | 1 | P-117 |
 | `packages/host/src/sanity-stores.test.ts` | 12 | P-015, P-078, P-103 |
+| `packages/host/src/telemetry.test.ts` | 10 | P-114 |
 | `packages/host/src/shadow-api.test.ts` | 5 | P-058, P-070, P-086 |
 | `packages/host/src/tasks.test.ts` | 18 | P-040, P-046, P-094, P-097, P-101, P-103, P-104, P-105, P-117 |
 | `packages/host/src/vault.test.ts` | 6 | P-102 |
@@ -438,6 +439,7 @@ Each test file maps to at least one requirement.
 | `packages/kernel/src/capability-graph.test.ts` | 17 | P-036 |
 | `packages/kernel/src/identity/identity.test.ts` | 16 | P-032, P-033, P-113 |
 | `packages/kernel/src/identity/separation.test.ts` | 7 | P-037 |
+| `packages/kernel/src/identity/principal-admin.test.ts` | 5 | P-032, P-033, P-037, P-113 |
 | `packages/kernel/src/kernel.test.ts` | 16 | P-034 |
 | `packages/kernel/src/model-document.test.ts` | 6 | P-049 |
 | `packages/kernel/src/nqc/nqc.test.ts` | 35 | P-012, P-013, P-018, P-033, P-041, P-042, P-050, P-051 |
@@ -456,7 +458,23 @@ Each test file maps to at least one requirement.
 | `packages/operator/src/operator.test.ts` | 33 | P-018, P-019, P-023, P-029 |
 | `packages/operator/src/operator-cli.test.ts` | 1 | P-018 |
 | `packages/operator/src/setup.test.ts` | 3 | P-018 |
-| `packages/operator/src/web-search.test.ts` | 5 | P-024 |
+| `packages/operator/src/calendar.test.ts` | 3 | P-006 |
+| `packages/operator/src/communications.test.ts` | 4 | P-039 |
+| `packages/operator/src/ical-adapter.test.ts` | 2 | P-006 |
+| `packages/operator/src/review.test.ts` | 2 | P-023 |
+| `packages/operator/src/routines.test.ts` | 2 | P-023 |
+| `packages/operator/src/web-search.test.ts` | 7 | P-024 |
+
+**The Operator Organization Layer is new surface outside this baseline.** The
+P-001–P-123 baseline was approved before the operator queue, in-app calendar,
+commitments, contacts, drafts and routine runner existed, so it has no dedicated
+row for them. The rows above map each test to the nearest genuine existing
+requirement rather than inventing coverage: calendar and iCal to P-006 (cron and
+schedule validation, fail-closed parsing), review and routines to P-023
+(always-on operation), and dispatch to P-039 (nothing sends without the human
+approval it is bound to). Deciding whether the operator layer gets its own P-1xx
+rows, or is folded into P-023/P-030, is a product-owner decision and is
+deliberately left open rather than recorded here.
 
 Direct command-parsing tests now cover Onboard, Genesis, Operate, Tasks and
 What-if. Complete CLI/API authorization, validation and persistence parity

@@ -11,6 +11,7 @@ import { AttentionBell } from '@/components/attention-bell'
 // without implying that the unfinished platform modules are already available.
 const SHELL_GROUP_ORDER = ['Operate', 'Build', 'Govern', 'Observe'] as const
 const SHELL_ROUTE_GROUP: Record<string, (typeof SHELL_GROUP_ORDER)[number]> = {
+  '/operator/queue': 'Operate',
   '/': 'Operate',
   '/decisions': 'Operate',
   '/workflows': 'Build',
@@ -21,6 +22,7 @@ const SHELL_ROUTE_GROUP: Record<string, (typeof SHELL_GROUP_ORDER)[number]> = {
 }
 const APP_DESTINATIONS = APP_NAVIGATION_GROUPS.flatMap(({ links }) => links)
 const NAV_ICONS: Record<string, string> = {
+  '/operator/queue': '⚡',
   '/': '⌂',
   '/decisions': '✓',
   '/workflows': '◇',

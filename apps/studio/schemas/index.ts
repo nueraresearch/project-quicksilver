@@ -29,6 +29,11 @@ import authorizationDecisionAudit from './authorization-decision-audit.ts'
 import telemetryTraceSpan from './telemetry-trace-span.ts'
 import oidcLoginTransaction from './oidc-login-transaction.ts'
 import oidcWebSession from './oidc-web-session.ts'
+import commitment from './commitment.ts'
+import contact from './contact.ts'
+import review from './review.ts'
+import scheduledItem from './scheduled-item.ts'
+import draftedCommunication from './drafted-communication.ts'
 
 export const schemaTypes = [
   organization,
@@ -62,4 +67,9 @@ export const schemaTypes = [
   telemetryTraceSpan,
   oidcLoginTransaction,
   oidcWebSession,
+  commitment,
+  contact,
+  review,
+  scheduledItem,
+  draftedCommunication,
 ]

@@ -5,6 +5,7 @@ export const APP_NAVIGATION_GROUPS: readonly AppNavigationGroup[] = [
   {
     label: 'Operate',
     links: [
+      { href: '/operator/queue', label: 'My queue' },
       { href: '/', label: 'Overview' },
       { href: '/decisions', label: 'Decisions' },
       { href: '/workflows', label: 'Workflows' },

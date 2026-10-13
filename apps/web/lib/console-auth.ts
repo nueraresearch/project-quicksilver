@@ -113,6 +113,8 @@ const TOKEN_PATHS: ReadonlySet<string> = new Set([
   '/api/query',
   '/api/chat',
   '/api/inbox',
+  '/api/operator/queue',
+  '/api/operator/reviews',
   '/api/agents/run',
   '/api/monitoring/workflows',
   '/api/monitoring/traces',
@@ -163,6 +165,7 @@ export interface ConsoleWhoami {
 export type ConsoleDecisionRoute = 'action' | 'execute' | 'observe' | 'resume' | 'rollback'
 /** Every console call that can be refused for auth: the decision routes plus plan, query and the workflow builder. */
 export type ConsoleRoute = ConsoleDecisionRoute | 'plan' | 'query' | 'chat' | 'inbox' | 'decisions' | 'decisions/detail' | 'decisions/audit' | 'agents/run'
+  | 'operator/queue' | 'operator/reviews'
   | 'dashboard/overview' | 'dashboard/finance'
   | 'entities'
   | 'monitoring/workflows' | 'monitoring/traces'
@@ -182,6 +185,8 @@ export const CONSOLE_ROUTE_PERMISSION: Readonly<Record<ConsoleRoute, string>> = 
   query: 'decision:read',
   chat: 'decision:read',
   inbox: 'decision:read',
+  'operator/queue': 'decision:read',
+  'operator/reviews': 'decision:read',
   decisions: 'decision:read',
   'decisions/detail': 'decision:read',
   'decisions/audit': 'audit:read',

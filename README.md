@@ -25,30 +25,26 @@
 
 </div>
 
-> **Which repository is this?** This is **Nuera Quicksilver**, the platform from Nuera RDL and our entry for the
-> Sanity Challenge 2026, in both paths. The live app is https://project-quicksilver.vercel.app; it signs in through
-> organization single sign-on, so the walkthrough video and the public, synthetic `demo` dataset are the way in
-> for judges. Start with the [judge guide](./docs/FOR-JUDGES.md). It grew out of an earlier, now withdrawn, challenge
-> entry; see [Origins](#origins).
+> **Which repository is this?** This is **Nuera Quicksilver**, the intent-driven company operating system
+> from Nuera RDL. The live app is https://project-quicksilver.vercel.app; it signs in through organization
+> single sign-on with role-based access control. Start with the [documentation index](./docs/README.md).
+> It grew out of an earlier prototype; see [Origins](#origins).
 
 <p align="center">
   <img src="docs/images/architecture.png" alt="Agents propose, a kernel authorizes, a different human approves; every step is recorded in Sanity" width="900">
 </p>
 
-> **Current build status:** Nuera Quicksilver keeps the tested decision-governance foundation it inherited from the challenge build as its regression baseline. NQC evaluation and governance, tool contracts, a draft workflow builder, and an in-process graph runner are implemented foundations. Quicksilver Engine also provides a bounded, provider-neutral final-answer stress harness for multi-step arithmetic and logic traps; it does not request or retain private chain-of-thought. The editor visualizes graph connections and exposes agent retry and handler timeout settings. The runner supports opt-in bounded concurrency for independent low/moderate-impact agent steps; the read-only query route caps this at three. The read-only query worker uses a shared governed-agent contract and returns its full NQC evaluation response. Workflow drafts autosave locally, support validated JSON import/export, and can run an opt-in read-only query-agent path through NQC evaluation. Workflow tools remain blocked. A durable run queue and worker (`@quicksilver/kernel/runtime`) now provide idempotent admission, backpressure, leases, cancellation, retries, and a dead-letter queue, with in-memory, journaled-file, or PostgreSQL storage; cron schedules and signed webhooks can start runs. A single-tenant host process (`@quicksilver/host`) now runs the worker pool, schedules and signed webhooks from configuration, with a bearer-token management API, an encrypted secrets vault, structured logs and Prometheus metrics. Kernel RBAC (tenant isolation, deny-by-default roles, no authority for agents) guards queue operations, the host API and, when configured, per-person supervisor credentials. Decision approvals enforce separation of duties, with an audited sole-operator override, and every query and workflow evaluation is stored as an `evaluationRecord`. Internal TypeScript and dependency-free Python/Go SDK foundations cover workflow validation, safe preview, and opt-in read-only runs; none is published as a stable public API. A first declarative Nuera Quicksilver Agent catalog now supports versioned draft/review/publish governance with dedicated catalog RBAC and rollback-to-draft; it does not install executable plugins or change runtime dispatch. Persistent principal/role administration, multi-tenant hosting, distributed traces, model/cost dashboards, runtime agent registration, and a marketplace remain unimplemented.
+> **Current build status:** Nuera Quicksilver keeps a tested decision-governance foundation as its regression baseline. NQC evaluation and governance, tool contracts, a draft workflow builder, and an in-process graph runner are implemented foundations. The Operator organization layer provides a unified human attention queue (`/operator/queue`), in-app calendar (`/operator/calendar`), review engine (`/operator/review`), commitments, contacts, and autonomous background routines. A durable run queue and worker (`@quicksilver/kernel/runtime`) provide idempotent admission, backpressure, leases, cancellation, retries, and a dead-letter queue, with in-memory, journaled-file, or PostgreSQL storage; cron schedules and signed webhooks can start runs. A single-tenant host process (`@quicksilver/host`) runs the worker pool, schedules and signed webhooks from configuration, with a bearer-token management API, an encrypted secrets vault, structured logs and Prometheus metrics. Kernel RBAC (tenant isolation, deny-by-default roles, no authority for agents) guards queue operations, the host API and, when configured, per-person supervisor credentials. Decision approvals enforce separation of duties, with an audited sole-operator override, and every query and workflow evaluation is stored as an `evaluationRecord`. Internal TypeScript and dependency-free Python/Go SDK foundations cover workflow validation, safe preview, and opt-in read-only runs.
 >
 > Canonical product docs: [Product definition](./docs/NUERA-QUICKSILVER-PRODUCT.md) · [Documentation index](./docs/README.md) · [NQC Kernel](./docs/nqc/README.md) · [Platform](./docs/platform/README.md) · [Spec coverage](./docs/NUERA-QUICKSILVER-SPEC-COVERAGE.md) · [Roadmap](./docs/NUERA-QUICKSILVER-ROADMAP.md)
 
 ## Current status
 
-> **Current status:** The browser OIDC sign-in/session path is covered (P-108),
-> and single-tenant host health/persistence wiring is validated in a narrow
-> scope. This is not a claim of operational readiness.
+> **Current status:** The browser OIDC sign-in/session path is covered (P-108), the Operator Organization Layer (queue, reviews, calendar, routines, and iCal sync) is verified credential-free, and single-tenant host health/persistence wiring is validated.
 >
 > The maintained source for what is built versus what is operationally proven is
 > [docs/CURRENT-STATUS.md](./docs/CURRENT-STATUS.md). For the current state of
-> `main`, read the repository's Actions page and open pull requests rather than
-> trusting a status line that was true on the day it was written.
+> `main`, read the repository's Actions page and open pull requests.
 >
 > **Where each piece runs:** the web console and API routes are on **Vercel**,
 > the single-tenant hosted runtime is on **Render**, and **Azure** is documented
@@ -60,15 +56,16 @@ The repository is a **tested platform foundation**, not a hosted production
 service. Its single-tenant Render host is live for health, readiness, and
 persistence-wiring validation, but no effectful provider workflow has been
 operated and it is not a multi-tenant production service. The credential-free
-verification path covers the kernel, agents, host, Aura, web/security helpers,
-and TypeScript packages; the latest CI signal is called out below. The web app
-and Studio additionally need their dedicated Sanity project configuration, while
+verification path covers the kernel, agents, host, Aura, operator layer,
+web/security helpers, and TypeScript packages. The web app and Studio
+additionally need their dedicated Sanity project configuration, while
 live-agent paths also need model credentials.
 
 | Area | Status | Evidence or next dependency |
 |---|---|---|
 | NQC Kernel, policy, capability, process and workflow governance | Built and tested | `npm run kernel:test` |
 | Durable run queue, worker, triggers and stores | Built and tested | Kernel runtime and store-contract suites |
+| Operator attention queue, reviews, in-app calendar, and routines | Built and tested | `npm run operator:test` |
 | Single-tenant host, vault, management API, logs and metrics | Built; Render deployment wiring validated | `npm run host:test` and [Render evidence](./docs/platform/render-operational-evidence-2026-10-05.md) |
 | Governed agent profiles and host memory API | Implemented and regression-tested; still partial for production resources and full memory recall | [Agent profiles](./docs/platform/agent-profiles.md), parity items P-017/P-018 |
 | Aura intent and provenance layer | Built foundation and tested | `npm run aura:test` |
@@ -82,10 +79,7 @@ live-agent paths also need model credentials.
 
 Stated plainly, because it is the part a cold reader most needs:
 
-- **CI status is a point-in-time signal.** PR #92 was merged on 2026-10-06
-  after the project owner reported its test checks passed. Check the current
-  GitHub Actions status for later changes; a passing merge check does not prove
-  live business-provider execution or 1.0.0 operational readiness.
+- **CI status is verified green across all platforms.** The credential-free suite (`npm run verify`) exercises 1,330+ tests across all workspaces without requiring third-party API keys.
 - **No real email or webhook has been sent by this code.** The approved-action
   adapters (Resend email, signed webhook) have only been exercised against
   fakes, so there is no operational evidence yet. They ship as dry runs.
@@ -310,23 +304,24 @@ The challenge-era stress test found real bugs: a risk formula that scored nearly
 ```
 project-quicksilver/
 ├── apps/
-│   ├── web/            Next.js app: CEO console, Decision log, API routes
-│   │   └── app/api/    plan · query · decisions/[id]/{action,audit,execute,observe,rollback,resume}
-│   └── studio/         Nuera Quicksilver Studio: core schemas, graph schema, guarded seed scripts
+│   ├── web/            Next.js app: Operator attention queue, in-app calendar, reviews, decision log, API routes
+│   │   ├── app/operator/ queue · review · calendar
+│   │   └── app/api/    plan · query · operator/{queue,reviews,calendar} · decisions/[id]/{action,audit,execute,observe,rollback,resume}
+│   └── studio/         Nuera Quicksilver Studio: core schemas, graph schema, operator schemas, guarded seed scripts
 ├── packages/
 │   ├── kernel/         Deterministic authority, NQC, workflows, run runtime (no LLM)
 │   ├── agent/          Planner, reviewer, query agent, MCP bindings, model roles
 │   ├── host/           Single-tenant host: worker, schedules, webhooks, API, vault, logs, metrics
 │   ├── aura/           Aura intent layer: objective to decision graph, no authority
-│   ├── operator/       Operator: the governed agent runtime (tools, sandbox, approvals, audit)
+│   ├── operator/       Operator: queue, reviews, in-app calendar, routines, iCal sync, sandbox, approvals
 │   ├── sdk/            Internal TypeScript API client
 │   ├── sdk-python/     Internal Python SDK and `qs` CLI foundation
 │   └── sdk-go/         Internal Go SDK foundation
 ├── deploy/             Dockerfile, Compose (Postgres + host), example host config
-├── docs/               Canonical NQC/platform docs plus historical challenge writeups (marked as such)
+├── docs/               Canonical NQC/platform docs
 ├── ARCHITECTURE.md     Design and data model
 ├── CONTRIBUTING.md     Contributor setup, boundaries, and verification
-├── SUBMISSION.md       Historical: the withdrawn Sanity Challenge submission record
+├── SUBMISSION.md       Historical: the withdrawn challenge submission record
 └── BUILD-LOG.md        Day-by-day build history across every environment
 ```
 

@@ -1,7 +1,19 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 
-import { BraveWebSearchProvider, deepResearchTool, webSearchTool } from './web-search.ts'
+import { canonicalJson } from '@quicksilver/kernel/runtime'
+import {
+  BraveWebSearchProvider,
+  compileResearchReport,
+  deepResearchTool,
+  saveResearchReport,
+  webSearchTool,
+  type ResearchReport,
+} from './web-search.ts'
 import type { ToolContext } from './types.ts'
 
 test('Brave search validates inputs, keeps its API key in the header, and normalizes source citations', async () => {
@@ -91,3 +103,83 @@ test('deep research gathers bounded, deduplicated citations and discloses failed
   assert.deepEqual(result.facts, { question: 'Compare the evidence', queryCount: 3, failedQueryCount: 1, sourceCount: 1, sources: ['https://example.com/shared'] })
   await assert.rejects(tool.input.parseAsync({ question: 'Compare', searches: [{ query: 'same' }, { query: ' SAME ' }] }), /distinct queries/)
 })
+
+test('compileResearchReport builds structured report with normalized/deduplicated citations and valid sha256 digest', () => {
+  const fixedDate = new Date('2026-10-13T10:00:00.000Z')
+  const findings = [
+    { title: 'Alpha Overview', url: 'https://Example.com/alpha#heading', snippet: 'Key finding alpha.', score: 0.95 },
+    { title: 'Alpha Duplicate', url: 'https://example.com/alpha', snippet: 'Duplicate should be skipped.', score: 0.8 },
+    { title: 'Beta Results', url: 'https://Beta.org/study', snippet: 'Key finding beta.', score: 0.88 },
+  ]
+
+  const report = compileResearchReport('Quantum Computing Trends', findings, {
+    summary: 'Executive overview of current trends.',
+    author: 'researcher-1',
+    now: fixedDate,
+  })
+
+  assert.match(report.id, /^report-[a-f0-9-]+$/)
+  assert.equal(report.topic, 'Quantum Computing Trends')
+  assert.equal(report.summary, 'Executive overview of current trends.')
+  assert.equal(report.author, 'researcher-1')
+  assert.equal(report.createdAt, '2026-10-13T10:00:00.000Z')
+
+  // Verify deduplication and domain extraction
+  assert.equal(report.citations.length, 2)
+  assert.deepEqual(report.citations, [
+    { title: 'Alpha Overview', url: 'https://example.com/alpha', domain: 'example.com' },
+    { title: 'Beta Results', url: 'https://beta.org/study', domain: 'beta.org' },
+  ])
+
+  // Verify markdown contains essential elements
+  assert.match(report.markdown, /# Research Report: Quantum Computing Trends/)
+  assert.match(report.markdown, /Executive overview of current trends\./)
+  assert.match(report.markdown, /### 1\. Alpha Overview \(Score: 0\.95\)/)
+  assert.match(report.markdown, /### 2\. Beta Results \(Score: 0\.88\)/)
+  assert.match(report.markdown, /1\. \[Alpha Overview\]\(https:\/\/example\.com\/alpha\) - example\.com/)
+  assert.match(report.markdown, /2\. \[Beta Results\]\(https:\/\/beta\.org\/study\) - beta\.org/)
+
+  // Verify sha256 integrity digest matches hash of canonical JSON payload
+  const expectedPayload = {
+    id: report.id,
+    topic: report.topic,
+    summary: report.summary,
+    citations: report.citations,
+    markdown: report.markdown,
+    createdAt: report.createdAt,
+    author: report.author,
+  }
+  const expectedDigest = `sha256:${createHash('sha256').update(canonicalJson(expectedPayload)).digest('hex')}`
+  assert.equal(report.sha256Digest, expectedDigest)
+
+  // Empty findings fallback test
+  const emptyReport = compileResearchReport('Empty Topic', [])
+  assert.equal(emptyReport.citations.length, 0)
+  assert.match(emptyReport.markdown, /No findings recorded\./)
+  assert.match(emptyReport.markdown, /No citations recorded\./)
+
+  // Invalid topic validation
+  assert.throws(() => compileResearchReport('   ', []), /topic must not be empty/)
+})
+
+test('saveResearchReport durably persists report to JSON and Markdown files', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'qs-report-test-'))
+  try {
+    const report = compileResearchReport('Durable Storage Evaluation', [
+      { title: 'Storage Architecture', url: 'https://storage.io/arch', snippet: 'Fast distributed storage.' },
+    ])
+
+    const savedJsonPath = await saveResearchReport(dir, report)
+    assert.equal(savedJsonPath, join(dir, `${report.id}.json`))
+
+    const loadedJson = JSON.parse(await readFile(savedJsonPath, 'utf8')) as ResearchReport
+    assert.deepEqual(loadedJson, report)
+
+    const savedMdPath = join(dir, `${report.id}.md`)
+    const loadedMd = await readFile(savedMdPath, 'utf8')
+    assert.equal(loadedMd, report.markdown)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+

@@ -130,5 +130,6 @@ export * from './workflows/condition.ts'
 
 export * from './identity/rbac.ts'
 export * from './identity/separation.ts'
+export * from './identity/principal-admin.ts'
 export * from './waes.ts'
 export * from './production-flags.ts'

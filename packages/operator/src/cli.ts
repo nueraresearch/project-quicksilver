@@ -20,6 +20,8 @@
  *   --skills review     accept or reject skills the agent proposed (shows the diff), then exit
  *   --skills import <dir>  scan a skill folder (for example from a hub) and hold it for review
  *   --learn <runId>     have the agent turn a finished run into a skill proposal
+ *   --queue             display the operator attention queue, then exit
+ *   --review [cadence]  generate and display an operational review (daily|weekly|stale-loops), then exit
  *
  * Skills (SKILL.md standard) live in ~/.quicksilver/skills (QUICKSILVER_SKILLS_DIR)
  * and in <workspace>/skills; the agent sees their names and loads one when it fits.
@@ -51,6 +53,8 @@ import { FileCheckpointStore } from './checkpoints.ts'
 import { Gate, type Approver } from './gate.ts'
 import { runOperator } from './loop.ts'
 import { loadProjectContext, MemoryBook, memoryTools, SessionArchive, type MemoryEffectivenessOutcome, type MemoryExportBundle } from './memory.ts'
+import { assembleReview, formatReviewPlainText, type ReviewCadence } from './review.ts'
+import { formatCalendarPlainText, type ScheduledItem } from './calendar.ts'
 import { lineDiff, SkillLibrary, skillTools } from './skills.ts'
 import { configuredWebSearchTools } from './web-search.ts'
 import { homedir } from 'node:os'
@@ -97,14 +101,315 @@ function args(argv: string[]) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!
     if (a === '--verify') out.verify.push(argv[++i] ?? '')
-    else if (a === '--network') out.network = true
+    else if (a === '--network' || a === '--queue' || a === '--calendar') out[a.slice(2)] = true
     else if (a.startsWith('--')) out[a.slice(2)] = argv[++i]
     else out.goal.push(a)
   }
   return out
 }
 
+interface QueueBucketItem {
+  id: string
+  title: string
+  status?: string | null
+  riskLevel?: number | null
+  direction?: string | null
+  dueAt?: string | null
+  checkBackAt?: string | null
+  context?: string | null
+  counterpartyName?: string | null
+  createdAt?: string | null
+}
+
+interface QueueResponse {
+  observedAt: string
+  buckets: {
+    needsDecision: QueueBucketItem[]
+    needsAction: QueueBucketItem[]
+    waitingOnOthers: QueueBucketItem[]
+    upcoming: QueueBucketItem[]
+  }
+  counts: {
+    needsDecision: number
+    needsAction: number
+    waitingOnOthers: number
+    upcoming: number
+    total: number
+  }
+}
+
+async function displayOperatorQueue(): Promise<void> {
+  const apiUrl = (process.env.QUICKSILVER_API_URL || 'http://localhost:3000').replace(/\/$/, '')
+  const token = process.env.QUICKSILVER_OPERATOR_TOKEN
+  let queueData: QueueResponse | null = null
+
+  try {
+    const res = await fetch(`${apiUrl}/api/operator/queue`, {
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+    })
+    if (res.ok) {
+      queueData = (await res.json()) as QueueResponse
+    }
+  } catch {
+    // API not reachable
+  }
+
+  if (!queueData && process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
+    const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
+    const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production'
+    const readToken = process.env.SANITY_READ_TOKEN || process.env.SANITY_AUTH_TOKEN
+    const query = `{
+      "decisions": *[_type == "decision" && status in ["awaiting-approval", "rollback-proposed"]] | order(coalesce(createdAt, _createdAt) desc)[0...50]{ _id, question, selectedAction, status, riskLevel, requiredApproval, requestedBy, createdAt, kind },
+      "commitments": *[_type == "commitment" && status == "open"] | order(coalesce(dueAt, createdAt, _createdAt) asc)[0...100]{ _id, title, direction, dueAt, checkBackAt, context, createdAt, "counterpartyName": counterparty->name }
+    }`
+    try {
+      const url = `https://${projectId}.api.sanity.io/v2024-10-01/data/query/${dataset}?query=${encodeURIComponent(query)}`
+      const res = await fetch(url, {
+        headers: readToken ? { authorization: `Bearer ${readToken}` } : {},
+      })
+      if (res.ok) {
+        const body = (await res.json()) as { result?: { decisions?: any[]; commitments?: any[] } }
+        const decisions = body.result?.decisions || []
+        const commitments = body.result?.commitments || []
+        const nowIso = new Date().toISOString()
+        const sevenDaysIso = new Date(Date.now() + 7 * 86400000).toISOString()
+        const needsDecision = decisions.map((d: any) => ({
+          id: d._id,
+          title: d.question?.trim() || d.selectedAction?.trim() || 'Untitled decision',
+          status: d.status,
+          riskLevel: d.riskLevel,
+          createdAt: d.createdAt,
+        }))
+        const needsAction = commitments.filter((c: any) => c.direction === 'i-owe').map((c: any) => ({
+          id: c._id,
+          title: c.title,
+          direction: c.direction,
+          dueAt: c.dueAt,
+          checkBackAt: c.checkBackAt,
+          context: c.context,
+          counterpartyName: c.counterpartyName,
+          createdAt: c.createdAt,
+        }))
+        const waitingOnOthers = commitments.filter((c: any) => c.direction === 'they-owe' && c.checkBackAt && c.checkBackAt <= nowIso).map((c: any) => ({
+          id: c._id,
+          title: c.title,
+          direction: c.direction,
+          dueAt: c.dueAt,
+          checkBackAt: c.checkBackAt,
+          context: c.context,
+          counterpartyName: c.counterpartyName,
+          createdAt: c.createdAt,
+        }))
+        const upcoming = commitments.filter((c: any) => c.dueAt && c.dueAt > nowIso && c.dueAt <= sevenDaysIso).map((c: any) => ({
+          id: c._id,
+          title: c.title,
+          direction: c.direction,
+          dueAt: c.dueAt,
+          counterpartyName: c.counterpartyName,
+          createdAt: c.createdAt,
+        }))
+        queueData = {
+          observedAt: nowIso,
+          buckets: { needsDecision, needsAction, waitingOnOthers, upcoming },
+          counts: {
+            needsDecision: needsDecision.length,
+            needsAction: needsAction.length,
+            waitingOnOthers: waitingOnOthers.length,
+            upcoming: upcoming.length,
+            total: needsDecision.length + needsAction.length + waitingOnOthers.length,
+          },
+        }
+      }
+    } catch {
+      // Direct query fallback failed
+    }
+  }
+
+  console.log('\n=== Quicksilver Operator Queue ===\n')
+
+  if (!queueData) {
+    console.log('Nothing needs your attention right now. Commitments, pending approvals, and follow-ups will appear here.\n')
+    return
+  }
+
+  const { buckets, counts } = queueData
+  const total = (counts?.needsDecision ?? 0) + (counts?.needsAction ?? 0) + (counts?.waitingOnOthers ?? 0)
+
+  if (total === 0 && (counts?.upcoming ?? 0) === 0) {
+    console.log('Nothing needs your attention right now. Commitments, pending approvals, and follow-ups will appear here.\n')
+    return
+  }
+
+  if (buckets.needsDecision?.length > 0) {
+    console.log(`=== Needs my decision (${buckets.needsDecision.length}) ===`)
+    for (const item of buckets.needsDecision) {
+      console.log(`• [${(item.status || 'review').toUpperCase()}] ${item.title}`)
+      console.log(`  → status: ${item.status} · risk: ${item.riskLevel ?? 'unspecified'}${item.createdAt ? ` · ${item.createdAt}` : ''}`)
+    }
+    console.log('')
+  }
+
+  if (buckets.needsAction?.length > 0) {
+    console.log(`=== Needs my action (${buckets.needsAction.length}) ===`)
+    for (const item of buckets.needsAction) {
+      console.log(`• ${item.title}${item.dueAt ? ` — due ${item.dueAt.slice(0, 10)}` : ''}`)
+      if (item.counterpartyName || item.context) {
+        console.log(`  → ${item.counterpartyName ? `with ${item.counterpartyName} · ` : ''}${item.context ? `context: "${item.context.slice(0, 80)}"` : ''}`)
+      }
+    }
+    console.log('')
+  }
+
+  if (buckets.waitingOnOthers?.length > 0) {
+    console.log(`=== Waiting on others (${buckets.waitingOnOthers.length}) ===`)
+    for (const item of buckets.waitingOnOthers) {
+      console.log(`• ${item.title}`)
+      console.log(`  → ${item.counterpartyName ? `counterparty: ${item.counterpartyName} · ` : ''}check-back was ${item.checkBackAt ? item.checkBackAt.slice(0, 10) : 'scheduled'}`)
+    }
+    console.log('')
+  }
+
+  if (buckets.upcoming?.length > 0) {
+    console.log(`=== Scheduled / upcoming (${buckets.upcoming.length}) ===`)
+    for (const item of buckets.upcoming) {
+      console.log(`• ${item.title}${item.dueAt ? ` — due ${item.dueAt.slice(0, 10)}` : ''}`)
+      if (item.counterpartyName) console.log(`  → ${item.counterpartyName}`)
+    }
+    console.log('')
+  }
+}
+
+async function displayOperatorReview(cadenceArg?: string | boolean): Promise<void> {
+  const chosen = typeof cadenceArg === 'string' ? cadenceArg : 'daily'
+  const cadence: ReviewCadence = ['daily', 'weekly', 'stale-loops', 'approvals'].includes(chosen)
+    ? (chosen as ReviewCadence)
+    : 'daily'
+
+  const apiUrl = (process.env.QUICKSILVER_API_URL || 'http://localhost:3000').replace(/\/$/, '')
+  const token = process.env.QUICKSILVER_OPERATOR_TOKEN
+  let reviewData: any = null
+
+  try {
+    const res = await fetch(`${apiUrl}/api/operator/reviews`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ cadence }),
+    })
+    if (res.ok) {
+      const body = (await res.json()) as { review?: any }
+      if (body.review) reviewData = body.review
+    }
+  } catch {
+    // API not reachable
+  }
+
+  if (!reviewData && process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
+    const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
+    const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production'
+    const readToken = process.env.SANITY_READ_TOKEN || process.env.SANITY_AUTH_TOKEN
+    const query = `{
+      "decisions": *[_type == "decision" && status in ["awaiting-approval", "rollback-proposed"]] | order(coalesce(createdAt, _createdAt) desc)[0...50]{ _id, question, selectedAction, status, riskLevel, createdAt },
+      "commitments": *[_type == "commitment" && status == "open"] | order(coalesce(dueAt, createdAt, _createdAt) asc)[0...100]{ _id, title, direction, dueAt, checkBackAt, context, createdAt, "counterpartyName": counterparty->name }
+    }`
+    try {
+      const url = `https://${projectId}.api.sanity.io/v2024-10-01/data/query/${dataset}?query=${encodeURIComponent(query)}`
+      const res = await fetch(url, { headers: readToken ? { authorization: `Bearer ${readToken}` } : {} })
+      if (res.ok) {
+        const body = (await res.json()) as { result?: { decisions?: any[]; commitments?: any[] } }
+        reviewData = assembleReview({
+          cadence,
+          decisions: body.result?.decisions,
+          commitments: body.result?.commitments,
+          generatedBy: 'cli:operator',
+        })
+      }
+    } catch {
+      // Direct query fallback failed
+    }
+  }
+
+  if (!reviewData) {
+    reviewData = assembleReview({ cadence, generatedBy: 'cli:operator' })
+  }
+
+  console.log('\n' + formatReviewPlainText(reviewData) + '\n')
+}
+
+async function displayOperatorCalendar(): Promise<void> {
+  const apiUrl = (process.env.QUICKSILVER_API_URL || 'http://localhost:3000').replace(/\/$/, '')
+  const token = process.env.QUICKSILVER_OPERATOR_TOKEN
+  let items: ScheduledItem[] = []
+
+  try {
+    const res = await fetch(`${apiUrl}/api/operator/calendar`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    })
+    if (res.ok) {
+      const body = (await res.json()) as { items?: ScheduledItem[] }
+      if (Array.isArray(body.items)) items = body.items
+    }
+  } catch {
+    // API not reachable
+  }
+
+  if (items.length === 0 && process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) {
+    const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
+    const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production'
+    const readToken = process.env.SANITY_READ_TOKEN || process.env.SANITY_AUTH_TOKEN
+    const query = `*[_type == "scheduledItem"] | order(startsAt asc)[0...100]{
+      _id, title, kind, startsAt, endsAt, allDay, recurrence, notes, status, createdBy, createdAt
+    }`
+    try {
+      const url = `https://${projectId}.api.sanity.io/v2024-10-01/data/query/${dataset}?query=${encodeURIComponent(query)}`
+      const res = await fetch(url, { headers: readToken ? { authorization: `Bearer ${readToken}` } : {} })
+      if (res.ok) {
+        const body = (await res.json()) as { result?: any[] }
+        items = (body.result ?? []).map((d: any) => ({
+          id: d._id,
+          title: d.title || 'Untitled item',
+          kind: d.kind || 'reminder',
+          startsAt: d.startsAt || new Date().toISOString(),
+          endsAt: d.endsAt,
+          allDay: d.allDay === true,
+          recurrence: d.recurrence,
+          notes: d.notes,
+          status: d.status || 'upcoming',
+          createdBy: d.createdBy,
+          createdAt: d.createdAt,
+        }))
+      }
+    } catch {
+      // Direct query fallback failed
+    }
+  }
+
+  console.log('\n' + formatCalendarPlainText(items) + '\n')
+}
+
 const o = args(process.argv.slice(2))
+
+if (o.queue || o.goal[0] === 'queue') {
+  await displayOperatorQueue()
+  process.exit(0)
+}
+
+if (o.review || o.goal[0] === 'review') {
+  const chosenCadence = typeof o.review === 'string' ? o.review : (typeof o.goal[1] === 'string' ? o.goal[1] : undefined)
+  await displayOperatorReview(chosenCadence)
+  process.exit(0)
+}
+
+if (o.calendar || o.goal[0] === 'calendar') {
+  await displayOperatorCalendar()
+  process.exit(0)
+}
+
 const root = process.env.INIT_CWD ?? process.cwd()
 const workspace = await ensureWorkspace(join(root, String(o.workspace ?? 'operator-workspace')))
 const checkpoints = new FileCheckpointStore(workspace)

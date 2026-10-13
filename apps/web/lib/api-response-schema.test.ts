@@ -189,6 +189,7 @@ test('P-118: a successful API response validates against its declared response s
   process.env.QUICKSILVER_PRINCIPALS = PRINCIPALS
   process.env.QUICKSILVER_TENANT_ID = 'acme'
   delete process.env.QUICKSILVER_OIDC_ONLY
+  process.env.QS_SANITY_MOCK = '1'
 
   const { routes, unimportable } = await loadHandlers()
   const validated: string[] = []
