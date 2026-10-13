@@ -224,7 +224,12 @@ export class HostTraceTracer {
     if (!this.sink) return undefined
     const durationMs = params.durationMs ?? 0
     const startedAt = params.startedAt ?? (this.now() - durationMs)
-    const spanStatus: TraceStatus = params.status === 'completed' ? 'ok' : (params.status === 'blocked' ? 'blocked' : 'error')
+    // host.ts passes 'enqueued' or 'deduplicated' on the accept path and 'completed'
+    // once the run finishes. All three are successes; mapping only 'completed' would
+    // record every admitted run as an error. Mirrors traceScheduleTick.
+    const isOk = params.status === 'completed' || params.status === 'enqueued' || params.status === 'deduplicated'
+    const isBlocked = params.status === 'blocked' || params.status === 'forbidden'
+    const spanStatus: TraceStatus = isOk ? 'ok' : isBlocked ? 'blocked' : 'error'
 
     const cleanWf = params.workflowId.toLowerCase().replace(/[^a-z0-9._:-]/g, '_').slice(0, 70)
     const name = `queue.dispatch.${cleanWf}`
