@@ -1,4 +1,8 @@
 /** Read-only web search for Operator runs. Search snippets remain untrusted evidence. */
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { canonicalJson } from '@quicksilver/kernel/runtime'
 import { z } from 'zod'
 
 import type { OperatorTool, ToolContext } from './types.ts'
@@ -285,3 +289,163 @@ export function configuredWebSearchTools(env: NodeJS.ProcessEnv = process.env): 
   const provider = new BraveWebSearchProvider({ apiKey })
   return [webSearchTool(provider), deepResearchTool(provider)]
 }
+
+export interface ResearchFinding {
+  title: string
+  url: string
+  snippet?: string
+  score?: number
+}
+
+export interface ResearchCitation {
+  title: string
+  url: string
+  domain: string
+}
+
+export interface ResearchReportOptions {
+  summary?: string
+  author?: string
+  now?: Date
+}
+
+export interface ResearchReport {
+  id: string
+  topic: string
+  summary: string
+  citations: Array<{ title: string; url: string; domain: string }>
+  markdown: string
+  createdAt: string
+  author: string
+  sha256Digest: string
+}
+
+function extractDomain(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+export function compileResearchReport(
+  topic: string,
+  findings: Array<{ title: string; url: string; snippet?: string; score?: number }>,
+  options: { summary?: string; author?: string; now?: Date } = {},
+): ResearchReport {
+  const cleanTopic = topic.trim()
+  if (!cleanTopic) {
+    throw new Error('Research report topic must not be empty.')
+  }
+  const id = `report-${randomUUID()}`
+  const createdAt = (options.now ?? new Date()).toISOString()
+  const author = options.author?.trim() || 'operator'
+
+  // Normalize, sanitize, deduplicate citations by canonical URL (hash stripped)
+  const citationMap = new Map<string, { title: string; url: string; domain: string }>()
+  const deduplicatedFindings: Array<{ title: string; url: string; domain: string; snippet?: string; score?: number }> = []
+
+  for (const f of findings) {
+    const rawUrl = typeof f.url === 'string' ? f.url.trim() : ''
+    let canonicalUrl = rawUrl
+    let domain = ''
+    try {
+      const parsed = new URL(rawUrl)
+      parsed.hash = ''
+      canonicalUrl = parsed.href
+      domain = parsed.hostname.toLowerCase()
+    } catch {
+      domain = extractDomain(rawUrl)
+    }
+
+    const title = typeof f.title === 'string' ? f.title.trim() : ''
+    const snippet = typeof f.snippet === 'string' ? f.snippet.trim() : undefined
+    const score = typeof f.score === 'number' && !Number.isNaN(f.score) ? f.score : undefined
+
+    if (canonicalUrl && !citationMap.has(canonicalUrl)) {
+      citationMap.set(canonicalUrl, { title: title || canonicalUrl, url: canonicalUrl, domain })
+      deduplicatedFindings.push({ title: title || canonicalUrl, url: canonicalUrl, domain, snippet, score })
+    }
+  }
+
+  const citations = Array.from(citationMap.values())
+  const summary = options.summary?.trim() || `Research findings compiled for: ${cleanTopic}.`
+
+  // Build markdown representation
+  const markdownLines: string[] = [
+    `# Research Report: ${cleanTopic}`,
+    '',
+    `- **Date:** ${createdAt}`,
+    `- **Author:** ${author}`,
+    `- **ID:** ${id}`,
+    '',
+    '## Executive Summary',
+    '',
+    summary,
+    '',
+    '## Key Findings',
+    '',
+  ]
+
+  if (deduplicatedFindings.length === 0) {
+    markdownLines.push('No findings recorded.')
+  } else {
+    deduplicatedFindings.forEach((f, idx) => {
+      const scoreStr = f.score !== undefined ? ` (Score: ${f.score})` : ''
+      markdownLines.push(`### ${idx + 1}. ${f.title}${scoreStr}`)
+      markdownLines.push(`- **Source:** [${f.domain || f.url}](${f.url})`)
+      if (f.snippet) {
+        markdownLines.push(`- **Excerpt:** ${f.snippet}`)
+      }
+      markdownLines.push('')
+    })
+  }
+
+  markdownLines.push('## Citations', '')
+  if (citations.length === 0) {
+    markdownLines.push('No citations recorded.')
+  } else {
+    citations.forEach((c, idx) => {
+      markdownLines.push(`${idx + 1}. [${c.title}](${c.url}) - ${c.domain}`)
+    })
+  }
+
+  const markdown = markdownLines.join('\n').trim() + '\n'
+
+  const digestPayload = {
+    id,
+    topic: cleanTopic,
+    summary,
+    citations,
+    markdown,
+    createdAt,
+    author,
+  }
+
+  const sha256Digest = `sha256:${createHash('sha256').update(canonicalJson(digestPayload)).digest('hex')}`
+
+  return {
+    id,
+    topic: cleanTopic,
+    summary,
+    citations,
+    markdown,
+    createdAt,
+    author,
+    sha256Digest,
+  }
+}
+
+export async function saveResearchReport(dir: string, report: ResearchReport): Promise<string> {
+  if (!dir) throw new Error('Target directory must not be empty.')
+  await mkdir(dir, { recursive: true })
+  const baseName = `${report.id || 'research-report'}`
+  const jsonPath = join(dir, `${baseName}.json`)
+  const mdPath = join(dir, `${baseName}.md`)
+
+  await writeFile(jsonPath, JSON.stringify(report, null, 2), 'utf8')
+  await writeFile(mdPath, report.markdown, 'utf8')
+
+  return jsonPath
+}
+

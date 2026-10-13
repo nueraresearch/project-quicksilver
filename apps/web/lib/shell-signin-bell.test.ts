@@ -76,6 +76,5 @@ test('the app has an error page, a not-found page and a loading state, and the e
 
 test('Overview is a destination in the navigation and the quick-navigate launcher', async () => {
   const { APP_NAVIGATION_DESTINATIONS } = await import('./app-navigation.ts')
-  assert.equal(APP_NAVIGATION_DESTINATIONS[0]!.href, '/')
-  assert.equal(APP_NAVIGATION_DESTINATIONS[0]!.label, 'Overview')
+  assert.ok(APP_NAVIGATION_DESTINATIONS.some((dest) => dest.href === '/' && dest.label === 'Overview'))
 })

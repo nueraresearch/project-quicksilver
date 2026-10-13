@@ -24,6 +24,12 @@ const warnOnce = createOnceWarner((message) => console.warn(`[sanity] ${message}
 export function getSanityClient(access: SanityAccess): SanityClient {
   const projectId = getDedicatedSanityProjectId()
   const choice = warnOnce(resolveSanityToken(access, process.env))
+  if (process.env.QS_SANITY_MOCK) {
+    return {
+      fetch: async () => ({}),
+      query: async () => ({}),
+    } as unknown as SanityClient
+  }
   return createClient({
     projectId,
     dataset: process.env.NEXT_PUBLIC_SANITY_DATASET ?? 'production',

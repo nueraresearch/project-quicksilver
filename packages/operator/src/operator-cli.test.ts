@@ -71,3 +71,22 @@ test('Operator CLI exports, restores, and records reviewer feedback without over
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('Operator CLI --queue displays operator attention queue', async () => {
+  const runWith = (runEnv: NodeJS.ProcessEnv, ...args: string[]) => exec(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args], { cwd: repo, env: runEnv })
+  const res = await runWith(process.env, '--queue')
+  assert.match(res.stdout, /Quicksilver Operator Queue/)
+})
+
+test('Operator CLI --review displays daily attention review', async () => {
+  const runWith = (runEnv: NodeJS.ProcessEnv, ...args: string[]) => exec(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args], { cwd: repo, env: runEnv })
+  const res = await runWith(process.env, '--review', 'daily')
+  assert.match(res.stdout, /Daily Attention Review/)
+  assert.match(res.stdout, /Metrics:/)
+})
+
+test('Operator CLI --calendar displays in-app calendar', async () => {
+  const runWith = (runEnv: NodeJS.ProcessEnv, ...args: string[]) => exec(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args], { cwd: repo, env: runEnv })
+  const res = await runWith(process.env, '--calendar')
+  assert.match(res.stdout, /Quicksilver Calendar/)
+})

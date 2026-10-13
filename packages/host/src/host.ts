@@ -41,6 +41,7 @@ import { TaskError, TaskService, type TaskRunBackend, type TaskServiceDeps } fro
 import type { TaskClientRegistry } from './task-clients.ts'
 import { hostRouteLabel, matchHostRoute, type HostRoute, type HostRouteFeature } from './routes.ts'
 import { FileAuthorizationAuditStore, resolveAuthorizationAuditPath } from './authorization-audit.ts'
+import { HostTraceTracer } from './telemetry.ts'
 
 /**
  * The single-tenant Quicksilver host: one process that runs the governed
@@ -111,6 +112,7 @@ const RUN_STATUSES: readonly WorkflowRunStatus[] = ['queued', 'running', 'comple
 const HOST_PRINCIPAL_ID = 'svc:quicksilver-host'
 const TASK_PRINCIPAL_ID = 'svc:quicksilver-tasks'
 
+
 export class QuicksilverHost {
   readonly config: HostConfig
   readonly log: Logger
@@ -135,12 +137,15 @@ export class QuicksilverHost {
   private readonly authorizationAudit: FileAuthorizationAuditStore
   private server?: Server
   private started = false
+  /** P-114: structured trace sink for queue, schedule, and webhook lifecycles. */
+  private readonly tracer: HostTraceTracer
 
   constructor(config: HostConfig, deps: HostDependencies = {}) {
     this.config = config
     this.deps = deps
     this.log = (deps.logger ?? new Logger({ level: config.log.level })).child({ service: 'quicksilver-host', tenantId: config.tenantId })
     this.metrics = createHostMetrics()
+    this.tracer = new HostTraceTracer({ tenantId: config.tenantId, ...(deps.now ? { now: deps.now } : {}) })
 
     // Single tenant: refuse any principal outside it.
     const principals = deps.principals ?? []
@@ -212,6 +217,8 @@ export class QuicksilverHost {
           const fields = { scheduleId: r.scheduleId, slot: new Date(r.slot).toISOString(), outcome, ...(r.result.accepted ? { runId: r.result.run.runId } : { reasons: r.result.reasons }) }
           if (r.result.accepted) this.log.info('schedule slot enqueued', fields)
           else this.log.warn('schedule slot refused', fields)
+          // P-114: emit schedule tick trace
+          void this.tracer.traceScheduleTick({ scheduleId: r.scheduleId, slot: r.slot, outcome, runId: r.result.accepted ? r.result.run.runId : null }).catch(() => {})
         }
       },
     })
@@ -488,6 +495,8 @@ export class QuicksilverHost {
       const raw = await readBody(req, Math.max(this.config.http.maxBodyBytes, 262_144))
       if (raw === undefined) return this.webhookResult(parts[1]!, { status: 413, body: { accepted: false, error: 'Body too large.' } })
       const outcome = await this.webhooks!.receive(parts[1]!, { get: (name) => headerValue(req, name) }, raw)
+      // P-114: emit webhook intake trace
+      void this.tracer.traceWebhook({ endpointId: parts[1]!, status: outcome.status }).catch(() => {})
       return this.webhookResult(parts[1]!, outcome)
     }
 
@@ -687,7 +696,11 @@ export class QuicksilverHost {
         ...(typeof idempotencyKey === 'string' ? { idempotencyKey } : {}),
         ...(typeof priority === 'number' ? { priority } : {}),
       })
-      if (result.accepted) return { status: result.deduplicated ? 200 : 202, body: { runId: result.run.runId, deduplicated: result.deduplicated, status: result.run.status, ...(publication ? { publication: { version: publication.version, digest: publication.digest } } : {}) } }
+      if (result.accepted) {
+        // P-114: emit queue run trace
+        void this.tracer.traceQueueRun({ runId: result.run.runId, workflowId: workflow, status: result.deduplicated ? 'deduplicated' : 'enqueued', requestedBy: principal.id }).catch(() => {})
+        return { status: result.deduplicated ? 200 : 202, body: { runId: result.run.runId, deduplicated: result.deduplicated, status: result.run.status, ...(publication ? { publication: { version: publication.version, digest: publication.digest } } : {}) } }
+      }
       const code = { forbidden: 403, backpressure: 429, 'invalid-graph': 422, 'invalid-request': 400 }[result.code]
       return { status: code, body: { error: result.reasons.join(' '), code: result.code } }
     }

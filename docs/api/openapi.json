@@ -307,6 +307,81 @@
         }
       }
     },
+    "/api/operator/queue": {
+      "get": {
+        "operationId": "getOperatorQueue",
+        "description": "Unified attention surface for the human operator. Assembles items needing decision, items needing action, waiting on others, and upcoming items.",
+        "tags": ["Decisions"],
+        "responses": {
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" },
+          "2XX": { "$ref": "#/components/responses/OperatorQueueResponse" }
+        }
+      }
+    },
+    "/api/operator/reviews": {
+      "get": {
+        "operationId": "listOperatorReviews",
+        "description": "List recent operator reviews, newest first. Needs decision:read.",
+        "tags": ["Decisions"],
+        "responses": {
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" },
+          "2XX": { "$ref": "#/components/responses/OperatorReviewsListResponse" }
+        }
+      },
+      "post": {
+        "operationId": "generateOperatorReview",
+        "description": "Generate and optionally persist an operational review snapshot for the specified cadence.",
+        "tags": ["Decisions"],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/GenerateReviewRequest"
+        },
+        "responses": {
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" },
+          "201": { "$ref": "#/components/responses/OperatorReviewResponse" }
+        }
+      }
+    },
+    "/api/operator/calendar": {
+      "get": {
+        "operationId": "listOperatorCalendarItems",
+        "description": "List scheduled calendar items. Needs decision:read.",
+        "tags": ["Decisions"],
+        "parameters": [
+          { "name": "from", "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" } },
+          { "name": "kind", "in": "query", "required": false, "schema": { "type": "string", "enum": ["reminder", "review-block", "meeting", "deadline", "check-back"] } },
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string", "enum": ["upcoming", "done", "cancelled"] } }
+        ],
+        "responses": {
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" },
+          "2XX": { "$ref": "#/components/responses/OperatorCalendarListResponse" }
+        }
+      },
+      "post": {
+        "operationId": "createOperatorCalendarItem",
+        "description": "Create a new scheduled item. Needs decision:propose.",
+        "tags": ["Decisions"],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateCalendarItemRequest"
+        },
+        "responses": {
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/RateLimitResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" },
+          "201": { "$ref": "#/components/responses/OperatorCalendarItemResponse" }
+        }
+      }
+    },
     "/api/decisions": {
       "get": {
         "operationId": "listDecisions",
@@ -1446,6 +1521,173 @@
           "items": { "type": "array", "items": { "$ref": "#/components/schemas/AttentionItem" } },
           "sources": { "type": "array", "items": { "type": "object", "required": ["id", "status"], "properties": { "id": { "type": "string", "enum": ["decisions", "workflows", "agents", "traces"] }, "status": { "type": "string", "enum": ["ok", "unavailable", "skipped"] }, "reason": { "type": "string" } } } },
           "counts": { "type": "object", "required": ["actionable", "other", "complete"], "properties": { "actionable": { "type": "integer" }, "other": { "type": "integer" }, "complete": { "type": "boolean", "description": "False when a source could not be checked, so a zero is not a clean bill." } } }
+        }
+      },
+      "OperatorQueueDecisionItem": {
+        "type": "object",
+        "required": ["id", "title", "status", "riskLevel", "requiredApproval", "requestedBy", "kind", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "string" },
+          "riskLevel": { "type": ["integer", "null"] },
+          "requiredApproval": { "type": "boolean" },
+          "requestedBy": { "type": ["string", "null"] },
+          "kind": { "type": ["string", "null"] },
+          "createdAt": { "type": ["string", "null"] }
+        }
+      },
+      "OperatorQueueCommitmentItem": {
+        "type": "object",
+        "required": ["id", "title", "direction", "dueAt", "checkBackAt", "context", "counterpartyName", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "direction": { "type": "string", "enum": ["i-owe", "they-owe"] },
+          "dueAt": { "type": ["string", "null"] },
+          "checkBackAt": { "type": ["string", "null"] },
+          "context": { "type": ["string", "null"] },
+          "counterpartyName": { "type": ["string", "null"] },
+          "createdAt": { "type": ["string", "null"] }
+        }
+      },
+      "OperatorQueue": {
+        "type": "object",
+        "required": ["observedAt", "buckets", "counts"],
+        "properties": {
+          "observedAt": { "type": "string", "format": "date-time" },
+          "buckets": {
+            "type": "object",
+            "required": ["needsDecision", "needsAction", "waitingOnOthers", "upcoming"],
+            "properties": {
+              "needsDecision": { "type": "array", "items": { "$ref": "#/components/schemas/OperatorQueueDecisionItem" } },
+              "needsAction": { "type": "array", "items": { "$ref": "#/components/schemas/OperatorQueueCommitmentItem" } },
+              "waitingOnOthers": { "type": "array", "items": { "$ref": "#/components/schemas/OperatorQueueCommitmentItem" } },
+              "upcoming": { "type": "array", "items": { "$ref": "#/components/schemas/OperatorQueueCommitmentItem" } }
+            }
+          },
+          "counts": {
+            "type": "object",
+            "required": ["needsDecision", "needsAction", "waitingOnOthers", "upcoming", "total"],
+            "properties": {
+              "needsDecision": { "type": "integer" },
+              "needsAction": { "type": "integer" },
+              "waitingOnOthers": { "type": "integer" },
+              "upcoming": { "type": "integer" },
+              "total": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "GenerateReviewBody": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "type": "string",
+            "enum": ["daily", "weekly", "stale-loops", "approvals"]
+          }
+        }
+      },
+      "OperatorReviewItem": {
+        "type": "object",
+        "required": ["title", "cadence", "periodStart", "periodEnd", "summary", "highlights", "metrics", "generatedAt", "generatedBy"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "cadence": { "type": "string", "enum": ["daily", "weekly", "stale-loops", "approvals"] },
+          "periodStart": { "type": "string", "format": "date-time" },
+          "periodEnd": { "type": "string", "format": "date-time" },
+          "summary": { "type": "string" },
+          "highlights": { "type": "array", "items": { "type": "string" } },
+          "metrics": {
+            "type": "object",
+            "required": ["pendingDecisionsCount", "dueCommitmentsCount", "waitingOnOthersCount", "upcomingCount", "staleItemsCount"],
+            "properties": {
+              "pendingDecisionsCount": { "type": "integer" },
+              "dueCommitmentsCount": { "type": "integer" },
+              "waitingOnOthersCount": { "type": "integer" },
+              "upcomingCount": { "type": "integer" },
+              "staleItemsCount": { "type": "integer" }
+            }
+          },
+          "decisions": { "type": "array", "items": { "type": "object" } },
+          "commitments": { "type": "array", "items": { "type": "object" } },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "generatedBy": { "type": "string" }
+        }
+      },
+      "OperatorReviewsList": {
+        "type": "object",
+        "required": ["observedAt", "reviews"],
+        "properties": {
+          "observedAt": { "type": "string", "format": "date-time" },
+          "reviews": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OperatorReviewItem" }
+          }
+        }
+      },
+      "OperatorReviewResult": {
+        "type": "object",
+        "required": ["observedAt", "review"],
+        "properties": {
+          "observedAt": { "type": "string", "format": "date-time" },
+          "review": { "$ref": "#/components/schemas/OperatorReviewItem" }
+        }
+      },
+      "OperatorScheduledItem": {
+        "type": "object",
+        "required": ["id", "title", "kind", "startsAt", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "kind": { "type": "string", "enum": ["reminder", "review-block", "meeting", "deadline", "check-back"] },
+          "startsAt": { "type": "string", "format": "date-time" },
+          "endsAt": { "type": "string", "format": "date-time", "nullable": true },
+          "allDay": { "type": "boolean" },
+          "recurrence": { "type": "string", "nullable": true },
+          "linkedCommitmentId": { "type": "string", "nullable": true },
+          "linkedDecisionId": { "type": "string", "nullable": true },
+          "linkedContactId": { "type": "string", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["upcoming", "done", "cancelled"] },
+          "createdBy": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "OperatorCalendarList": {
+        "type": "object",
+        "required": ["items", "count"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OperatorScheduledItem" }
+          },
+          "count": { "type": "integer" }
+        }
+      },
+      "OperatorCalendarResult": {
+        "type": "object",
+        "required": ["item"],
+        "properties": {
+          "item": { "$ref": "#/components/schemas/OperatorScheduledItem" }
+        }
+      },
+      "CreateCalendarItemBody": {
+        "type": "object",
+        "required": ["title", "kind", "startsAt"],
+        "properties": {
+          "title": { "type": "string" },
+          "kind": { "type": "string", "enum": ["reminder", "review-block", "meeting", "deadline", "check-back"] },
+          "startsAt": { "type": "string", "format": "date-time" },
+          "endsAt": { "type": "string", "format": "date-time" },
+          "allDay": { "type": "boolean" },
+          "recurrence": { "type": "string" },
+          "linkedCommitmentId": { "type": "string" },
+          "linkedDecisionId": { "type": "string" },
+          "linkedContactId": { "type": "string" },
+          "notes": { "type": "string" },
+          "status": { "type": "string", "enum": ["upcoming", "done", "cancelled"] }
         }
       },
       "DecisionActionRequest": {
@@ -3077,6 +3319,8 @@
     },
     "requestBodies": {
       "DecisionActionRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionActionRequest" } } } },
+      "GenerateReviewRequest": { "required": false, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenerateReviewBody" } } } },
+      "CreateCalendarItemRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateCalendarItemBody" } } } },
       "ExecuteDecisionRequest": { "required": false, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExecuteDecisionRequest" } } } },
       "RollbackDecisionRequest": { "required": false, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RollbackDecisionRequest" } } } },
       "PlanRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlanRequest" } } } },
@@ -3166,6 +3410,11 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthStatus" } } }
       },
       "InboxResponse": { "description": "What needs the signed-in person.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Inbox" } } } },
+      "OperatorQueueResponse": { "description": "The operator queue attention surface.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperatorQueue" } } } },
+      "OperatorReviewsListResponse": { "description": "Recent operator reviews list.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperatorReviewsList" } } } },
+      "OperatorReviewResponse": { "description": "Generated operator review.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperatorReviewResult" } } } },
+      "OperatorCalendarListResponse": { "description": "List of scheduled calendar items.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperatorCalendarList" } } } },
+      "OperatorCalendarItemResponse": { "description": "Created scheduled calendar item.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperatorCalendarResult" } } } },
       "ChatResponse": { "description": "The assistant's answer, with links to pages of the app.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } } },
       "DecisionListResponse": { "description": "Recent decisions.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionList" } } } },
       "DecisionDetailResponse": { "description": "One decision.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DecisionDetail" } } } },
