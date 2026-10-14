@@ -1,11 +1,12 @@
 # Current project status
 
-**Snapshot date:** 2026-10-07
-**Repository baseline:** `74f1e4a` — merge of [PR #92](https://github.com/nueraresearch/project-quicksilver/pull/92)
+**Snapshot date:** 2026-10-14
+**Repository baseline:** `da0c445` — current `main` when this snapshot was last reconciled by hand
 
-This is a concise operational and implementation snapshot. It separates code that
-exists from live evidence that has been collected, so it must not be read as a
-1.0.0 readiness claim.
+This is a concise operational and implementation snapshot. It separates code
+that exists from live evidence that has been collected, so it must not be read
+as a 1.0.0 readiness claim. It is intentionally conservative about operational
+proof, but it should still make the breadth of implemented surface area legible.
 
 ## Where each piece runs
 
@@ -35,7 +36,7 @@ reconciled against is a bookkeeping detail that goes stale on its own.
 
 | Area | Current evidence | Classification |
 |---|---|---|
-| M1–M7 governance foundation | Kernel governance, durable runs, triggers, host process, Aura intent layer, Genesis/Onboard/Operate foundations, and the M7 acceptance matrix are implemented. | **Implementation complete through 0.8.0**; see [M7 release evidence](platform/m7-release-evidence.md). |
+| M1–M7 governance foundation | Kernel governance, durable runs, triggers, host process, Aura intent layer, the Operator Organization Layer, Genesis/Onboard/Operate foundations, and the M7 acceptance matrix are implemented. | **Implementation complete through 0.8.0**; see [M7 release evidence](platform/m7-release-evidence.md). |
 | Single-tenant hosted runtime | The host has a Render deployment with PostgreSQL for runs and a mounted `/data` disk for auxiliary state. Persistence wiring was inspected on 2026-10-05/06. A read-only recheck on 2026-10-08 against the **currently deployed** service returned `{"status":"ok"}` from `/healthz`, `{"status":"ready"}` from `/readyz`, and the expected `401` from unauthenticated `GET /api/whoami`. | **Operationally validated in a narrow scope**; see [Render operational evidence](platform/render-operational-evidence-2026-10-05.md). |
 | Genesis persistence on the host | `genesis-cli.ts` resolves `QUICKSILVER_GENESIS_DIR`, defaulting to `data/genesis`, and the Render Blueprint sets `/data/genesis`. Regression coverage exists. | **Implementation merged, but not evidenced live.** The startup persistence signal and the absence of the Genesis in-memory warning live in the Render service logs, which are not readable without Render access. No sentinel write has been performed. |
 | Governed agent profiles and host memory API | PR #92 adds web-profile bindings for planner/reviewer/query/specialist routes, reviewed skill/routine/context loading, optional isolated agent memory, and authenticated governed host-memory routes. | **Merged and regression-tested; P-017/P-018 remain partial** for production-owned resources, operational model evidence, full-text recall, unified preferences, and shared multi-tenant storage. See [agent profiles](platform/agent-profiles.md) and the [parity matrix](platform/parity-tests.md). |
@@ -45,7 +46,7 @@ reconciled against is a bookkeeping detail that goes stale on its own.
 
 ## Not complete or not yet proven
 
-- **PR #92 test checks passed at merge.** The project owner confirmed the merge completed without test failures on 2026-10-06. This is a point-in-time CI result, not evidence of live business-provider execution or 1.0.0 readiness; check GitHub Actions for the status of later commits.
+- **CI status is a point-in-time signal.** Passing merge checks are useful regression evidence, not proof of live business-provider execution or 1.0.0 readiness; check GitHub Actions for the status of later commits.
 - **Genesis persistence on the live host is not evidenced.** `genesis-cli.ts` resolves `QUICKSILVER_GENESIS_DIR` and the Render Blueprint sets `/data/genesis`, and the code path is regression-tested. What is missing is live proof: the startup persistence signal and the absence of the Genesis in-memory warning live in the Render service logs, which are not readable without Render access. No sentinel write has been performed, because that changes business state. This is an evidence gap, not a known failure.
 - **No real effectful provider workflow is proven.** Email, payment, webhook, and connector paths remain dry-run, fake-provider, or record-only boundaries. No real email or webhook has been sent by this code.
 - **The three operating modes lack their required operational evidence.** The Onboard pilot, Genesis run, and Operate period have not occurred; they are not release-complete merely because their foundations are implemented.
@@ -53,8 +54,8 @@ reconciled against is a bookkeeping detail that goes stale on its own.
 - **Measured routing is declared but not running.** The durable outcome history exists and is declared in both hosting templates (`QUICKSILVER_ROUTING_CONFIG` and `QUICKSILVER_ROUTING_HISTORY_PATH`), with a documented enablement procedure. It is enabled in no deployment, so there is no evidence of learned routing under live traffic and the rollback path has never been exercised. The two variables must be set together; the history path alone makes every measured call refuse. See [enabling measured model routing](platform/routed-model-enablement.md).
 - **Most declared API response schemas are not yet verified against live output.** Every operation declares a named success schema, and three that were anonymous now have named ones. But `apps/web/lib/api-response-schema.test.ts` exercises only 4 of 46 handlers in a credential-free run, because 42 return 401/503 without Sanity credentials. A control test confirms the limit precisely: breaking `AuthStatus` fails the suite, while breaking `DecisionDetail` passes because that route never reaches a success path. Closing this needs an injectable transport.
 - **Enterprise gaps remain.** A fully integrated multi-tenant control plane, stable/published SDK contracts, complete Supervisor Agent, isolated effectful execution, full traces/cost operations, marketplace/domain packs, and compliance evidence are M8–M9 work.
+- **Host trace spans are now persisted, but nothing reads them yet.** `packages/host/src/host.ts` previously constructed `HostTraceTracer` with no sink, so all three call sites (queue dispatch, schedule tick, webhook intake) returned `undefined` and stored nothing. `HostDependencies.traceSpanSink` is now the injection seam, `main.ts` wires `FileTraceSpanSink`, and spans are appended as fsynced JSONL at `QUICKSILVER_TRACE_SPAN_PATH` (default `<data dir>/trace-spans.jsonl`, set explicitly in both `deploy/render.yaml` and `deploy/azure/main.bicep`). A host with no durable path logs a startup warning instead of silently dropping spans. What is still missing: rotation/retention, and any reader — `/monitoring/traces` reads the Vercel-side store, so host spans are durable but not yet visible in the console. This is why P-114 stays `partial`.
 - **Persistent identity administration is implemented, not operationally proven.** `packages/kernel/src/identity/principal-admin.ts` adds a governed administration engine: deny-by-default, tenant-scoped, separation of duties with no self-grant, authority roles assignable only to humans, and mutation that aborts if the audit write fails. It has five credential-free regression tests. What is missing is deployment and dated operational evidence; no deployment exercises the path. The P-108 sign-in/session path remains covered.
-- **Host trace spans are constructed but never persisted.** `packages/host/src/telemetry.ts` builds queue, schedule and webhook spans, but `QuicksilverHost` constructs the tracer without a sink, so all three call sites return `undefined` and store nothing. The only span sink in the repository is `apps/web/lib/telemetry-store.ts`, on the Vercel side. This is why P-114 stays partial.
 
 ## Highest-value near-term work
 
@@ -66,7 +67,7 @@ Ordered by what actually unblocks the most, not by effort.
 4. **Enable measured routing (P-050).** Set both `QUICKSILVER_ROUTING_CONFIG` and `QUICKSILVER_ROUTING_HISTORY_PATH` in Render, on the mounted disk. Both must be set together: the history path alone makes every measured call throw. The procedure, the four fail-closed traps and the three kill switches are in [enabling measured model routing](platform/routed-model-enablement.md).
 5. **Decide the 1.0.0 deprecation window.** The promise is decided as mandatory; the remaining work is listed in [the API contract](api/api-contract.md#what-a-100-promise-still-requires). The window length is the only input that is purely a product-owner decision. The root `CHANGELOG.md` now records releases, but it does not express per-SDK compatibility, so that policy still has to be written.
 6. **Read the Render service logs for the Genesis persistence signal.** Health, readiness, and the unauthenticated identity refusal were rechecked read-only on 2026-10-08. The remaining gap is the startup log: confirm `QUICKSILVER_GENESIS_DIR` is resolved and that the Genesis in-memory warning is absent. This needs Render access, not a code change. Keep it read-only; a sentinel write and restart needs a separately approved recovery plan.
-7. **Give principal/role administration an operational record.** The governed engine exists and is credential-free tested; what remains is deciding the durable deployment path and recording dated evidence that it refuses correctly against a live tenant. Do not treat the completed P-108 sign-in experience as covering administrative lifecycle needs.
+7. **Operationalize principal/role administration.** The governed administration engine now exists in source; the remaining work is deployment, dated evidence, and the durable management workflow around it. Do not treat the completed P-108 sign-in experience as covering administrative lifecycle needs.
 8. **Prepare, do not start, the pilots.** The next large evidence gaps are organizational rather than coding tasks: entity/payment-account decisions for Genesis and the scheduled Onboard shadow-mode pilot.
 9. **Keep P-017/P-018 operational work explicit.** Production-owned profile resources, live model runs, trusted request-derived tenant identity, shared memory coordination, and complete recall remain open; see the parity matrix.
 
