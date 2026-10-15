@@ -6,6 +6,7 @@ import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js'
+import { digestToken } from '../../../packages/kernel/src/identity/tokens.ts'
 
 // Route modules import `next/server` and use the `@/` alias, neither of which
 // plain Node ESM resolves. app-routes.test.ts registers the same loader for
@@ -49,9 +50,28 @@ const contract = JSON.parse(
   readFileSync(fileURLToPath(new URL('../../../docs/api/openapi.json', import.meta.url)), 'utf8'),
 ) as Contract
 
-/** The environment app-routes.test.ts already treats as the working baseline. */
+/**
+ * The environment app-routes.test.ts already treats as the working baseline.
+ *
+ * The digest must be a real one. This fixture used to carry the literal
+ * `sha256:test-owner`, which is not a digest of any token, so the identity
+ * provider refused to build and every guarded route answered 503
+ * "Principals are misconfigured" before reaching its own logic. That, not a
+ * missing Sanity credential, is why this suite used to validate 4 of 46
+ * handlers. app-routes.test.ts already had the right shape; reuse it.
+ *
+ * Roles are the union that the route guard checks against, so a route is not
+ * refused for want of authority before its response shape is ever exercised.
+ */
+const OWNER_TOKEN = 'qs_test_owner_token_for_response_schema_checks_0123456789'
 const PRINCIPALS = JSON.stringify([
-  { id: 'entity-owner', kind: 'human', tenantId: 'acme', roles: ['intent-provider', 'supervisor', 'developer', 'viewer'], tokenDigest: 'sha256:test-owner' },
+  {
+    id: 'entity-owner',
+    kind: 'human',
+    tenantId: 'acme',
+    roles: ['intent-provider', 'supervisor', 'developer', 'viewer', 'auditor'],
+    tokenDigest: digestToken(OWNER_TOKEN),
+  },
 ])
 
 function findRouteFiles(dir: string): string[] {
@@ -162,7 +182,12 @@ function declaredSuccessSchema(status: number, operation: { responses: Record<st
  */
 const ajv = new Ajv2020({ strict: false, allErrors: true })
 for (const [name, schema] of Object.entries(contract.components.schemas)) {
-  ajv.addSchema({ ...(schema as object), $id: name }, name)
+  // Rewritten here too, not only on the operation schema below. A component
+  // registered raw keeps its own `#/components/schemas/X` pointers, which ajv
+  // then resolves against that component's `$id` and cannot find. This stayed
+  // hidden while only four operations compiled; it surfaced as soon as the
+  // route guard stopped refusing everything.
+  ajv.addSchema({ ...(rewriteRefs(schema) as object), $id: name }, name)
 }
 
 function compile(schema: unknown): ValidateFunction {
@@ -207,7 +232,7 @@ test('P-118: a successful API response validates against its declared response s
 
       const req = new Request(`http://localhost:3000${route.path}`, {
         method: route.method,
-        headers: { 'content-type': 'application/json', authorization: 'Bearer test-owner' },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${OWNER_TOKEN}` },
         ...(route.method === 'GET' ? {} : { body: '{}' }),
       })
       const res = await route.handler(req, { params: Promise.resolve({ id: 'test-id' }) })
@@ -249,13 +274,19 @@ test('P-118: a successful API response validates against its declared response s
   // Without this the test could pass by skipping everything, for instance if a
   // harness change stopped handlers from ever succeeding.
   //
-  // The floor is low because most routes reach Sanity or a model provider and
-  // return 503/500 without credentials, which is a refusal, not evidence about
-  // the success schema. What matters is that the routes which do serve a success
-  // response really do match the contract, and that at least one runs at all.
+  // The floor is a real count, not a token one. This fixture used to carry a
+  // placeholder `tokenDigest` and a 10-character bearer, both of which made the
+  // identity provider refuse, so 42 of 46 routes answered 503 and only the four
+  // unauthenticated auth routes ever ran. The credential problem was never the
+  // blocker: with a real digest, a token of at least MIN_TOKEN_LENGTH, and the
+  // Sanity mock answering each query shape the way an empty dataset would, 16
+  // operations now validate against their declared schema.
+  //
+  // Raising this number is the point. Lowering it back toward 1 would restore
+  // the illusion of coverage.
   assert.ok(
-    validated.length >= 1,
-    `expected at least one real response to validate; validated=${validated.length} notSuccessful=${notSuccessful.length}`,
+    validated.length >= 16,
+    `expected at least 16 real responses to validate; validated=${validated.length} notSuccessful=${notSuccessful.length}`,
   )
   assert.deepEqual(
     withoutSuccessSchema,
