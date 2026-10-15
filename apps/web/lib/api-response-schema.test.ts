@@ -209,6 +209,142 @@ function rewriteRefs(node: unknown): unknown {
   return out
 }
 
+/**
+ * Per-route request inputs, keyed by `METHOD /api/path`.
+ *
+ * The contract declares the parameters and request bodies these routes accept,
+ * so the harness supplies them rather than sending a bare `{}`. A route that
+ * answers 400 proves its validation works and nothing about its declared
+ * *response* schema, so a 400 here is dead coverage, not partial coverage.
+ *
+ * Values are the smallest thing that satisfies the route's own schema, so a
+ * failure here still means "the response drifted", not "the request was wrong".
+ */
+type JsonSchema = Record<string, unknown>
+
+/** Follow a `$ref` chain to the object it points at. */
+function resolveSchema(node: unknown): JsonSchema {
+  let current = node
+  for (let hop = 0; hop < 8; hop += 1) {
+    if (current === null || typeof current !== 'object' || typeof (current as { $ref?: unknown }).$ref !== 'string') break
+    const next = resolvePointer((current as { $ref: string }).$ref)
+    if (next === null || typeof next !== 'object') break
+    current = next
+  }
+  return (current ?? {}) as JsonSchema
+}
+
+/**
+ * Values for patterns the contract pins but a generic string will not satisfy.
+ * Keyed by the pattern itself, so a route that tightens its schema shows up as
+ * a failure rather than silently getting a wrong-shaped id.
+ */
+const PATTERN_VALUES: Record<string, string> = {
+  '^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$': 'daily-brief',
+  '^nuera-quicksilver:[a-z][a-z0-9-]{0,62}$': 'nuera-quicksilver:query',
+  '^sha256:[a-f0-9]{64}$': `sha256:${'a'.repeat(64)}`,
+}
+
+/**
+ * The smallest value satisfying a JSON Schema, used to build a valid request
+ * body from the contract the routes are documented against.
+ *
+ * The contract is the source of truth for what a request looks like, so
+ * generating from it is better than a hand-written table that can drift. If a
+ * generated body is rejected, that is the contract and the route disagreeing —
+ * which is itself the kind of finding this suite exists to surface.
+ */
+function minimalValue(raw: unknown, depth = 0): unknown {
+  const schema = resolveSchema(raw)
+  if (depth > 6) return null
+
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0]
+  if ('const' in schema) return schema.const
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) return minimalValue(schema.oneOf[0], depth + 1)
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) return minimalValue(schema.anyOf[0], depth + 1)
+
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type
+  if (type === 'object' || (schema.properties && !type)) {
+    const properties = (schema.properties ?? {}) as Record<string, JsonSchema>
+    const required = Array.isArray(schema.required) ? (schema.required as string[]) : []
+    const result: Record<string, unknown> = {}
+    for (const name of required) {
+      if (properties[name]) result[name] = minimalValue(properties[name], depth + 1)
+    }
+    return result
+  }
+  if (type === 'array') {
+    // `[]` satisfies JSON Schema but not a route that also validates the value
+    // (an agent manifest needs at least one task). Honour minItems.
+    const items = (schema.items ?? {}) as JsonSchema
+    return typeof schema.minItems === 'number' && schema.minItems >= 1 ? [minimalValue(items, depth + 1)] : []
+  }
+  if (type === 'integer' || type === 'number') return schema.minimum ?? 1
+  if (type === 'boolean') return true
+  if (type === 'string' || !type) {
+    if (schema.format === 'date-time') return '2026-01-01T00:00:00.000Z'
+    if (typeof schema.pattern === 'string' && schema.pattern in PATTERN_VALUES) return PATTERN_VALUES[schema.pattern]
+    if (typeof schema.minLength === 'number') return 'a'.repeat(Math.max(1, schema.minLength))
+    if (typeof schema.maxLength === 'number') return 'a'.repeat(Math.min(schema.maxLength, 12))
+    return 'test-value'
+  }
+  return null
+}
+
+/** The request body the contract declares for an operation, as a minimal instance. */
+function declaredRequestBody(contractPath: string, method: string): unknown {
+  const operation = contract.paths[contractPath]?.[method.toLowerCase()] as { requestBody?: unknown } | undefined
+  if (!operation?.requestBody) return {}
+  const resolved = resolveSchema(operation.requestBody) as { content?: Record<string, { schema?: unknown }> }
+  const schema = resolved.content?.['application/json']?.schema
+  return schema ? minimalValue(schema) : {}
+}
+
+/**
+ * A workflow graph the kernel actually accepts. This one cannot be generated:
+ * `validateWorkflowGraph` is a domain rule (acyclic unless an isolated bounded
+ * loop, data-only conditions, evaluation for agents, approval for side-effect
+ * tools) that no JSON Schema expresses. Copied from the shape the host suite
+ * uses, so it is known-valid rather than merely well-shaped.
+ */
+const VALID_WORKFLOW_GRAPH = {
+  schemaVersion: 1,
+  id: 'daily-brief',
+  version: 1,
+  entryNodeId: 'start',
+  nodes: [
+    { id: 'start', kind: 'trigger', label: 'Start' },
+    { id: 'ask', kind: 'agent', label: 'Ask', config: { agentId: 'query', evaluationRequired: true, impact: 'low' } },
+    { id: 'done', kind: 'output', label: 'Done' },
+  ],
+  edges: [
+    { id: 'e1', from: 'start', to: 'ask' },
+    { id: 'e2', from: 'ask', to: 'done' },
+  ],
+}
+
+const REQUEST_FIXTURES: Record<string, { query?: Record<string, string>; body?: unknown; params?: Record<string, string> }> = {
+  // workflowId: 1-128 chars, /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/
+  'GET /api/workflows/diff': { query: { workflowId: 'daily-brief', from: '1', to: '2' } },
+  'GET /api/workflows/executions': { query: { workflowId: 'daily-brief', limit: '25' } },
+  'GET /api/workflows/publications': { query: { workflowId: 'daily-brief' } },
+  // agentId: /^nuera-quicksilver:[a-z][a-z0-9-]{0,62}$/
+  'GET /api/agents/definitions': { query: { agentId: 'nuera-quicksilver:query' } },
+  'POST /api/workflows/drafts': { body: { graph: VALID_WORKFLOW_GRAPH } },
+  // The path id is validated by the route itself: /^mem-[a-f0-9]{10}$/.
+  'POST /api/memory/[id]/review': { params: { id: 'mem-a1b2c3d4e5' }, body: { approve: true } },
+  // The route superRefines this body beyond the contract: an approval carries
+  // the exact fingerprint the reviewer saw. Not in the JSON Schema, so it is
+  // spelled out here.
+  'POST /api/decisions/[id]/action': {
+    body: {
+      action: 'approve',
+      comment: 'Approved by the contract coverage suite.',
+      expectedActionFingerprint: `sha256:${'a'.repeat(64)}`,
+    },
+  },
+}
+
 test('P-118: a successful API response validates against its declared response schema', async () => {
   const previous = { ...process.env }
   process.env.QUICKSILVER_PRINCIPALS = PRINCIPALS
@@ -230,12 +366,16 @@ test('P-118: a successful API response validates against its declared response s
         continue
       }
 
-      const req = new Request(`http://localhost:3000${route.path}`, {
+      const fixture = REQUEST_FIXTURES[route.key] ?? {}
+      const url = new URL(`http://localhost:3000${route.path}`)
+      for (const [name, value] of Object.entries(fixture.query ?? {})) url.searchParams.set(name, value)
+
+      const req = new Request(url, {
         method: route.method,
         headers: { 'content-type': 'application/json', authorization: `Bearer ${OWNER_TOKEN}` },
-        ...(route.method === 'GET' ? {} : { body: '{}' }),
+        ...(route.method === 'GET' ? {} : { body: JSON.stringify(fixture.body ?? declaredRequestBody(route.contractPath, route.method)) }),
       })
-      const res = await route.handler(req, { params: Promise.resolve({ id: 'test-id' }) })
+      const res = await route.handler(req, { params: Promise.resolve({ id: 'test-id', ...(fixture.params ?? {}) }) })
 
       // Only successful responses are in scope; a refusal or an unconfigured
       // dependency is not evidence about the success schema. A 3xx redirect is
@@ -279,14 +419,28 @@ test('P-118: a successful API response validates against its declared response s
   // identity provider refuse, so 42 of 46 routes answered 503 and only the four
   // unauthenticated auth routes ever ran. The credential problem was never the
   // blocker: with a real digest, a token of at least MIN_TOKEN_LENGTH, and the
-  // Sanity mock answering each query shape the way an empty dataset would, 16
+  // Sanity mock answering each query shape the way an empty dataset would, 23
   // operations now validate against their declared schema.
+  //
+  // No route may fail request validation any more either. The harness builds
+  // every body from the contract's own declared requestBody, adds query and path
+  // parameters the contract requires, and falls back to a known-valid workflow
+  // graph where JSON Schema cannot express a domain rule. A 400 here means the
+  // request was wrong, which says nothing about the response schema.
   //
   // Raising this number is the point. Lowering it back toward 1 would restore
   // the illusion of coverage.
   assert.ok(
-    validated.length >= 16,
-    `expected at least 16 real responses to validate; validated=${validated.length} notSuccessful=${notSuccessful.length}`,
+    validated.length >= 23,
+    `expected at least 23 real responses to validate; validated=${validated.length} notSuccessful=${notSuccessful.length}`,
+  )
+  // A 400/422 means the harness sent something the route rejected, so the route
+  // never produced a response to check. That is dead coverage, and it is
+  // silently re-introducible whenever a route tightens its schema.
+  assert.deepEqual(
+    notSuccessful.filter((entry) => / \((400|422)\)$/.test(entry)),
+    [],
+    'every operation must accept the request the contract declares; a request-validation refusal is not evidence about the response schema',
   )
   assert.deepEqual(
     withoutSuccessSchema,
@@ -296,8 +450,10 @@ test('P-118: a successful API response validates against its declared response s
 
   if (process.env.QS_SCHEMA_REPORT) {
     console.error(`\nvalidated (${validated.length}):\n  ${validated.join('\n  ')}`)
-    console.error(`\nnot successful (${notSuccessful.length}):\n  ${notSuccessful.slice(0, 12).join('\n  ')}`)
-    console.error(`\nunimportable (${unimportable.length}):\n  ${unimportable.slice(0, 12).join('\n  ')}`)
+    // Print every refusal, not a sample. Truncating to twelve hid the shape of
+    // the gap, which is most of what tells you whether it is closable.
+    console.error(`\nnot successful (${notSuccessful.length}):\n  ${notSuccessful.join('\n  ')}`)
+    console.error(`\nunimportable (${unimportable.length}):\n  ${unimportable.join('\n  ')}`)
   }
 })
 
