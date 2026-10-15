@@ -190,6 +190,9 @@ resource host 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'QUICKSILVER_HOST_CONFIG', value: '/config/quicksilver.host.json' }
         { name: 'QUICKSILVER_DATA_DIR', value: '/data' }
         { name: 'QUICKSILVER_GENESIS_DIR', value: '/data/genesis' }
+        // Host queue, schedule and webhook trace spans (P-114). Defaults to
+        // <data dir>/trace-spans.jsonl; named so both deploy targets agree.
+        { name: 'QUICKSILVER_TRACE_SPAN_PATH', value: '/data/trace-spans.jsonl' }
         { name: 'QUICKSILVER_TENANT_ID', value: tenantId }
         { name: 'DATABASE_URL', value: '${kvRef}database-url)' }
         { name: 'QUICKSILVER_VAULT_KEY', value: '${kvRef}quicksilver-vault-key)' }

@@ -19,6 +19,7 @@ import { parseHostConfig } from './config.ts'
 import type { AgentRunner, EvaluationEntry } from './handlers.ts'
 import { QuicksilverHost } from './host.ts'
 import { Logger } from './log.ts'
+import type { TraceSpanDocument } from './telemetry.ts'
 import { SecretsVault, generateMasterKey } from './vault.ts'
 
 const TENANT = 'nuera'
@@ -73,6 +74,7 @@ interface Harness {
   tokens: Record<'viewer' | 'operator' | 'developer' | 'supervisor' | 'publisher' | 'auditor' | 'admin', string>
   evaluations: EvaluationEntry[]
   logs: string[]
+  spans: TraceSpanDocument[]
   webhookSecret: string
   dir: string
   close(): Promise<void>
@@ -104,6 +106,7 @@ async function startHost(overrides: Record<string, unknown> = {}, extra: { agent
   })
   const evaluations: EvaluationEntry[] = []
   const logs: string[] = []
+  const spans: TraceSpanDocument[] = []
   const host = new QuicksilverHost(config, {
     principals: [viewer.config, operator.config, developer.config, supervisor.config, publisher.config, auditor.config, admin.config],
     env,
@@ -113,6 +116,9 @@ async function startHost(overrides: Record<string, unknown> = {}, extra: { agent
       evaluations.push(...entries)
       return { persisted: true, ids: entries.map((e) => `evaluation-${e.nodeId}`) }
     },
+    traceSpanSink: (span) => {
+      spans.push(span)
+    },
   })
   const { port } = await host.start()
   return {
@@ -121,6 +127,7 @@ async function startHost(overrides: Record<string, unknown> = {}, extra: { agent
     tokens: { viewer: viewer.token, operator: operator.token, developer: developer.token, supervisor: supervisor.token, publisher: publisher.token, auditor: auditor.token, admin: admin.token },
     evaluations,
     logs,
+    spans,
     webhookSecret,
     dir,
     close: async () => {
@@ -454,6 +461,60 @@ test('published workflow admission runs the immutable published graph and return
     assert.equal(afterPublish.run.workflowVersion, 7, 'the admitted run must remain pinned to its original immutable version')
     assert.equal(afterPublish.run.graphDigest, admittedBody.publication.digest)
     assert.deepEqual(afterPublish.run.publication, admittedBody.publication)
+  } finally {
+    await h.close()
+  }
+})
+
+test('the host emits queue and webhook trace spans into the configured sink (P-114)', async () => {
+  const h = await startHost()
+  try {
+    // Regression guard. The tracer and its three call sites already existed,
+    // but QuicksilverHost built the tracer without a sink, so every one of
+    // them returned undefined and persisted nothing. Constructing the tracer
+    // correctly is not the same as wiring it to the host.
+    const admitted = await api(h, '/api/runs', { method: 'POST', token: h.tokens.operator, body: { workflow: 'daily-brief', input: 'What changed overnight?' } })
+    assert.equal(admitted.status, 202)
+    const { runId } = await admitted.json() as { runId: string }
+
+    const body = JSON.stringify({ order: 'A-1' })
+    const delivery = 'delivery-1'
+    const webhook = await fetch(`${h.base}/webhooks/erp-orders`, {
+      method: 'POST',
+      headers: signed(h.webhookSecret, body, delivery),
+      body,
+    })
+    assert.ok(webhook.status < 400, `the signed webhook must be accepted, got ${webhook.status}`)
+
+    // The call sites are `void ... .catch()`, so the sink is reached on a later
+    // microtask rather than before the HTTP response resolves.
+    const deadline = Date.now() + 2_000
+    for (;;) {
+      if (h.spans.some((s) => s.source === 'queue') && h.spans.some((s) => s.source === 'webhook')) break
+      if (Date.now() > deadline) throw new Error(`No host spans reached the sink; saw ${JSON.stringify(h.spans.map((s) => s.name))}`)
+      await new Promise((r) => setTimeout(r, 20))
+    }
+
+    const queueSpan = h.spans.find((s) => s.source === 'queue')!
+    assert.equal(queueSpan.status, 'ok', 'an admitted run is an ok span, not an error')
+    assert.equal(queueSpan.tenantId, TENANT)
+    assert.equal(queueSpan.runId, runId)
+    assert.equal(queueSpan.workflowId, 'daily-brief')
+    assert.equal(queueSpan.requestedBy, 'entity-operator')
+    assert.equal(queueSpan.name, 'queue.dispatch.daily-brief')
+
+    const webhookSpan = h.spans.find((s) => s.source === 'webhook')!
+    assert.equal(webhookSpan.status, 'ok')
+    assert.equal(webhookSpan.tenantId, TENANT)
+    assert.equal(webhookSpan.name, 'webhook.erp-orders')
+
+    // Spans carry metadata only. Nothing from the webhook body may survive.
+    for (const span of h.spans) {
+      for (const banned of ['payload', 'body', 'authorization', 'secret', 'headers']) {
+        assert.ok(!(banned in span), `${banned} must not be persisted on a host span`)
+      }
+    }
+    assert.ok(!JSON.stringify(h.spans).includes('A-1'), 'the webhook payload must not reach the trace sink')
   } finally {
     await h.close()
   }

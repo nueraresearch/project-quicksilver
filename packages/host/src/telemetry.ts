@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 export type TraceSource = 'query' | 'plan' | 'workflow' | 'decision' | 'agent' | 'queue' | 'schedule' | 'webhook'
 export type TraceKind = 'request' | 'model' | 'tool' | 'evaluation' | 'decision' | 'workflow'
@@ -108,6 +110,55 @@ export function buildHostTraceSpan(input: TraceSpanInput, tenantId = 'default'):
 }
 
 export type TraceSpanSink = (span: TraceSpanDocument) => Promise<void> | void
+
+/**
+ * Where host trace spans are written, P-114.
+ *
+ * `QUICKSILVER_TRACE_SPAN_PATH` names the file directly; otherwise it sits
+ * beside the rest of the host's durable state in the mounted data directory
+ * (Render: `QUICKSILVER_DATA_DIR=/data`). Returning undefined means the host has
+ * no durable directory, and the caller must say so out loud rather than leave
+ * three span call sites silently doing nothing.
+ */
+export function resolveTraceSpanPath(dataDir: string | undefined, env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
+  const configured = env.QUICKSILVER_TRACE_SPAN_PATH?.trim()
+  if (configured) return configured
+  return dataDir ? join(dataDir, 'trace-spans.jsonl') : undefined
+}
+
+/**
+ * Append-only JSONL trace spans: one document per line, fsynced before `write`
+ * returns, so a span is durable before the request that produced it is
+ * answered.
+ *
+ * Deliberately not hash-chained, unlike `FileAuthorizationAuditStore`. That
+ * store holds authorization decisions, which are authority records and must not
+ * be replayable after tampering. A span is an observation: losing one costs
+ * visibility, so the cheaper append is the right trade and the chain would only
+ * imply a guarantee the product does not make.
+ *
+ * The file grows without bound. Retention and any rotation remain open P-114
+ * work alongside external alert delivery.
+ *
+ * Synchronous on purpose. The host's span call sites are fire-and-forget, so an
+ * async write would still be in flight when the request returns.
+ */
+export class FileTraceSpanSink {
+  readonly path: string
+
+  constructor(path: string) {
+    this.path = path
+    mkdirSync(dirname(path), { recursive: true })
+  }
+
+  write(span: TraceSpanDocument): void {
+    const fd = openSync(this.path, 'a')
+    try {
+      writeSync(fd, `${JSON.stringify(span)}\n`, undefined, 'utf8')
+      fsyncSync(fd)
+    } finally { closeSync(fd) }
+  }
+}
 
 export interface HostTraceTracerOptions {
   tenantId: string

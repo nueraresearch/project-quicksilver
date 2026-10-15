@@ -30,6 +30,8 @@ services:
         value: /data                         # intent, tasks, and governed memory
       - key: QUICKSILVER_GENESIS_DIR
         value: /data/genesis                 # Genesis ledger, experiments, and hosted-site history
+      - key: QUICKSILVER_TRACE_SPAN_PATH
+        value: /data/trace-spans.jsonl        # P-114: host queue, schedule and webhook trace spans
       - key: QUICKSILVER_TENANT_ID
         value: brodi                 # must equal the tenantId in every QUICKSILVER_PRINCIPALS entry
       - key: DATABASE_URL
