@@ -34,13 +34,17 @@
   <img src="docs/images/architecture.png" alt="Agents propose, a kernel authorizes, a different human approves; every step is recorded in Sanity" width="900">
 </p>
 
-> **Current build status:** Nuera Quicksilver keeps a tested decision-governance foundation as its regression baseline. NQC evaluation and governance, tool contracts, a draft workflow builder, and an in-process graph runner are implemented foundations. The Operator organization layer provides a unified human attention queue (`/operator/queue`), in-app calendar (`/operator/calendar`), review engine (`/operator/review`), commitments, contacts, and autonomous background routines. A durable run queue and worker (`@quicksilver/kernel/runtime`) provide idempotent admission, backpressure, leases, cancellation, retries, and a dead-letter queue, with in-memory, journaled-file, or PostgreSQL storage; cron schedules and signed webhooks can start runs. A single-tenant host process (`@quicksilver/host`) runs the worker pool, schedules and signed webhooks from configuration, with a bearer-token management API, an encrypted secrets vault, structured logs and Prometheus metrics. Kernel RBAC (tenant isolation, deny-by-default roles, no authority for agents) guards queue operations, the host API and, when configured, per-person supervisor credentials. Decision approvals enforce separation of duties, with an audited sole-operator override, and every query and workflow evaluation is stored as an `evaluationRecord`. Internal TypeScript and dependency-free Python/Go SDK foundations cover workflow validation, safe preview, and opt-in read-only runs.
+> **Current build status:** Nuera Quicksilver is a substantial, regression-tested platform foundation. Implemented surface includes NQC governance and Quicksilver Engine evaluation; a draft workflow builder and in-process runner; the Operator organization layer with queue, calendar, reviews, routines, commitments, contacts, and credential-free iCal sync; a durable run runtime with queues, retries, leases, dead letters, cron schedules, and signed webhooks; and a single-tenant host with management API, encrypted secrets vault, structured logs, and Prometheus metrics. Internal TypeScript, Python, and Go SDK foundations cover workflow validation, safe preview, and opt-in read-only runs. What is **not** claimed here is operational proof of every live provider path, multi-tenant hosting, or 1.0 readiness.
 >
 > Canonical product docs: [Product definition](./docs/NUERA-QUICKSILVER-PRODUCT.md) · [Documentation index](./docs/README.md) · [NQC Kernel](./docs/nqc/README.md) · [Platform](./docs/platform/README.md) · [Spec coverage](./docs/NUERA-QUICKSILVER-SPEC-COVERAGE.md) · [Roadmap](./docs/NUERA-QUICKSILVER-ROADMAP.md)
 
 ## Current status
 
-> **Current status:** The browser OIDC sign-in/session path is covered (P-108), the Operator Organization Layer (queue, reviews, calendar, routines, and iCal sync) is verified credential-free, and single-tenant host health/persistence wiring is validated.
+> **Current status:** Browser OIDC sign-in/session coverage (P-108) is in place,
+> the Operator Organization Layer is verified credential-free, and the
+> single-tenant host has narrow live validation for health, readiness, and
+> persistence wiring. This is still **not** a claim of multi-tenant readiness,
+> live effectful-provider proof, or 1.0 operational maturity.
 >
 > The maintained source for what is built versus what is operationally proven is
 > [docs/CURRENT-STATUS.md](./docs/CURRENT-STATUS.md). For the current state of
@@ -53,12 +57,14 @@
 > [current status](./docs/CURRENT-STATUS.md).
 
 The repository is a **tested platform foundation**, not a hosted production
-service. Its single-tenant Render host is live for health, readiness, and
-persistence-wiring validation, but no effectful provider workflow has been
-operated and it is not a multi-tenant production service. The credential-free
-verification path covers the kernel, agents, host, Aura, operator layer,
-web/security helpers, and TypeScript packages. The web app and Studio
-additionally need their dedicated Sanity project configuration, while
+service. It already includes substantial implementation across the kernel, host,
+runtime, Aura, operator layer, web app, and internal SDKs. Its single-tenant
+Render host is live only for narrow health, readiness, and persistence-wiring
+validation; no effectful provider workflow has been operated, and it is not a
+multi-tenant production service. The credential-free verification path covers
+the kernel, agents, host, Aura, operator layer, web/security helpers, and
+TypeScript packages; the latest CI signal is called out below. The web app and
+Studio additionally need their dedicated Sanity project configuration, while
 live-agent paths also need model credentials.
 
 | Area | Status | Evidence or next dependency |
@@ -69,7 +75,7 @@ live-agent paths also need model credentials.
 | Single-tenant host, vault, management API, logs and metrics | Built; Render deployment wiring validated | `npm run host:test` and [Render evidence](./docs/platform/render-operational-evidence-2026-10-05.md) |
 | Governed agent profiles and host memory API | Implemented and regression-tested; still partial for production resources and full memory recall | [Agent profiles](./docs/platform/agent-profiles.md), parity items P-017/P-018 |
 | Aura intent and provenance layer | Built foundation and tested | `npm run aura:test` |
-| Web console and API routes | Builds and security-tested | `npm run build` and `npm run seed:test` |
+| Web console and API routes | Builds, auth/session flows are covered, and security/route regressions exist | `npm run build --workspace=@quicksilver/web` and seed/web route suites |
 | Sanity Studio, schema deployment and seed data | Requires dedicated project configuration | `SANITY_STUDIO_PROJECT_ID` and Sanity auth |
 | Live Context MCP and model-backed planning | Requires external credentials | `npm run verify:mcp` and `npm run verify:llm` |
 | Public hosting, browser OIDC and multi-tenant hosting | Render has narrow health/persistence evidence; browser OIDC sign-in and sessions are covered (P-108); multi-tenant hosting remains incomplete | [Current status](./docs/CURRENT-STATUS.md), parity items P-014, P-107 and P-108 |
@@ -87,14 +93,21 @@ Stated plainly, because it is the part a cold reader most needs:
   and Windows runs only `verify`, so the web build, dependency audit and the Go and
   Python SDK suites are Linux-only. This is a point-in-time signal — check GitHub
   Actions for later changes.
-- **No real email or webhook has been sent by this code.** The approved-action
-  adapters (Resend email, signed webhook) have only been exercised against
-  fakes, so there is no operational evidence yet. They ship as dry runs.
-- **The decision loop's "Execute" is a simulation.** It records a state change
-  and an observed metric; it does not act on the outside world. Real effects go
-  through [approved actions](./docs/platform/approved-actions.md) instead.
+- **No real effectful provider workflow is operationally proven.** Approved-action
+  adapters such as email and signed webhooks have only been exercised against
+  fakes or dry runs, so there is no live provider evidence yet.
+- **The decision loop's "Execute" remains a simulation in the core loop.** It
+  records a state change and an observed metric; it does not act on the outside
+  world. Real effects go through [approved actions](./docs/platform/approved-actions.md)
+  instead.
+- **The three operating modes are not operationally evidenced.** Genesis,
+  Onboard, and Operate foundations exist, but the real-world evidence required
+  for release completion does not.
 - **WAES scoring has not been calibrated against a live model provider.**
 - **Connectors (Stripe, HubSpot, QuickBooks) have not been run against real accounts.**
+- **CI status is a point-in-time signal.** Check the current GitHub Actions
+  status for later changes; a passing merge check does not prove live
+  business-provider execution or 1.0.0 operational readiness.
 
 The full list, with what each item needs, is in the
 [parity matrix](./docs/platform/parity-tests.md).
@@ -131,10 +144,10 @@ Kernel, and recorded.
 
 | Layer | What it does | Status |
 |---|---|---|
-| **Foundation:** platform runtime | Durable runs, triggers, agent manifests, governed memory, routing, SDKs | Foundation |
-| **Layer 1:** NQC Kernel loop | Propose → evaluate → authorize → route → supervisor approval → execute and log, for every action | Built / Foundation |
-| **Layer 2:** intent loop | Turns an objective into a decision graph whose values are tagged by provenance (`HUMAN_SPECIFIED`, `OBSERVED`, `AGENT_INFERRED`, `SYSTEM_CONSTRAINT`) | Built foundation |
-| **Layer 3:** playbook loops | Swappable business playbooks, stored as content: process stages that run workflow graphs | Building blocks / pilot foundation |
+| **Foundation:** platform runtime | Durable runs, triggers, agent manifests, governed memory, routing, SDKs | Substantial implementation; not fully operationally proven |
+| **Layer 1:** NQC Kernel loop | Propose → evaluate → authorize → route → supervisor approval → execute and log, for every action | Core governance built and regression-tested |
+| **Layer 2:** intent loop | Turns an objective into a decision graph whose values are tagged by provenance (`HUMAN_SPECIFIED`, `OBSERVED`, `AGENT_INFERRED`, `SYSTEM_CONSTRAINT`) | Implemented foundation; not yet fully integrated/proven end to end |
+| **Layer 3:** playbook loops | Swappable business playbooks, stored as content: process stages that run workflow graphs | Building blocks implemented; pilots and operating evidence remain |
 
 ### Operating modes
 
@@ -153,7 +166,7 @@ Kernel, and recorded.
 7. **Wellbeing alignment,** with WAES review of every offer, claim and outbound message.
 8. **Platform baseline parity,** proven by a pass/fail test for each baseline item.
 
-**Verified milestone baseline:** 0.8.0 (M1–M7 implementation-complete; M7's four acceptance areas pass 89/89 focused tests). The host runs on the founder's computer, and always-on hosting moves to M5. Later enterprise work remains on the M8–M9 path and does not represent a hosted 1.0 release. Following the Nuera RDL versioning standard, Nuera Quicksilver stays on 0.x until all three modes pass the
+**Verified milestone baseline:** **0.8.0**. In plain terms: M1–M7 implementation work is complete, and M7's four acceptance areas pass 89/89 focused tests. Quicksilver remains a **0.x** system because all three operating modes still require additional operational evidence before a 1.0 claim. The host runs on the founder's computer, and always-on hosting moves to M5. Later enterprise work remains on the M8–M9 path and does not represent a hosted 1.0 release. Following the Nuera RDL versioning standard, Nuera Quicksilver stays on 0.x until all three modes pass the
 parity gate; M8 is the enterprise feature-complete 0.9.0 release candidate, and
 M9 is the target for completing all new enterprise features and releasing 1.0.0
 with operational evidence for every mode.
@@ -248,6 +261,7 @@ The live app is https://project-quicksilver.vercel.app. It signs the team in thr
 3. Scroll to **Decisions**. Each card shows the kernel's risk and verdict and a **Process** line (where it is, what can happen next). Click **Show reasoning & evidence** for the policies, evidence and the dashed **Independent review** from the reviewer model.
 4. **Approve** a card, **Execute** it (a simulation: nothing outside the console changes; real effects use [approved actions](./docs/platform/approved-actions.md)) and **Observe** the metric. If it moves the wrong way, **propose a rollback**.
 5. Open `/decisions` to see every transition, who took it (kernel, human or executor) and when. Open `/workflows` for the draft workflow builder.
+6. Open `/operator/queue`, `/operator/review`, or `/operator/calendar` to inspect the Operator Organization Layer that now sits alongside the core decision and workflow surfaces.
 
 Local runs need a configured Sanity project and model credentials. The earlier challenge build, with its own
 demo, lives in a separate repository:
@@ -265,6 +279,10 @@ The command prints the live test total instead of relying on a manually
 maintained number. GitHub Actions runs this credential-free regression and
 type-check path for pull requests and pushes to `main`. Live Sanity and
 model-provider checks remain separate because they require external credentials.
+The credential-free path covers a large portion of the implemented platform
+surface, including kernel, host, operator, Aura, web/security helpers, and
+internal TypeScript packages; live-provider checks remain intentionally
+separate.
 
 > **Current CI note (2026-10-06):** PR #88 merged with failed Ubuntu and
 > Windows matrix jobs in this path. The next priority is to reproduce and fix
@@ -296,7 +314,7 @@ The challenge-era stress test found real bugs: a risk formula that scored nearly
 | Agent harness | AI SDK 6 + `@ai-sdk/mcp`, role-based models (planner + independent reviewer; Azure OpenAI in production) |
 | Authority | **NQC Kernel**: deterministic TypeScript with no LLM, fail-closed |
 | Evaluation | **Quicksilver Engine**: deterministic grounding, tool-failure, and brittleness signals |
-| Worker agents | **Nuera Quicksilver Agents**: planner, advisory reviewer, and query agent; kernel manifests gate registered tasks, with the NQC Kernel retaining action authority |
+| Worker agents | **Nuera Quicksilver Agents**: planner, reviewer, query, and proposal-oriented specialist surfaces under governed manifests; the NQC Kernel retains action authority and external effects stay bounded |
 | Write path | `@sanity/client` mutations with `ifRevisionId` optimistic locking |
 | Workflow authoring | Draft graph builder, browser-local autosave, validated JSON import/export, immutable shared versions with independent review/publish/rollback, reviewer rationale, safety-aware version diffs, and Sanity audit; published live runs resolve and pin the active version, verify its digest, and expose metadata-only execution history. Editable draft runs remain separate; live runs are opt-in/read-only and tools stay blocked |
 | Workflow monitoring | Authenticated tenant-scoped dashboard for latest workflow outcomes, success rate, governance blocks, failures, median duration, and metadata-only run history; sample is capped at 100 records |
@@ -304,7 +322,7 @@ The challenge-era stress test found real bugs: a risk formula that scored nearly
 | Python CLI | Internal Python `qs` CLI for validation, safe preview, and gated read-only runs; not published |
 | Run runtime | `@quicksilver/kernel/runtime`: durable run records, in-memory / journaled-file / PostgreSQL stores, governed priority queue with dead letters, and a worker ([details](./docs/platform/durable-runs.md)) |
 | Triggers | `@quicksilver/kernel/triggers`: UTC cron scheduler and HMAC-signed webhooks, enqueued under the `trigger` role ([details](./docs/platform/triggers.md)) |
-| Hosted runtime | `@quicksilver/host`: single-tenant process with management API, secrets vault, JSON logs and Prometheus metrics; Docker/Compose plus a Render deployment for health, readiness, and persistence validation ([details](./docs/platform/hosted-runtime.md)) |
+| Hosted runtime | `@quicksilver/host`: single-tenant worker host with management API, schedules, signed webhooks, secrets vault, JSON logs, and Prometheus metrics; Docker/Compose and narrow-scope Render validation exist, but this is not yet a multi-tenant production control plane ([details](./docs/platform/hosted-runtime.md)) |
 
 ## Repository layout
 
@@ -320,7 +338,7 @@ project-quicksilver/
 │   ├── agent/          Planner, reviewer, query agent, MCP bindings, model roles
 │   ├── host/           Single-tenant host: worker, schedules, webhooks, API, vault, logs, metrics
 │   ├── aura/           Aura intent layer: objective to decision graph, no authority
-│   ├── operator/       Operator: queue, reviews, in-app calendar, routines, iCal sync, sandbox, approvals
+│   ├── operator/       Operator organization layer: attention queue, reviews, calendar, routines, communications, search, and governed channel/automation surfaces
 │   ├── sdk/            Internal TypeScript API client
 │   ├── sdk-python/     Internal Python SDK and `qs` CLI foundation
 │   └── sdk-go/         Internal Go SDK foundation
