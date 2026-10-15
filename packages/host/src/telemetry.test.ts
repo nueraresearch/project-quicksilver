@@ -1,7 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import { HostTraceTracer, buildHostTraceSpan, type TraceSpanDocument, type TraceSpanInput } from './telemetry.ts'
+import { FileTraceSpanSink, HostTraceTracer, buildHostTraceSpan, resolveTraceSpanPath, type TraceSpanDocument, type TraceSpanInput } from './telemetry.ts'
 
 const NOW = Date.parse('2026-10-13T12:00:00Z')
 
@@ -162,4 +166,54 @@ test('with no sink configured the tracer emits nothing at all', async () => {
   assert.equal(await t.traceQueueRun({ runId: 'run_1', workflowId: 'wf', status: 'enqueued' }), undefined)
   assert.equal(await t.traceScheduleTick({ scheduleId: 'nightly', slot: NOW, outcome: 'enqueued' }), undefined)
   assert.equal(await t.traceWebhook({ endpointId: 'stripe', status: 200 }), undefined)
+})
+test('the trace span path prefers the explicit variable and otherwise follows the data directory', () => {
+  assert.equal(resolveTraceSpanPath('/data'), join('/data', 'trace-spans.jsonl'))
+  assert.equal(resolveTraceSpanPath('/data', { QUICKSILVER_TRACE_SPAN_PATH: '/mnt/custom.jsonl' }), '/mnt/custom.jsonl')
+  assert.equal(resolveTraceSpanPath(undefined, { QUICKSILVER_TRACE_SPAN_PATH: '  /mnt/spaced.jsonl  ' }), '/mnt/spaced.jsonl')
+
+  // No durable directory and no explicit path: the host has nowhere to persist.
+  // It must be told, not left as a silent no-op.
+  assert.equal(resolveTraceSpanPath(undefined, {}), undefined)
+  assert.equal(resolveTraceSpanPath(undefined, { QUICKSILVER_TRACE_SPAN_PATH: '   ' }), undefined)
+})
+
+test('the file sink appends spans as JSONL and survives a restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'qs-spans-'))
+  const path = join(dir, 'nested', 'trace-spans.jsonl')
+  try {
+    const sink = new FileTraceSpanSink(path)
+    const tracer = new HostTraceTracer({ tenantId: 'tenant-a', now: () => NOW, sink: sink.write.bind(sink) })
+    await tracer.traceQueueRun({ runId: 'run_1', workflowId: 'nightly-close', status: 'enqueued', requestedBy: 'principal:eng-1' })
+    await tracer.traceWebhook({ endpointId: 'stripe', status: 403 })
+
+    const lines = readFileSync(path, 'utf8').trim().split('\n')
+    assert.equal(lines.length, 2, 'one line per span')
+    const [queue, webhook] = lines.map((line) => JSON.parse(line) as TraceSpanDocument)
+    assert.equal(queue.source, 'queue')
+    assert.equal(queue.status, 'ok')
+    assert.equal(queue._type, 'telemetryTraceSpan')
+    assert.equal(webhook.source, 'webhook')
+    assert.equal(webhook.status, 'blocked')
+
+    // A fresh sink over the same file appends rather than truncating, so spans
+    // recorded before a restart are still readable after it.
+    const reopened = new FileTraceSpanSink(path)
+    reopened.write(buildHostTraceSpan(baseInput(), 'tenant-a'))
+    assert.equal(readFileSync(path, 'utf8').trim().split('\n').length, 3, 'the second run must not erase the first')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('the file sink creates its directory rather than failing the first span', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'qs-spans-dir-'))
+  const path = join(dir, 'a', 'b', 'c', 'trace-spans.jsonl')
+  try {
+    assert.equal(existsSync(path), false)
+    new FileTraceSpanSink(path).write(buildHostTraceSpan(baseInput(), 'tenant-a'))
+    assert.equal(existsSync(path), true)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

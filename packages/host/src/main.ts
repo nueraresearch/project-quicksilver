@@ -15,6 +15,8 @@
  *   QUICKSILVER_AUTHORIZATION_AUDIT_PATH   durable JSONL audit path when no vault/file store path can supply a default
  *   DATABASE_URL              Postgres URL when store.kind is "postgres" (name configurable)
  *   QUICKSILVER_DATA_DIR      mounted durable directory for auxiliary state when runs use Postgres (Render: /data)
+ *   QUICKSILVER_TRACE_SPAN_PATH  durable JSONL path for host queue/schedule/webhook trace spans (P-114).
+ *     Defaults to <data dir>/trace-spans.jsonl; without either, span emission is off and the host says so on startup.
  *   Model provider and SANITY_CONTEXT_* variables enable the read-only query agent.
  *   NEXT_PUBLIC_SANITY_PROJECT_ID + SANITY_WRITE_TOKEN (legacy: SANITY_AUTH_TOKEN) enable durable evaluation records.
  *   QUICKSILVER_SHADOW_STORE=sanity keeps shadow recommendations and Aura's verdict
@@ -54,6 +56,7 @@ import { SecretsVault, generateMasterKey } from './vault.ts'
 import { taskSetup } from './tasks-setup.ts'
 import { createShutdownHandler } from './shutdown.ts'
 import { buildGovernedMemory } from './governed-memory.ts'
+import { FileTraceSpanSink, resolveTraceSpanPath } from './telemetry.ts'
 import type { MemoryStore } from '@quicksilver/kernel'
 import { resolvePersistentDataDir } from './persistence.ts'
 
@@ -479,6 +482,11 @@ async function main(): Promise<void> {
   const log = new Logger({ level: parseLogLevel(process.env.QUICKSILVER_LOG_LEVEL ?? config.log.level) })
   const principals = principalsFromJson(process.env.QUICKSILVER_PRINCIPALS)
   const dataDir = resolvePersistentDataDir(config, baseDir)
+  // P-114: the host's queue, schedule and webhook spans need somewhere durable.
+  // Say so when there is nowhere, instead of leaving three call sites no-op.
+  const traceSpanPath = resolveTraceSpanPath(dataDir)
+  const traceSpans = traceSpanPath ? new FileTraceSpanSink(traceSpanPath) : undefined
+  if (!traceSpans) log.warn('host trace spans are NOT persisted: set QUICKSILVER_TRACE_SPAN_PATH, or QUICKSILVER_DATA_DIR so queue, schedule and webhook spans survive a restart')
   const { store, close, ready } = await buildStore(config, log)
   const intent = await buildIntent(config, log, dataDir)
   const shadow = await buildShadow(config, log, intent, dataDir)
@@ -497,6 +505,7 @@ async function main(): Promise<void> {
     intent: dataDir ? 'file' : 'memory',
     memory: memory.persistent ? 'file' : 'memory',
     genesis: genesis?.persistence ?? 'disabled',
+    traces: traceSpans?.path ?? 'not persisted',
   })
   const host = new QuicksilverHost(config, {
     principals,
@@ -526,6 +535,7 @@ async function main(): Promise<void> {
     },
     ...(close ? { onStop: close } : {}),
     ...(ready ? { ready } : {}),
+    ...(traceSpans ? { traceSpanSink: traceSpans.write.bind(traceSpans) } : {}),
   })
 
   if (args[0] === 'run') {

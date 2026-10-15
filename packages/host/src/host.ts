@@ -41,7 +41,7 @@ import { TaskError, TaskService, type TaskRunBackend, type TaskServiceDeps } fro
 import type { TaskClientRegistry } from './task-clients.ts'
 import { hostRouteLabel, matchHostRoute, type HostRoute, type HostRouteFeature } from './routes.ts'
 import { FileAuthorizationAuditStore, resolveAuthorizationAuditPath } from './authorization-audit.ts'
-import { HostTraceTracer } from './telemetry.ts'
+import { HostTraceTracer, type TraceSpanSink } from './telemetry.ts'
 
 /**
  * The single-tenant Quicksilver host: one process that runs the governed
@@ -92,6 +92,18 @@ export interface HostDependencies {
   tasks?: Omit<TaskServiceDeps, 'tenantId' | 'access' | 'runs' | 'rateLimit' | 'now'> & { clients?: TaskClientRegistry }
   /** P-018 governed memory management, backed by this host's tenant store and decision journal. */
   memory?: MemoryApiDeps
+  /**
+   * P-114: where this host's queue, schedule and webhook trace spans go.
+   *
+   * Without one the tracer emits nothing and every span call site is a silent
+   * no-op, so the host's observability is decorative. `main.ts` supplies the
+   * durable sink; the chosen backing store is append-only JSONL on the mounted
+   * data directory, because Sanity would have needed a write token that the
+   * threat model's A-7 action is still blocking, and Prometheus cannot carry a
+   * span id. The seam stays open so either can be added without touching the
+   * call sites.
+   */
+  traceSpanSink?: TraceSpanSink
 }
 
 const HOSTING_BODY_BYTES = 8 * 1024 * 1024
@@ -145,7 +157,11 @@ export class QuicksilverHost {
     this.deps = deps
     this.log = (deps.logger ?? new Logger({ level: config.log.level })).child({ service: 'quicksilver-host', tenantId: config.tenantId })
     this.metrics = createHostMetrics()
-    this.tracer = new HostTraceTracer({ tenantId: config.tenantId, ...(deps.now ? { now: deps.now } : {}) })
+    this.tracer = new HostTraceTracer({
+      tenantId: config.tenantId,
+      ...(deps.now ? { now: deps.now } : {}),
+      ...(deps.traceSpanSink ? { sink: deps.traceSpanSink } : {}),
+    })
 
     // Single tenant: refuse any principal outside it.
     const principals = deps.principals ?? []
