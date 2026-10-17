@@ -17,7 +17,7 @@
  */
 import { createClient, type SanityClient } from '@sanity/client'
 import { createOnceWarner, resolveSanityToken, type SanityAccess } from '@quicksilver/kernel/sanity-tokens'
-import { getDedicatedSanityProjectId } from './sanity-config'
+import { getDedicatedSanityProjectId } from './sanity-config.ts'
 
 const warnOnce = createOnceWarner((message) => console.warn(`[sanity] ${message}`))
 
@@ -35,10 +35,52 @@ const warnOnce = createOnceWarner((message) => console.warn(`[sanity] ${message}
  * result: handing a list route an object throws, the route refuses, and a
  * handler that refuses proves nothing about its declared response schema.
  */
+/**
+ * Documents the mock serves instead of an empty dataset, P-118.
+ *
+ * Empty-result testing proves a route can answer "nothing here". It cannot
+ * prove the shape of a populated answer, which is where a response schema
+ * actually gets checked. These seeds close that half.
+ */
+let seededDocuments: Record<string, unknown>[] = []
+
+export function setSanitySeedDocuments(documents: readonly unknown[]): void {
+  seededDocuments = documents.map((document) => document as Record<string, unknown>)
+}
+
+/**
+ * The GROQ subset these stores actually issue. Deliberately not a GROQ engine:
+ * the queries in `workflow-publication-store`, `agent-catalog-store` and the
+ * decision routes are all of the form
+ *
+ *     *[_type == "X" && tenantId == $tenant && graphId == $graphId][0]...
+ *
+ * so matching the quoted type, the equality parameters, and whether the query
+ * takes the single-document `[0]` form covers them. Anything outside that shape
+ * falls through to the empty result, which keeps a silent gap visible as a 404
+ * rather than as a fabricated document.
+ */
+function seededResultFor(query: string, params: Record<string, unknown> | undefined): unknown {
+  if (!seededDocuments.length) return undefined
+  const type = /\[\s*_type\s*==\s*"([^"]+)"/.exec(query)?.[1]
+  if (!type) return undefined
+
+  let matches = seededDocuments.filter((document) => document._type === type)
+  for (const [, field, param] of query.matchAll(/([A-Za-z_]+)\s*==\s*\$([A-Za-z]+)/g)) {
+    const expected = params?.[param]
+    if (expected === undefined) continue
+    matches = matches.filter((document) => document[field] === expected)
+  }
+
+  const singleDocument = SINGLE_DOCUMENT_FORM.test(query)
+  if (singleDocument) return matches[0] ?? null
+  return matches
+}
+
 const SINGLE_DOCUMENT_FORM = /\[\s*0\s*\]\s*(\{|$)/
 const OBJECT_KEY = /"([^"]+)"\s*:/g
 
-function emptyResultFor(query: string): unknown {
+function emptyResultFor(query: string, params?: Record<string, unknown>): unknown {
   const trimmed = query.trim()
   if (trimmed.startsWith('{')) {
     // A GROQ object literal. In real Sanity every named key is always present
@@ -49,6 +91,8 @@ function emptyResultFor(query: string): unknown {
     for (const match of trimmed.matchAll(OBJECT_KEY)) result[match[1]!] = 0
     return result
   }
+  const seeded = seededResultFor(query, params)
+  if (seeded !== undefined) return seeded
   return SINGLE_DOCUMENT_FORM.test(query) ? null : []
 }
 
@@ -95,7 +139,7 @@ function mockTransaction(): Record<string, unknown> {
  * coverage. Anything deeper needs real fixtures.
  */
 function mockSanityClient(): SanityClient {
-  const read = async (query: string) => emptyResultFor(query)
+  const read = async (query: string, params?: Record<string, unknown>) => emptyResultFor(query, params)
   const write = async () => ({})
   return {
     fetch: read,
