@@ -6,6 +6,8 @@ import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js'
+import { workflowDigest, type WorkflowGraph } from '@quicksilver/kernel'
+import { setSanitySeedDocuments } from './sanity-client.ts'
 import { digestToken } from '../../../packages/kernel/src/identity/tokens.ts'
 
 // Route modules import `next/server` and use the `@/` alias, neither of which
@@ -307,7 +309,7 @@ function declaredRequestBody(contractPath: string, method: string): unknown {
  * tools) that no JSON Schema expresses. Copied from the shape the host suite
  * uses, so it is known-valid rather than merely well-shaped.
  */
-const VALID_WORKFLOW_GRAPH = {
+const VALID_WORKFLOW_GRAPH: WorkflowGraph = {
   schemaVersion: 1,
   id: 'daily-brief',
   version: 1,
@@ -322,6 +324,70 @@ const VALID_WORKFLOW_GRAPH = {
     { id: 'e2', from: 'ask', to: 'done' },
   ],
 }
+
+/**
+ * A published workflow, so the publication routes have something to act on.
+ *
+ * The digest is computed by the kernel's own `workflowDigest`, never
+ * hand-written: `workflow-publication-store` re-derives it on every read and
+ * raises a 409 integrity fault on mismatch, so a plausible-looking fixture
+ * would prove nothing. Same reasoning as the valid graph above.
+ */
+/**
+ * The exact object `workflow-publication-store` rebuilds from a stored document
+ * before it digests it. The digest covers `version`, so each seeded version
+ * needs its own — sharing one across versions is what makes the whole
+ * publication list fail with a 409 integrity fault.
+ */
+function seededGraph(version: number): WorkflowGraph {
+  return {
+    schemaVersion: 1 as const,
+    id: 'daily-brief',
+    version,
+    entryNodeId: VALID_WORKFLOW_GRAPH.entryNodeId,
+    nodes: VALID_WORKFLOW_GRAPH.nodes,
+    edges: VALID_WORKFLOW_GRAPH.edges,
+  }
+}
+
+const SEEDED_WORKFLOW = {
+  _type: 'automationWorkflow',
+  _id: 'workflows.automationWorkflow.daily-brief-v1',
+  _rev: 'seed-revision-1',
+  tenantId: 'acme',
+  name: 'Daily brief',
+  graphId: 'daily-brief',
+  schemaVersion: 1,
+  version: 1,
+  lifecycle: 'active',
+  entryNodeId: VALID_WORKFLOW_GRAPH.entryNodeId,
+  nodes: VALID_WORKFLOW_GRAPH.nodes,
+  edges: VALID_WORKFLOW_GRAPH.edges,
+  graphDigest: '',
+  authoredBy: 'entity-owner',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  reviewedBy: 'entity-owner',
+  reviewedAt: '2026-01-02T00:00:00.000Z',
+  publishedAt: '2026-01-03T00:00:00.000Z',
+}
+
+/** A second draft, so version listing and diff have two points to compare. */
+const SEEDED_WORKFLOW_DRAFT = {
+  ...SEEDED_WORKFLOW,
+  _id: 'workflows.automationWorkflow.daily-brief-v2',
+  _rev: 'seed-revision-2',
+  version: 2,
+  lifecycle: 'draft',
+  reviewedBy: undefined,
+  reviewedAt: undefined,
+  publishedAt: undefined,
+}
+
+setSanitySeedDocuments([
+  { ...SEEDED_WORKFLOW, graphDigest: workflowDigest(seededGraph(1)) },
+  { ...SEEDED_WORKFLOW_DRAFT, graphDigest: workflowDigest(seededGraph(2)) },
+  { _type: 'workflowPublicationHead', _id: 'heads.daily-brief', _rev: 'seed-revision-h', tenantId: 'acme', graphId: 'daily-brief', activeVersion: 1 },
+])
 
 const REQUEST_FIXTURES: Record<string, { query?: Record<string, string>; body?: unknown; params?: Record<string, string> }> = {
   // workflowId: 1-128 chars, /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/
@@ -432,7 +498,7 @@ test('P-118: a successful API response validates against its declared response s
   // the illusion of coverage.
   assert.ok(
     validated.length >= 23,
-    `expected at least 23 real responses to validate; validated=${validated.length} notSuccessful=${notSuccessful.length}`,
+    `expected at least 23 real responses to validate; validated=${validated.length} notSuccessful=${notSuccessful.length}\n  not yet covered:\n    ${notSuccessful.join('\n    ')}`,
   )
   // A 400/422 means the harness sent something the route rejected, so the route
   // never produced a response to check. That is dead coverage, and it is
