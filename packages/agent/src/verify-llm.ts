@@ -44,7 +44,14 @@ const { PlanOutputSchema } = await import('./planner.ts')
 
 type Role = 'planner' | 'reviewer' | 'router' | 'executor'
 const ROLES: Role[] = ['planner', 'reviewer', 'router', 'executor']
-const TIMEOUT_MS = 60_000
+/**
+ * A harness bound, not a product one. `planner.ts` runs with no `abortSignal`
+ * at all, so a slow local model simply takes longer in production. 60s was
+ * short enough to abort a 4B model mid tool-loop and report a working setup as
+ * broken. Generous, because this check exists to find out whether a provider
+ * works, not to impose a latency budget the product does not have.
+ */
+const TIMEOUT_MS = 300_000
 
 let failures = 0
 const pass = (label: string, detail: string) => console.log(`  ✓ ${label.padEnd(26)} ${detail}`)
@@ -88,7 +95,13 @@ async function toolAndSchema(role: Role) {
       tools: { lookup },
       experimental_output: Output.object({ schema: PlanOutputSchema }),
       stopWhen: stepCountIs(6),
-      maxRetries: 0,
+      // Match production. `planner.ts`, `query.ts` and `intent-parser.ts` all run
+      // with `maxRetries: 2`, the AI SDK's generate -> validate -> feed the
+      // validation errors back -> regenerate loop. Checking here with 0 was
+      // stricter than the product, so a small local model that serves a real
+      // plan through that repair loop was reported here as broken. A verification
+      // harness must not be harsher than what it verifies.
+      maxRetries: 2,
       abortSignal: AbortSignal.timeout(TIMEOUT_MS),
     } as Parameters<typeof generateText>[0])
     const out = (r as unknown as { experimental_output?: { candidateActions: Array<{ actorId: string }> } }).experimental_output
