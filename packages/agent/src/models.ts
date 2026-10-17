@@ -145,11 +145,25 @@ export const CLOUD_MODELS: Registry = {
   executor: 'gemini-3.8-flash',
 }
 
+/**
+ * Local defaults. Every role is overridable with `QUICKSILVER_LOCAL_<ROLE>`.
+ *
+ * `llama3.2:3b` is the smallest model measured to answer all four role pings
+ * over Ollama without destabilising the daemon. The previous default,
+ * `qwen2.5:7b`, was not installed on the development machine, and the installed
+ * `qwen2.5-coder:7b` variant crashes the Ollama server mid-run (llama-server
+ * exits 0xc0000409), which takes every concurrent role down with it.
+ *
+ * Known limit, measured not assumed: `llama3.2:3b` does not complete the
+ * tools+schema check in `verify:llm` - it answers every role, but returns no
+ * schema-valid plan, including with the `maxRetries: 2` repair loop production
+ * uses. If you need that path locally, override with a model that does it.
+ */
 export const LOCAL_MODELS: Registry = {
-  planner: process.env.QUICKSILVER_LOCAL_PLANNER ?? 'qwen2.5:7b',
-  reviewer: process.env.QUICKSILVER_LOCAL_REVIEWER ?? 'qwen2.5:7b',
-  router: process.env.QUICKSILVER_LOCAL_ROUTER ?? 'qwen2.5:7b',
-  executor: process.env.QUICKSILVER_LOCAL_EXECUTOR ?? 'qwen2.5:7b',
+  planner: process.env.QUICKSILVER_LOCAL_PLANNER ?? 'llama3.2:3b',
+  reviewer: process.env.QUICKSILVER_LOCAL_REVIEWER ?? 'llama3.2:3b',
+  router: process.env.QUICKSILVER_LOCAL_ROUTER ?? 'llama3.2:3b',
+  executor: process.env.QUICKSILVER_LOCAL_EXECUTOR ?? 'llama3.2:3b',
 }
 
 export const MODELS = CLOUD_MODELS
