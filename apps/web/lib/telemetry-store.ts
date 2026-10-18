@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { buildTraceSpan, type TraceSpan, type TraceSpanDocument, type TraceSpanInput } from './telemetry.ts'
 import { getSanityClient } from './sanity-client.ts'
 
@@ -41,14 +43,75 @@ export function normalizeTraceSpanDocuments(documents: TraceSpanDocument[]): Tra
   })
 }
 
+/** Reads host-side persisted trace spans from a JSONL file, latest first. */
+export function readHostLocalTraceSpans(filePath: string, tenantId: string, limit = 200): TraceSpanDocument[] {
+  if (!existsSync(filePath)) return []
+  try {
+    const raw = readFileSync(filePath, 'utf8')
+    if (!raw.trim()) return []
+    const lines = raw.trim().split('\n')
+    const documents: TraceSpanDocument[] = []
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]?.trim()
+      if (!line) continue
+      try {
+        const doc = JSON.parse(line) as TraceSpanDocument
+        if (doc && doc._type === 'telemetryTraceSpan' && doc.tenantId === tenantId) {
+          documents.push(doc)
+          if (documents.length >= limit) break
+        }
+      } catch {
+        // Skip corrupted or incomplete lines
+      }
+    }
+    return documents
+  } catch {
+    return []
+  }
+}
+
 /** Tenant-scoped query returns bounded metadata only; payloads are never stored in spans. */
 export async function listRecentTraceSpans(limit = 200): Promise<TraceSpan[]> {
-  const client = getSanityClient('read')
   const tenantId = process.env.QUICKSILVER_TENANT_ID?.trim() || 'default'
   const boundedLimit = Math.max(1, Math.min(500, Math.floor(limit)))
-  const documents = await client.fetch<TraceSpanDocument[]>(
-    `*[_type == "telemetryTraceSpan" && tenantId == $tenantId] | order(startedAt desc)[0...$limit]{${SPAN_FIELDS}}`,
-    { tenantId, limit: boundedLimit },
-  )
-  return normalizeTraceSpanDocuments(documents)
+
+  // 1. Fetch from Sanity store if available
+  let sanityDocs: TraceSpanDocument[] = []
+  let sanityError: unknown
+  try {
+    const client = getSanityClient('read')
+    sanityDocs = await client.fetch<TraceSpanDocument[]>(
+      `*[_type == "telemetryTraceSpan" && tenantId == $tenantId] | order(startedAt desc)[0...$limit]{${SPAN_FIELDS}}`,
+      { tenantId, limit: boundedLimit },
+    ) ?? []
+  } catch (error) {
+    sanityError = error
+    sanityDocs = []
+  }
+
+  // 2. Read host-persisted JSONL trace spans if configured or present
+  const configuredSpanPath = process.env.QUICKSILVER_TRACE_SPAN_PATH?.trim() ||
+    (process.env.QUICKSILVER_DATA_DIR?.trim() ? join(process.env.QUICKSILVER_DATA_DIR.trim(), 'trace-spans.jsonl') : undefined)
+  const hostDocs = configuredSpanPath ? readHostLocalTraceSpans(configuredSpanPath, tenantId, boundedLimit) : []
+
+  // If Sanity failed and there are no host trace spans available, surface the error
+  // so health probes and inbox know the store is unavailable rather than empty.
+  if (sanityError && hostDocs.length === 0 && !configuredSpanPath) {
+    throw sanityError
+  }
+
+  // 3. Deduplicate by spanId / _id and sort descending by timestamp
+  const seenIds = new Set<string>()
+  const merged: TraceSpanDocument[] = []
+  for (const doc of [...sanityDocs, ...hostDocs]) {
+    const key = doc.spanId || doc._id
+    if (key && !seenIds.has(key)) {
+      seenIds.add(key)
+      merged.push(doc)
+    }
+  }
+
+  const normalized = normalizeTraceSpanDocuments(merged)
+  normalized.sort((a, b) => b.startedAt - a.startedAt)
+  return normalized.slice(0, boundedLimit)
 }

@@ -7,7 +7,7 @@ import { telemetryAlertThresholds } from './telemetry-settings.ts'
 const traceId = '123e4567-e89b-12d3-a456-426614174000'
 const at = Date.parse('2026-09-30T12:00:00.000Z')
 register('./route-test-loader.mjs', import.meta.url)
-const { normalizeTraceSpanDocuments, persistTraceSpanBatch } = await import('./telemetry-store.ts')
+const { normalizeTraceSpanDocuments, persistTraceSpanBatch, readHostLocalTraceSpans, listRecentTraceSpans } = await import('./telemetry-store.ts')
 const span = (patch: Partial<TraceSpanInput> = {}): TraceSpanInput => ({
   traceId, spanId: '223e4567-e89b-12d3-a456-426614174000', source: 'query', kind: 'request',
   name: 'query.request', status: 'ok', startedAt: at, durationMs: 42, requestedBy: 'user:operator',
@@ -77,4 +77,43 @@ test('telemetry alert settings are bounded and disabled cost thresholds are expl
   const configured = telemetryAlertThresholds({ QUICKSILVER_ALERT_WINDOW_MINUTES: '15', QUICKSILVER_ALERT_MINIMUM_RUNS: '7', QUICKSILVER_ALERT_FAILURE_RATE: '0.2', QUICKSILVER_ALERT_COST_USD: '3.50' }, at)
   assert.deepEqual(configured, { now: at, windowMs: 15 * 60_000, minimumRuns: 7, maximumRunFailureRate: 0.2, maximumEstimatedCostUsd: 3.5 })
   assert.equal(telemetryAlertThresholds({ QUICKSILVER_ALERT_FAILURE_RATE: '2' }, at).maximumRunFailureRate, 0.5)
+})
+
+test('readHostLocalTraceSpans and listRecentTraceSpans merge host JSONL trace spans', async () => {
+  const { mkdtemp, rm, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+
+  const dir = await mkdtemp(join(tmpdir(), 'qs-web-traces-'))
+  const spanFile = join(dir, 'trace-spans.jsonl')
+  const savedPath = process.env.QUICKSILVER_TRACE_SPAN_PATH
+  const savedTenant = process.env.QUICKSILVER_TENANT_ID
+
+  try {
+    process.env.QUICKSILVER_TENANT_ID = 'tenant-a'
+    process.env.QUICKSILVER_TRACE_SPAN_PATH = spanFile
+
+    const doc1 = buildTraceSpan(span({ traceId: '11111111-e89b-12d3-a456-426614174000', spanId: '00000000-0000-0000-0000-000000000001', startedAt: at - 1000 }), 'tenant-a')
+    const doc2 = buildTraceSpan(span({ traceId: '22222222-e89b-12d3-a456-426614174000', spanId: '00000000-0000-0000-0000-000000000002', startedAt: at }), 'tenant-b')
+    const doc3 = buildTraceSpan(span({ traceId: '33333333-e89b-12d3-a456-426614174000', spanId: '00000000-0000-0000-0000-000000000003', startedAt: at + 1000 }), 'tenant-a')
+
+    await writeFile(spanFile, `${JSON.stringify(doc1)}\n${JSON.stringify(doc2)}\n${JSON.stringify(doc3)}\n`, 'utf8')
+
+    const hostDocs = readHostLocalTraceSpans(spanFile, 'tenant-a')
+    assert.equal(hostDocs.length, 2)
+    assert.equal(hostDocs[0]?.spanId, '00000000-0000-0000-0000-000000000003')
+    assert.equal(hostDocs[1]?.spanId, '00000000-0000-0000-0000-000000000001')
+
+    // listRecentTraceSpans should read from local host trace spans and sort descending
+    const spans = await listRecentTraceSpans(10)
+    assert.ok(spans.some((s) => s.spanId === '00000000-0000-0000-0000-000000000003'))
+    assert.ok(spans.some((s) => s.spanId === '00000000-0000-0000-0000-000000000001'))
+    assert.ok(!spans.some((s) => s.spanId === '00000000-0000-0000-0000-000000000002'), 'foreign tenant span must not leak into list')
+  } finally {
+    if (savedPath !== undefined) process.env.QUICKSILVER_TRACE_SPAN_PATH = savedPath
+    else delete process.env.QUICKSILVER_TRACE_SPAN_PATH
+    if (savedTenant !== undefined) process.env.QUICKSILVER_TENANT_ID = savedTenant
+    else delete process.env.QUICKSILVER_TENANT_ID
+    await rm(dir, { recursive: true, force: true })
+  }
 })

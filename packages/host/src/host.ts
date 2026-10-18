@@ -41,7 +41,8 @@ import { TaskError, TaskService, type TaskRunBackend, type TaskServiceDeps } fro
 import type { TaskClientRegistry } from './task-clients.ts'
 import { hostRouteLabel, matchHostRoute, type HostRoute, type HostRouteFeature } from './routes.ts'
 import { FileAuthorizationAuditStore, resolveAuthorizationAuditPath } from './authorization-audit.ts'
-import { HostTraceTracer, type TraceSpanSink } from './telemetry.ts'
+import { HostTraceTracer, readRecentTraceSpans, resolveTraceSpanPath, type TraceSpanSink } from './telemetry.ts'
+import { resolvePersistentDataDir } from './persistence.ts'
 
 /**
  * The single-tenant Quicksilver host: one process that runs the governed
@@ -681,6 +682,17 @@ export class QuicksilverHost {
     }
 
     // Runs
+    if (path === '/api/traces' && method === 'GET') {
+      const canRead = this.access.authorize(principal, 'audit:read', { tenantId: this.config.tenantId, kind: 'traces', id: 'traces' }).allowed ||
+        this.access.authorize(principal, 'run:read', { tenantId: this.config.tenantId, kind: 'traces', id: 'traces' }).allowed
+      if (!canRead) return { status: 403, body: { error: 'This route needs audit:read or run:read.' } }
+      const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') ?? 200) || 200))
+      const env = this.deps.env ?? process.env
+      const dataDir = resolvePersistentDataDir(this.config, process.cwd(), env)
+      const spanPath = resolveTraceSpanPath(dataDir, env)
+      const spans = spanPath ? readRecentTraceSpans(spanPath, { limit, tenantId: this.config.tenantId }) : []
+      return { status: 200, body: { spans } }
+    }
     if (path === '/api/runs' && method === 'GET') {
       const denied = this.authorize(principal, 'run:read')
       if (denied) return denied

@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { FileTraceSpanSink, HostTraceTracer, buildHostTraceSpan, resolveTraceSpanPath, type TraceSpanDocument, type TraceSpanInput } from './telemetry.ts'
+import { FileTraceSpanSink, HostTraceTracer, buildHostTraceSpan, readRecentTraceSpans, resolveTraceSpanPath, type TraceSpanDocument, type TraceSpanInput } from './telemetry.ts'
 
 const NOW = Date.parse('2026-10-13T12:00:00Z')
 
@@ -213,6 +213,45 @@ test('the file sink creates its directory rather than failing the first span', a
     assert.equal(existsSync(path), false)
     new FileTraceSpanSink(path).write(buildHostTraceSpan(baseInput(), 'tenant-a'))
     assert.equal(existsSync(path), true)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('readRecentTraceSpans handles missing and empty files gracefully', () => {
+  assert.deepEqual(readRecentTraceSpans('/nonexistent/path/to/trace-spans.jsonl'), [])
+})
+
+test('readRecentTraceSpans reads latest-first and respects limit and tenant filtering', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'qs-spans-read-'))
+  const path = join(dir, 'trace-spans.jsonl')
+  try {
+    const sink = new FileTraceSpanSink(path)
+    const span1 = buildHostTraceSpan(baseInput({ startedAt: NOW, durationMs: 10 }), 'tenant-a')
+    const span2 = buildHostTraceSpan(baseInput({ startedAt: NOW + 20, durationMs: 15 }), 'tenant-b')
+    const span3 = buildHostTraceSpan(baseInput({ startedAt: NOW + 40, durationMs: 20 }), 'tenant-a')
+
+    sink.write(span1)
+    sink.write(span2)
+    sink.write(span3)
+
+    // Unfiltered read returns latest first
+    const all = readRecentTraceSpans(path)
+    assert.equal(all.length, 3)
+    assert.equal(all[0]?._id, span3._id)
+    assert.equal(all[1]?._id, span2._id)
+    assert.equal(all[2]?._id, span1._id)
+
+    // Tenant-filtered read
+    const tenantA = readRecentTraceSpans(path, { tenantId: 'tenant-a' })
+    assert.equal(tenantA.length, 2)
+    assert.equal(tenantA[0]?._id, span3._id)
+    assert.equal(tenantA[1]?._id, span1._id)
+
+    // Limit check
+    const limited = readRecentTraceSpans(path, { limit: 1 })
+    assert.equal(limited.length, 1)
+    assert.equal(limited[0]?._id, span3._id)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
