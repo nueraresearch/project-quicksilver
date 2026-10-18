@@ -9,11 +9,13 @@
  * Day 9: candidate actions become a full decision artifact via the kernel.
  */
 
-import { generateText, Output, stepCountIs } from 'ai'
+import { generateText, stepCountIs } from 'ai'
 import { z } from 'zod'
 
 import { PLANNER_SYSTEM_PROMPT } from './prompts.ts'
-import { getMode, isLlmConfigured, resolveId } from './models.ts'
+import { getMode, isLlmConfigured, modelForRole, resolveId } from './models.ts'
+import { readStructuredOutput, structuredOutputOption } from './structured-output.ts'
+import { planObjectiveStaged } from './planner-staged.ts'
 import {
   closeAll,
   createSanityContextClients,
@@ -42,30 +44,14 @@ export interface PlannerOutput extends z.infer<typeof PlanOutputSchema> {
   usage: import('./contracts.ts').ModelTokenUsage
 }
 
-const ProposedActionSchema = z.object({
-  description: z.string(),
-  actorId: z.string(),
-  capabilityId: z.string(),
-  applicablePolicyIds: z.array(z.string()),
-  evidenceIds: z.array(z.string()),
-  // Required (not `.default(0)`): strict JSON-schema output needs every property in `required`.
-  financialExposure: z.number().describe('Estimated financial exposure in USD; use 0 if none'),
-  reversible: z.boolean(),
-  operationalImpact: z.number().int().min(0).max(5),
-  uncertainty: z.number().int().min(0).max(5),
-})
-
-export const PlanOutputSchema = z.object({
-  decomposition: z.object({
-    objective: z.string(),
-    constraints: z.array(z.string()),
-    successMetrics: z.array(z.string()),
-    requiredCapabilities: z.array(z.string()),
-    candidateWorkstreams: z.array(z.string()),
-  }),
-  candidateActions: z.array(ProposedActionSchema).min(1),
-  reasoning: z.string(),
-})
+export {
+  ProposedActionSchema,
+  DecompositionSchema,
+  DecompositionStageSchema,
+  ActionsStageSchema,
+  PlanOutputSchema,
+} from './planner-schemas.ts'
+import { PlanOutputSchema } from './planner-schemas.ts'
 
 /** Re-exported so callers can gate on it without importing models directly. */
 export { isLlmConfigured }
@@ -97,6 +83,22 @@ export async function planObjective(input: PlannerInput): Promise<PlannerOutput>
     // matching the ProposedAction shape — which the kernel can authorize
     // directly without further transformation.
     let selectedModelId = resolveId('planner', getMode())
+
+    // Local mode builds the plan in stages (see planner-staged.ts): a small local model
+    // asked for the whole PlanOutputSchema in one response is a much harder ask than one
+    // asked for its decomposition first. The result is still validated against the same
+    // schema, so the kernel receives exactly what it always received. Cloud and azure
+    // fall through to the single-shot path below, untouched.
+    if (getMode() === 'local') {
+      const staged = await planObjectiveStaged(modelForRole('planner', 'local'), input, tools)
+      return {
+        ...staged.plan,
+        toolCalls,
+        modelId: selectedModelId,
+        usage: normalizeModelTokenUsage(staged.usage),
+      }
+    }
+
     const result = await withMeasuredProviderFallback('planner', (model, modelId) => {
       selectedModelId = modelId
       return generateText({
@@ -119,13 +121,13 @@ Step 2: Emit a structured plan. The candidateActions array MUST contain at least
 
   The kernel will compute risk and authorization from your candidate actions. Be specific about which policies apply.${formatAgentContext(input.agentContext)}`,
       tools: tools as unknown as Parameters<typeof generateText>[0]['tools'],
-      experimental_output: Output.object({ schema: PlanOutputSchema }),
+      ...structuredOutputOption(PlanOutputSchema),
       stopWhen: stepCountIs(PLANNER_MAX_STEPS),
       maxRetries: 2,
       } as Parameters<typeof generateText>[0])
     })
 
-    const parsed = (result as unknown as { experimental_output?: PlannerOutput }).experimental_output
+    const parsed = readStructuredOutput<PlannerOutput>(result)
     if (!parsed || parsed.candidateActions.length === 0) {
       throw new Error('Planner produced no candidate actions.')
     }

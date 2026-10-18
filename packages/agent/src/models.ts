@@ -234,11 +234,23 @@ export function languageModelForId(id: string, mode: InferenceMode = getMode()):
   if (mode === 'azure') return azureModel(id)
 
   if (mode === 'local') {
-    const ollama = createOpenAICompatible({
-      name: 'ollama',
-      baseURL: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1',
+    const local = createOpenAICompatible({
+      // The provider *name* only routes providerOptions; the endpoint is what matters,
+      // and it is OpenAI-compatible. Ollama, llama.cpp's llama-server, LM Studio's
+      // server, vLLM and LocalAI all serve the same `/v1/chat/completions`.
+      name: process.env.QUICKSILVER_LOCAL_PROVIDER ?? 'ollama',
+      // QUICKSILVER_LOCAL_BASE_URL is the general name; OLLAMA_BASE_URL stays honoured
+      // so existing local setups keep working untouched.
+      baseURL:
+        process.env.QUICKSILVER_LOCAL_BASE_URL ??
+        process.env.OLLAMA_BASE_URL ??
+        'http://localhost:11434/v1',
+      // Without this the provider downgrades a schema constraint to
+      // `response_format: {type: "json_object"}`, which only asks for JSON instead of
+      // constraining it. Measured: with it, the same call emits a full json_schema.
+      supportsStructuredOutputs: true,
     })
-    return ollama(id)
+    return local(id)
   }
 
   if (id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('o4')) {
