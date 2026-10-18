@@ -9,6 +9,7 @@ import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js'
 import { workflowDigest, type WorkflowGraph } from '@quicksilver/kernel'
 import { setSanitySeedDocuments } from './sanity-client.ts'
 import { digestToken } from '../../../packages/kernel/src/identity/tokens.ts'
+import { agentDefinitionDigest } from './agent-catalog-contract.ts'
 
 // Route modules import `next/server` and use the `@/` alias, neither of which
 // plain Node ESM resolves. app-routes.test.ts registers the same loader for
@@ -383,10 +384,202 @@ const SEEDED_WORKFLOW_DRAFT = {
   publishedAt: undefined,
 }
 
+/** A version in review, authored by someone else so entity-owner can review or publish it. */
+const SEEDED_WORKFLOW_REVIEW = {
+  ...SEEDED_WORKFLOW,
+  _id: 'workflows.automationWorkflow.daily-brief-v3',
+  _rev: 'seed-revision-3',
+  version: 3,
+  lifecycle: 'review',
+  authoredBy: 'author-alice',
+  reviewedBy: 'reviewer-bob',
+  reviewedAt: '2026-01-02T00:00:00.000Z',
+  publishedAt: undefined,
+}
+
+/** A version in archived state, so rollback can target it. */
+const SEEDED_WORKFLOW_ARCHIVED = {
+  ...SEEDED_WORKFLOW,
+  _id: 'workflows.automationWorkflow.daily-brief-v4',
+  _rev: 'seed-revision-4',
+  version: 4,
+  lifecycle: 'archived',
+  authoredBy: 'author-alice',
+  reviewedBy: 'reviewer-bob',
+  reviewedAt: '2026-01-02T00:00:00.000Z',
+  publishedAt: '2026-01-03T00:00:00.000Z',
+}
+
+/** A version in review without reviewedBy, so reviewWorkflow can review it. */
+const SEEDED_WORKFLOW_UNREVIEWED = {
+  ...SEEDED_WORKFLOW,
+  _id: 'workflows.automationWorkflow.daily-brief-v5',
+  _rev: 'seed-revision-5',
+  version: 5,
+  lifecycle: 'review',
+  authoredBy: 'author-alice',
+  reviewedBy: undefined,
+  reviewedAt: undefined,
+  publishedAt: undefined,
+}
+
+const CUSTOM_AGENT_MANIFEST = {
+  id: 'nuera-quicksilver:custom-worker',
+  version: 1,
+  authority: 'propose' as const,
+  tasks: ['reasoning' as const],
+  maximumImpact: 'low' as const,
+  requiresEvaluation: true,
+}
+
 setSanitySeedDocuments([
   { ...SEEDED_WORKFLOW, graphDigest: workflowDigest(seededGraph(1)) },
   { ...SEEDED_WORKFLOW_DRAFT, graphDigest: workflowDigest(seededGraph(2)) },
+  { ...SEEDED_WORKFLOW_REVIEW, graphDigest: workflowDigest(seededGraph(3)) },
+  { ...SEEDED_WORKFLOW_ARCHIVED, graphDigest: workflowDigest(seededGraph(4)) },
+  { ...SEEDED_WORKFLOW_UNREVIEWED, graphDigest: workflowDigest(seededGraph(5)) },
   { _type: 'workflowPublicationHead', _id: 'heads.daily-brief', _rev: 'seed-revision-h', tenantId: 'acme', graphId: 'daily-brief', activeVersion: 1 },
+  {
+    _type: 'decision',
+    _id: 'test-id',
+    _rev: 'seed-revision-d1',
+    tenantId: 'acme',
+    question: 'Test decision for schema verification',
+    selectedAction: 'act',
+    status: 'proposed',
+    riskLevel: 1,
+    requiredApproval: true,
+    policyIds: ['policy-test-1'],
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    _type: 'policy',
+    _id: 'policy-test-1',
+    _rev: 'seed-revision-p1',
+    tenantId: 'acme',
+    name: 'Test Policy',
+  },
+  {
+    _type: 'entity',
+    _id: 'entity-owner',
+    _rev: 'seed-revision-e1',
+    tenantId: 'acme',
+    name: 'Test Owner',
+    entityType: 'human',
+  },
+  {
+    _type: 'agentPublicationHead',
+    _id: 'heads.agent.custom-worker',
+    _rev: 'seed-revision-aph',
+    tenantId: 'acme',
+    agentId: 'nuera-quicksilver:custom-worker',
+    activeVersion: 2,
+  },
+  {
+    _type: 'agentDefinition',
+    _id: 'agent-def-1',
+    _rev: 'seed-revision-a1',
+    tenantId: 'acme',
+    agentId: 'nuera-quicksilver:custom-worker',
+    displayName: 'Custom Worker Agent',
+    description: 'A custom worker agent defined for testing.',
+    version: 1,
+    lifecycle: 'archived',
+    manifest: { ...CUSTOM_AGENT_MANIFEST, version: 1 },
+    definitionDigest: agentDefinitionDigest({
+      displayName: 'Custom Worker Agent',
+      description: 'A custom worker agent defined for testing.',
+      manifest: { ...CUSTOM_AGENT_MANIFEST, version: 1 },
+    }),
+    authoredBy: 'author-alice',
+    reviewedBy: 'reviewer-bob',
+    reviewedAt: '2026-01-02T00:00:00.000Z',
+    publishedAt: '2026-01-03T00:00:00.000Z',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    _type: 'agentDefinition',
+    _id: 'agent-def-2',
+    _rev: 'seed-revision-a2',
+    tenantId: 'acme',
+    agentId: 'nuera-quicksilver:custom-worker',
+    displayName: 'Custom Worker Agent',
+    description: 'A custom worker agent defined for testing.',
+    version: 2,
+    lifecycle: 'active',
+    manifest: { ...CUSTOM_AGENT_MANIFEST, version: 2 },
+    definitionDigest: agentDefinitionDigest({
+      displayName: 'Custom Worker Agent',
+      description: 'A custom worker agent defined for testing.',
+      manifest: { ...CUSTOM_AGENT_MANIFEST, version: 2 },
+    }),
+    authoredBy: 'author-alice',
+    reviewedBy: 'reviewer-bob',
+    reviewedAt: '2026-01-04T00:00:00.000Z',
+    publishedAt: '2026-01-05T00:00:00.000Z',
+    createdAt: '2026-01-03T00:00:00.000Z',
+  },
+  {
+    _type: 'agentDefinition',
+    _id: 'agent-def-3',
+    _rev: 'seed-revision-a3',
+    tenantId: 'acme',
+    agentId: 'nuera-quicksilver:custom-worker',
+    displayName: 'Custom Worker Agent',
+    description: 'A custom worker agent defined for testing.',
+    version: 3,
+    lifecycle: 'draft',
+    manifest: { ...CUSTOM_AGENT_MANIFEST, version: 3 },
+    definitionDigest: agentDefinitionDigest({
+      displayName: 'Custom Worker Agent',
+      description: 'A custom worker agent defined for testing.',
+      manifest: { ...CUSTOM_AGENT_MANIFEST, version: 3 },
+    }),
+    authoredBy: 'entity-owner',
+    createdAt: '2026-01-06T00:00:00.000Z',
+  },
+  {
+    _type: 'agentDefinition',
+    _id: 'agent-def-4',
+    _rev: 'seed-revision-a4',
+    tenantId: 'acme',
+    agentId: 'nuera-quicksilver:custom-worker',
+    displayName: 'Custom Worker Agent',
+    description: 'A custom worker agent defined for testing.',
+    version: 4,
+    lifecycle: 'review',
+    manifest: { ...CUSTOM_AGENT_MANIFEST, version: 4 },
+    definitionDigest: agentDefinitionDigest({
+      displayName: 'Custom Worker Agent',
+      description: 'A custom worker agent defined for testing.',
+      manifest: { ...CUSTOM_AGENT_MANIFEST, version: 4 },
+    }),
+    authoredBy: 'author-alice',
+    reviewedBy: undefined,
+    reviewedAt: undefined,
+    createdAt: '2026-01-07T00:00:00.000Z',
+  },
+  {
+    _type: 'agentDefinition',
+    _id: 'agent-def-5',
+    _rev: 'seed-revision-a5',
+    tenantId: 'acme',
+    agentId: 'nuera-quicksilver:custom-worker',
+    displayName: 'Custom Worker Agent',
+    description: 'A custom worker agent defined for testing.',
+    version: 5,
+    lifecycle: 'review',
+    manifest: { ...CUSTOM_AGENT_MANIFEST, version: 5 },
+    definitionDigest: agentDefinitionDigest({
+      displayName: 'Custom Worker Agent',
+      description: 'A custom worker agent defined for testing.',
+      manifest: { ...CUSTOM_AGENT_MANIFEST, version: 5 },
+    }),
+    authoredBy: 'author-alice',
+    reviewedBy: 'reviewer-bob',
+    reviewedAt: '2026-01-08T00:00:00.000Z',
+    createdAt: '2026-01-07T00:00:00.000Z',
+  },
 ])
 
 const REQUEST_FIXTURES: Record<string, { query?: Record<string, string>; body?: unknown; params?: Record<string, string> }> = {
@@ -396,7 +589,58 @@ const REQUEST_FIXTURES: Record<string, { query?: Record<string, string>; body?: 
   'GET /api/workflows/publications': { query: { workflowId: 'daily-brief' } },
   // agentId: /^nuera-quicksilver:[a-z][a-z0-9-]{0,62}$/
   'GET /api/agents/definitions': { query: { agentId: 'nuera-quicksilver:query' } },
+  'POST /api/agents/drafts': {
+    body: {
+      displayName: 'New Custom Worker Agent',
+      description: 'A custom worker agent defined for testing creation.',
+      manifest: {
+        id: 'nuera-quicksilver:new-worker',
+        version: 1,
+        authority: 'propose',
+        tasks: ['reasoning'],
+        maximumImpact: 'low',
+        requiresEvaluation: true,
+      },
+    },
+  },
+  'POST /api/agents/drafts/submit': {
+    body: { agentId: 'nuera-quicksilver:custom-worker', version: 3 },
+  },
+  'POST /api/agents/review': {
+    body: { agentId: 'nuera-quicksilver:custom-worker', version: 4, note: 'Reviewed by independent reviewer in schema test.' },
+  },
+  'POST /api/agents/publish': {
+    body: { agentId: 'nuera-quicksilver:custom-worker', version: 5 },
+  },
+  'POST /api/agents/rollback': {
+    body: { agentId: 'nuera-quicksilver:custom-worker', sourceVersion: 1 },
+  },
   'POST /api/workflows/drafts': { body: { graph: VALID_WORKFLOW_GRAPH } },
+  'POST /api/workflows/drafts/submit': {
+    body: {
+      workflowId: 'daily-brief',
+      version: 2,
+    },
+  },
+  'POST /api/workflows/publish': {
+    body: {
+      workflowId: 'daily-brief',
+      version: 3,
+    },
+  },
+  'POST /api/workflows/review': {
+    body: {
+      workflowId: 'daily-brief',
+      version: 5,
+      note: 'Reviewed by independent reviewer in schema test.',
+    },
+  },
+  'POST /api/workflows/rollback': {
+    body: {
+      workflowId: 'daily-brief',
+      version: 4,
+    },
+  },
   // The path id is validated by the route itself: /^mem-[a-f0-9]{10}$/.
   'POST /api/memory/[id]/review': { params: { id: 'mem-a1b2c3d4e5' }, body: { approve: true } },
   // The route superRefines this body beyond the contract: an approval carries
