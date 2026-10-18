@@ -136,18 +136,28 @@ async function planWorkstreamActions(
   // configuration in which this model actually calls them.
   const evidence: string[] = []
   const retrievable = instrumentTools((tools ?? {}) as Record<string, unknown>, grounded, evidence)
-  const retrieved = await generateText({
-    model,
-    system: PLANNER_SYSTEM_PROMPT,
-    prompt: `Objective: """${decomposition.objective}"""
+  let retrieved: { totalUsage?: unknown } = {}
+  try {
+    retrieved = await generateText({
+      model,
+      system: PLANNER_SYSTEM_PROMPT,
+      prompt: `Objective: """${decomposition.objective}"""
 
 This is ONE workstream of the plan: "${workstream}"
 
 Before proposing anything, look up the real records you need: which entity would carry out the action, which capability it needs, which policies apply, and what evidence is relevant. Use the tools to retrieve them now. Do not propose actions in this step.`,
-    tools: retrievable as never,
-    stopWhen: stepCountIs(TOOL_LOOP_MAX_STEPS),
-    maxRetries: STAGE_MAX_RETRIES,
-  } as never)
+      tools: retrievable as never,
+      stopWhen: stepCountIs(TOOL_LOOP_MAX_STEPS),
+      maxRetries: STAGE_MAX_RETRIES,
+    } as never)
+  } catch (err) {
+    // If tools retrieved partial evidence before an error, keep what was retrieved;
+    // otherwise record the diagnostic warning and return null.
+    if (evidence.length === 0) {
+      console.warn(`[planner:local] retrieval failed for workstream "${workstream}":`, err instanceof Error ? err.message : String(err))
+      return null
+    }
+  }
 
   if (evidence.length === 0) {
     // Nothing was retrieved, so nothing can be grounded. Returning null lets the caller
@@ -211,13 +221,20 @@ export async function planObjectiveStaged(
   // called nothing and invented every id it cited.
   const grounded = new Set<string>()
 
+  const errors: Error[] = []
   const settled = await Promise.all(
-    chosen.map((w) => planWorkstreamActions(model, input, w, stage1.decomposition, tools, grounded).catch(() => null)),
+    chosen.map((w) =>
+      planWorkstreamActions(model, input, w, stage1.decomposition, tools, grounded).catch((err) => {
+        errors.push(err instanceof Error ? err : new Error(String(err)))
+        return null
+      }),
+    ),
   )
 
   const proposed = settled.flatMap((s) => s?.actions ?? [])
   if (proposed.length === 0) {
-    throw new Error('Planner produced no candidate actions.')
+    const errorDetails = errors.length > 0 ? ` (reasons: ${errors.map((e) => e.message).join('; ')})` : ''
+    throw new Error(`Planner produced no candidate actions.${errorDetails}`)
   }
 
   const { grounded: candidateActions, rejected } = groundActions(proposed, grounded)
