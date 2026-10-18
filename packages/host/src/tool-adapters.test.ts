@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { signWebhook } from '@quicksilver/kernel/triggers'
 
 import { ActionService, MemoryActionStore } from './actions.ts'
-import { emailRecipientAllowed, isPrivateAddress, resendNotificationTool, signedWebhookTool, type HttpFetch } from './tool-adapters.ts'
+import { emailRecipientAllowed, isPrivateAddress, resendNotificationTool, signedWebhookTool, localOutboxNotificationTool, localFileMutationTool, type HttpFetch } from './tool-adapters.ts'
 import { dryRunTools, EffectfulToolExecutor, type ToolCall } from './tool-executor.ts'
 
 // No network: every call goes to a fake that records what it was asked.
@@ -165,3 +165,78 @@ test('approved actions: real adapters are marked live, reject unrunnable proposa
   assert.ok(!stale.ok && /policy changed/.test(stale.error))
   assert.equal(http.sent.length, 1)
 })
+
+test('credential-free local outbox: dispatches approved operational notifications without external credentials', async () => {
+  const delivered: Array<Record<string, unknown>> = []
+  const tool = localOutboxNotificationTool({
+    from: 'quicksilver@local.internal',
+    recipients: ['admin@local.internal'],
+    deliverMessage: (msg) => { delivered.push(msg) },
+  })
+  const key = { keyId: 'acme:host-1', secret: '0123456789abcdef0123456789abcdef' }
+  const store = new MemoryActionStore('acme')
+  const svc = new ActionService({
+    tenantId: 'acme',
+    store,
+    executor: new EffectfulToolExecutor({ tools: [tool], signingKey: key }),
+    policy: { enabledTools: ['notification.send'] },
+    signingKey: key,
+  })
+
+  // Propose local notification
+  const prop = await svc.propose(
+    { id: 'agent-local', kind: 'agent' },
+    { toolId: 'notification.send', input: { to: 'admin@local.internal', subject: 'System Health Check', text: 'All local workers healthy.' }, reason: 'Routine notice', evidence: ['check:1'] },
+  )
+  assert.ok(prop.ok)
+  assert.equal(delivered.length, 0, 'no delivery before approval')
+
+  // Approve and execute
+  const approved = await svc.approve(prop.proposal.id, { id: 'human-operator' })
+  assert.ok(approved.ok && approved.proposal.status === 'executed')
+  assert.equal(delivered.length, 1)
+  assert.equal(delivered[0]!.to, 'admin@local.internal')
+  assert.equal(delivered[0]!.subject, 'System Health Check')
+  assert.equal(delivered[0]!.text, 'All local workers healthy.')
+  assert.ok(typeof delivered[0]!.id === 'string' && (delivered[0]!.id as string).startsWith('outbox-'))
+  assert.ok(approved.proposal.result?.auditId)
+  assert.equal(approved.proposal.result?.dryRun, undefined)
+})
+
+test('credential-free local file mutation: applies approved changes and prevents traversal', async () => {
+  const tool = localFileMutationTool({ baseDir: '/workspace/safe', allowedExtensions: ['.json', '.txt'] })
+  const key = { keyId: 'acme:host-1', secret: '0123456789abcdef0123456789abcdef' }
+  const store = new MemoryActionStore('acme')
+  const svc = new ActionService({
+    tenantId: 'acme',
+    store,
+    executor: new EffectfulToolExecutor({ tools: [tool], signingKey: key }),
+    policy: { enabledTools: ['file.mutate'] },
+    signingKey: key,
+  })
+
+  // Traversal or unapproved extension is rejected up front
+  const badPath = await svc.propose(
+    { id: 'agent-local', kind: 'agent' },
+    { toolId: 'file.mutate', input: { path: '../escape.txt', content: 'hack', action: 'write' }, reason: 'Bad write', evidence: ['e1'] },
+  )
+  assert.ok(!badPath.ok && /clean relative path/.test(badPath.error))
+
+  const badExt = await svc.propose(
+    { id: 'agent-local', kind: 'agent' },
+    { toolId: 'file.mutate', input: { path: 'script.sh', content: 'echo 1', action: 'write' }, reason: 'Bad ext', evidence: ['e1'] },
+  )
+  assert.ok(!badExt.ok && /must end in one of/.test(badExt.error))
+
+  // Valid proposal executes cleanly upon approval
+  const good = await svc.propose(
+    { id: 'agent-local', kind: 'agent' },
+    { toolId: 'file.mutate', input: { path: 'reports/summary.json', content: '{"status":"ok"}', action: 'write' }, reason: 'Save summary', evidence: ['e1'] },
+  )
+  assert.ok(good.ok)
+  const approved = await svc.approve(good.proposal.id, { id: 'human-operator' })
+  assert.ok(approved.ok && approved.proposal.status === 'executed')
+  assert.ok(approved.proposal.result?.outputDigest)
+  assert.equal(approved.proposal.result?.dryRun, undefined)
+})
+
