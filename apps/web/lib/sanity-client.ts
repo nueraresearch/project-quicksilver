@@ -66,10 +66,14 @@ function seededResultFor(query: string, params: Record<string, unknown> | undefi
   if (!type) return undefined
 
   let matches = seededDocuments.filter((document) => document._type === type)
-  for (const [, field, param] of query.matchAll(/([A-Za-z_]+)\s*==\s*\$([A-Za-z]+)/g)) {
-    const expected = params?.[param]
+  for (const [, field, param] of query.matchAll(/([A-Za-z0-9_]+)\s*==\s*\$([A-Za-z0-9_]+)/g)) {
+    const expected = params?.[param] ?? (field === 'agentId' && param === 'id' ? params?.id : undefined)
     if (expected === undefined) continue
     matches = matches.filter((document) => document[field] === expected)
+  }
+  for (const [, field, literal] of query.matchAll(/([A-Za-z0-9_]+)\s*==\s*"([^"]+)"/g)) {
+    if (field === '_type') continue
+    matches = matches.filter((document) => document[field] === literal)
   }
 
   const singleDocument = SINGLE_DOCUMENT_FORM.test(query)
@@ -84,11 +88,33 @@ function emptyResultFor(query: string, params?: Record<string, unknown>): unknow
   const trimmed = query.trim()
   if (trimmed.startsWith('{')) {
     // A GROQ object literal. In real Sanity every named key is always present
-    // — `count(...)` yields 0 — so an empty dataset still answers
-    // `{ "spendUsd": 0, "entryCount": 0 }`. Returning a bare `{}` would strip
-    // required properties and report a correct route as a contract violation.
-    const result: Record<string, number> = {}
-    for (const match of trimmed.matchAll(OBJECT_KEY)) result[match[1]!] = 0
+    // — `count(...)` yields 0, array slices yield `[]`, nested objects yield `{}`.
+    // Returning correct types prevents list routes from throwing when slicing or mapping.
+    const result: Record<string, unknown> = {}
+    for (const match of trimmed.matchAll(/"([^"]+)"\s*:\s*([^,\n}]+)/g)) {
+      const key = match[1]!
+      const expr = match[2]!.trim()
+      if (expr.startsWith('count(') || expr.startsWith('coalesce(')) {
+        result[key] = 0
+      } else if (expr.startsWith('*') || expr.includes('[')) {
+        result[key] = []
+      } else if (expr.startsWith('{')) {
+        result[key] = {}
+      } else {
+        result[key] = 0
+      }
+    }
+    // Also check for nested object queries like decisionCounts: { total: count(...), ... }
+    if (trimmed.includes('"decisionCounts"')) {
+      result.decisionCounts = {
+        total: 0,
+        awaitingApproval: 0,
+        approved: 0,
+        executed: 0,
+        blocked: 0,
+        failed: 0,
+      }
+    }
     return result
   }
   const seeded = seededResultFor(query, params)
