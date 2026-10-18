@@ -151,6 +151,7 @@ export const HOST_ROUTES: readonly HostRoute[] = Object.freeze<HostRoute[]>([
   { method: 'POST', path: '/api/runs/:id/cancel', rateLimit: 'write', access: anyOf('run:cancel') },
   { method: 'POST', path: '/api/runs/:id/redrive', rateLimit: 'model', access: anyOf('run:redrive') },
   { method: 'GET', path: '/api/dead-letters', access: anyOf('run:read') },
+  { method: 'GET', path: '/api/traces', access: anyOf('audit:read', 'run:read') },
   { method: 'GET', path: '/api/stats', access: anyOf('run:read') },
   { method: 'GET', path: '/api/schedules', access: anyOf('run:read') },
   { method: 'GET', path: '/api/webhooks', access: anyOf('run:read') },

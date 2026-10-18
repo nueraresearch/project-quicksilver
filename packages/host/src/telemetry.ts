@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 export type TraceSource = 'query' | 'plan' | 'workflow' | 'decision' | 'agent' | 'queue' | 'schedule' | 'webhook'
@@ -157,6 +157,47 @@ export class FileTraceSpanSink {
       writeSync(fd, `${JSON.stringify(span)}\n`, undefined, 'utf8')
       fsyncSync(fd)
     } finally { closeSync(fd) }
+  }
+}
+
+export interface ReadTraceSpansOptions {
+  limit?: number
+  tenantId?: string
+}
+
+/**
+ * Reads recent trace span documents from a JSONL file, ordered latest-first.
+ * Gracefully returns an empty list if the file does not exist or is empty.
+ */
+export function readRecentTraceSpans(filePath: string, options: ReadTraceSpansOptions = {}): TraceSpanDocument[] {
+  const limit = options.limit !== undefined ? Math.max(1, Math.min(500, Math.floor(options.limit))) : 200
+  if (!existsSync(filePath)) return []
+
+  try {
+    const raw = readFileSync(filePath, 'utf8')
+    if (!raw.trim()) return []
+    const lines = raw.trim().split('\n')
+    const results: TraceSpanDocument[] = []
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]?.trim()
+      if (!line) continue
+      try {
+        const doc = JSON.parse(line) as TraceSpanDocument
+        if (doc && doc._type === 'telemetryTraceSpan' && typeof doc.startedAt === 'string') {
+          if (!options.tenantId || doc.tenantId === options.tenantId) {
+            results.push(doc)
+            if (results.length >= limit) break
+          }
+        }
+      } catch {
+        // Skip malformed lines rather than failing the entire read
+      }
+    }
+
+    return results
+  } catch {
+    return []
   }
 }
 

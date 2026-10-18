@@ -71,7 +71,7 @@ const stubRunner: AgentRunner = async ({ input }) => {
 interface Harness {
   host: QuicksilverHost
   base: string
-  tokens: Record<'viewer' | 'operator' | 'developer' | 'supervisor' | 'publisher' | 'auditor' | 'admin', string>
+  tokens: Record<'viewer' | 'operator' | 'developer' | 'supervisor' | 'publisher' | 'auditor' | 'admin' | 'guest', string>
   evaluations: EvaluationEntry[]
   logs: string[]
   spans: TraceSpanDocument[]
@@ -89,6 +89,7 @@ async function startHost(overrides: Record<string, unknown> = {}, extra: { agent
   const publisher = person('entity-publisher', ['supervisor'])
   const auditor = person('entity-auditor', ['auditor'])
   const admin = person('entity-admin', ['tenant-admin'])
+  const guest = person('entity-guest', [])
   const webhookSecret = generateWebhookSecret()
   const env = { QUICKSILVER_VAULT_KEY: generateMasterKey(), ERP_WEBHOOK_SECRET: webhookSecret, QUICKSILVER_AUTHORIZATION_AUDIT_PATH: join(dir, 'authorization-audit.jsonl') }
   await extra.prepare?.(dir, env)
@@ -108,7 +109,7 @@ async function startHost(overrides: Record<string, unknown> = {}, extra: { agent
   const logs: string[] = []
   const spans: TraceSpanDocument[] = []
   const host = new QuicksilverHost(config, {
-    principals: [viewer.config, operator.config, developer.config, supervisor.config, publisher.config, auditor.config, admin.config],
+    principals: [viewer.config, operator.config, developer.config, supervisor.config, publisher.config, auditor.config, admin.config, guest.config],
     env,
     logger: new Logger({ level: 'debug', sink: { write: (line) => logs.push(line) } }),
     ...(extra.agentRunner === null ? {} : { agentRunner: extra.agentRunner ?? stubRunner }),
@@ -124,7 +125,7 @@ async function startHost(overrides: Record<string, unknown> = {}, extra: { agent
   return {
     host,
     base: `http://127.0.0.1:${port}`,
-    tokens: { viewer: viewer.token, operator: operator.token, developer: developer.token, supervisor: supervisor.token, publisher: publisher.token, auditor: auditor.token, admin: admin.token },
+    tokens: { viewer: viewer.token, operator: operator.token, developer: developer.token, supervisor: supervisor.token, publisher: publisher.token, auditor: auditor.token, admin: admin.token, guest: guest.token },
     evaluations,
     logs,
     spans,
@@ -515,6 +516,50 @@ test('the host emits queue and webhook trace spans into the configured sink (P-1
       }
     }
     assert.ok(!JSON.stringify(h.spans).includes('A-1'), 'the webhook payload must not reach the trace sink')
+  } finally {
+    await h.close()
+  }
+})
+
+test('GET /api/traces returns recent host trace spans for authorized callers', async () => {
+  const h = await startHost({}, {
+    prepare: async (dir, env) => {
+      env.QUICKSILVER_TRACE_SPAN_PATH = join(dir, 'trace-spans.jsonl')
+    },
+  })
+  try {
+    const traceSpanPath = join(h.dir, 'trace-spans.jsonl')
+    const { FileTraceSpanSink, buildHostTraceSpan } = await import('./telemetry.ts')
+    const sink = new FileTraceSpanSink(traceSpanPath)
+
+    const span1 = buildHostTraceSpan({
+      traceId: '3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+      spanId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+      source: 'queue',
+      kind: 'workflow',
+      name: 'queue.dispatch.daily-brief',
+      status: 'ok',
+      startedAt: Date.now() - 5000,
+      durationMs: 25,
+      requestedBy: 'principal:svc:host',
+    }, TENANT)
+    sink.write(span1)
+
+    // Unauthorized call is refused
+    const unauth = await api(h, '/api/traces', { method: 'GET' })
+    assert.equal(unauth.status, 401)
+
+    // Principal lacking audit:read and run:read is refused
+    const forbidden = await api(h, '/api/traces', { method: 'GET', token: h.tokens.guest })
+    assert.equal(forbidden.status, 403)
+
+    // Auditor holding audit:read can read traces
+    const auditorRes = await api(h, '/api/traces', { method: 'GET', token: h.tokens.auditor })
+    assert.equal(auditorRes.status, 200)
+    const auditorBody = await auditorRes.json() as { spans: TraceSpanDocument[] }
+    assert.equal(auditorBody.spans.length, 1)
+    assert.equal(auditorBody.spans[0]?._id, span1._id)
+    assert.equal(auditorBody.spans[0]?.source, 'queue')
   } finally {
     await h.close()
   }
