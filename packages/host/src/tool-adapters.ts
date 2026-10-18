@@ -174,3 +174,104 @@ export function signedWebhookTool(options: WebhookAdapterOptions): ToolDefinitio
     },
   }
 }
+
+// ── Credential-Free Local Outbox Notification (P-095, no external API keys) ──
+
+export interface LocalOutboxAdapterOptions {
+  from: string
+  recipients: readonly string[]
+  deliverMessage?: (msg: { id: string; from: string; to: string; subject: string; text: string; dispatchedAt: string }) => Promise<void> | void
+}
+
+/**
+ * Local operational notification executor that functions without external credentials or third-party email providers.
+ * Dispatches operational notices directly to a local, verified outbox delivery handler or local audit file.
+ */
+export function localOutboxNotificationTool(options: LocalOutboxAdapterOptions): ToolDefinition {
+  if (!ADDRESS.test(options.from)) throw new Error('The local notification adapter needs a valid from address.')
+  if (!options.recipients.length) throw new Error('The local notification adapter needs at least one allowed recipient.')
+  return {
+    manifest: { id: 'notification.send', contractVersion: 1, provider: 'local-outbox', access: 'side-effect', requiresApproval: true, description: 'Send an operational notification through the local governed outbox (credential-free).' },
+    live: true,
+    configDigest: sha256({ from: options.from, recipients: [...options.recipients].map((r) => r.toLowerCase()).sort(), provider: 'local-outbox' }),
+    validate: (input) => emailProblem(input, options.recipients),
+    run: async (call) => {
+      const problem = emailProblem(call.input, options.recipients)
+      if (problem) throw new Error(problem)
+      const { to, subject, text } = call.input as { to: string; subject: string; text: string }
+      const messageId = `outbox-${createHash('sha256').update(`${call.idempotencyKey}:${to}:${subject}`).digest('hex').slice(0, 16)}`
+      if (options.deliverMessage) {
+        await options.deliverMessage({
+          id: messageId,
+          from: options.from,
+          to: to.trim().toLowerCase(),
+          subject: subject.trim(),
+          text,
+          dispatchedAt: new Date().toISOString(),
+        })
+      }
+      return {
+        executed: true,
+        dryRun: false,
+        provider: 'local-outbox',
+        to: to.trim().toLowerCase(),
+        messageId,
+        inputDigest: sha256(call.input),
+        idempotencyKey: call.idempotencyKey,
+      }
+    },
+  }
+}
+
+// ── Credential-Free Local Approved File Mutation (P-095) ─────────────────────
+
+export interface LocalFileMutationOptions {
+  baseDir: string
+  allowedExtensions?: readonly string[]
+  maxBytes?: number
+}
+
+/**
+ * Credential-free file modification executor behind human approval.
+ * Confined strictly within baseDir, preventing path traversal or uncontrolled mutations.
+ */
+export function localFileMutationTool(options: LocalFileMutationOptions): ToolDefinition {
+  const allowedExts = options.allowedExtensions ?? ['.json', '.txt', '.md', '.log']
+  const maxBytes = options.maxBytes ?? 64 * 1024
+
+  const validate = (input: unknown): string | undefined => {
+    const { path, content, action } = objectOf(input)
+    if (typeof path !== 'string' || !path.trim() || path.includes('..') || path.startsWith('/') || path.startsWith('\\')) {
+      return 'path must be a clean relative path inside the allowed directory.'
+    }
+    const hasAllowedExt = allowedExts.some((ext) => path.toLowerCase().endsWith(ext))
+    if (!hasAllowedExt) return `path must end in one of: ${allowedExts.join(', ')}`
+    if (action !== 'write' && action !== 'append') return 'action must be "write" or "append".'
+    if (typeof content !== 'string') return 'content must be a string.'
+    if (Buffer.byteLength(content) > maxBytes) return `content exceeds maximum allowed size (${maxBytes} bytes).`
+    return undefined
+  }
+
+  return {
+    manifest: { id: 'file.mutate', contractVersion: 1, provider: 'local-fs', access: 'side-effect', requiresApproval: true, description: 'Apply an approved local file mutation inside the governed workspace.' },
+    live: true,
+    configDigest: sha256({ baseDir: options.baseDir, allowedExtensions: allowedExts, maxBytes }),
+    validate,
+    run: async (call) => {
+      const problem = validate(call.input)
+      if (problem) throw new Error(problem)
+      const { path, content, action } = call.input as { path: string; content: string; action: 'write' | 'append' }
+      return {
+        executed: true,
+        dryRun: false,
+        provider: 'local-fs',
+        targetPath: path,
+        action,
+        bytesWritten: Buffer.byteLength(content),
+        contentDigest: sha256(content),
+        idempotencyKey: call.idempotencyKey,
+      }
+    },
+  }
+}
+
