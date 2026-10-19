@@ -1,0 +1,15 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_capabilities",
+  "info": { "singularName": "capability", "pluralName": "capabilities", "displayName": "Capability" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "name": { "type": "string", "required": true },
+    "description": { "type": "text" },
+    "resource": { "type": "string" },
+    "action": { "type": "string" },
+    "entities": { "type": "relation", "relation": "manyToMany", "target": "plugin::quicksilver.entity", "inversedBy": "capabilities" },
+    "policies": { "type": "relation", "relation": "manyToMany", "target": "plugin::quicksilver.policy", "mappedBy": "capabilities" }
+  }
+}

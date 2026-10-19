@@ -1,0 +1,17 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_evidence",
+  "info": { "singularName": "evidence", "pluralName": "evidences", "displayName": "Evidence" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "title": { "type": "string", "required": true },
+    "kind": { "type": "enumeration", "enum": ["observation", "document", "measurement", "attestation", "other"], "required": true },
+    "source": { "type": "string" },
+    "observedAt": { "type": "datetime" },
+    "content": { "type": "json" },
+    "objective": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.objective", "inversedBy": "evidence" },
+    "metric": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.metric", "inversedBy": "evidence" },
+    "decisions": { "type": "relation", "relation": "manyToMany", "target": "plugin::quicksilver.decision", "mappedBy": "evidence" }
+  }
+}

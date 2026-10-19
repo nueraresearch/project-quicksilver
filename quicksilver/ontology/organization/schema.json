@@ -1,0 +1,15 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_organizations",
+  "info": { "singularName": "organization", "pluralName": "organizations", "displayName": "Organization" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "name": { "type": "string", "required": true },
+    "slug": { "type": "uid", "targetField": "name", "required": true },
+    "description": { "type": "text" },
+    "departments": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.department", "mappedBy": "organization" },
+    "policies": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.policy", "mappedBy": "organization" },
+    "objectives": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.objective", "mappedBy": "organization" }
+  }
+}

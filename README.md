@@ -123,7 +123,7 @@ are defined in the [glossary](./docs/GLOSSARY.md).
 
 ---
 
-Give Nuera Quicksilver an objective like *"Reduce production downtime by 20% without increasing OPEX."* A **Nuera Quicksilver Agent** reads a structured company model stored in Sanity and proposes a plan. The **NQC Kernel** applies the deterministic Quicksilver Engine evaluation and then decides what may happen. Each proposed action is auto-approved, sent to a human, or hard-blocked. Every step is recorded as an auditable decision in Sanity.
+Give Nuera Quicksilver an objective like *"Reduce production downtime by 20% without increasing OPEX."* Today, a **Nuera Quicksilver Agent** reads a structured company model stored in Sanity and proposes a plan. The **NQC Kernel** applies deterministic evaluation and decides what may happen. Each proposed action is auto-approved, sent to a human, or hard-blocked. Current records still use Sanity in several paths; the planned Quicksilver CMS Module migration is gated on verified parity, not assumed complete.
 
 > **Nuera Quicksilver Agents propose. The NQC Kernel authorizes. The company's playbook is content, and the kernel runs it.**
 
@@ -132,6 +132,27 @@ Give Nuera Quicksilver an objective like *"Reduce production downtime by 20% wit
 The [product definition](./docs/NUERA-QUICKSILVER-PRODUCT.md) is the canonical
 statement of where this repository is headed. It describes the target, not
 current capability.
+
+**Infrastructure direction:** Sanity remains active in current console, Studio,
+and agent-context paths. The migration target is a Quicksilver-owned backend,
+with the customized Strapi chassis as an interim implementation path. We will
+not switch the default until native features meet or exceed the current
+Sanity/provider feature set and data, tenant-isolation, and authorization parity
+are demonstrated. Sanity and standalone Strapi may then remain optional
+connectors; neither may be required by the built-in product. See the
+[migration and parity plan](./docs/platform/native-local.md).
+
+## Quicksilver CMS Module
+
+Project Quicksilver is transitioning from its current Sanity implementation
+toward a customized/forked Strapi backend and CMS module. Strapi is the chassis; the
+Quicksilver-specific ontology, query layer, contradiction/decision engine and
+deterministic context layer live under [`/quicksilver/`](./quicksilver/README.md).
+The current scaffold is not yet loaded by a Strapi host, and Sanity remains in
+use until the complete parity gate and a safe cutover are complete. A clean
+Quicksilver installation is intended to work without requiring an external
+Sanity project or Strapi service; those backends may be optional migration or
+compatibility choices.
 
 Nuera Quicksilver is being built as an **intent-driven company operating
 system**. A human states an objective and whatever constraints they know, from

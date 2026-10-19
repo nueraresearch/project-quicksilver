@@ -1,0 +1,16 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_workflows",
+  "info": { "singularName": "workflow", "pluralName": "workflows", "displayName": "Workflow" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "name": { "type": "string", "required": true },
+    "description": { "type": "text" },
+    "status": { "type": "enumeration", "enum": ["draft", "published", "deprecated"], "default": "draft" },
+    "definition": { "type": "json", "required": true },
+    "department": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.department", "inversedBy": "workflows" },
+    "objective": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.objective", "inversedBy": "workflows" },
+    "decisions": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.decision", "mappedBy": "workflow" }
+  }
+}

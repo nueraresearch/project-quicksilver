@@ -1,0 +1,18 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_departments",
+  "info": { "singularName": "department", "pluralName": "departments", "displayName": "Department" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "name": { "type": "string", "required": true },
+    "description": { "type": "text" },
+    "organization": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.organization", "inversedBy": "departments" },
+    "parentDepartment": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.department", "inversedBy": "childDepartments" },
+    "childDepartments": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.department", "mappedBy": "parentDepartment" },
+    "entities": { "type": "relation", "relation": "manyToMany", "target": "plugin::quicksilver.entity", "mappedBy": "departments" },
+    "objectives": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.objective", "mappedBy": "department" },
+    "workflows": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.workflow", "mappedBy": "department" },
+    "metrics": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.metric", "mappedBy": "department" }
+  }
+}
