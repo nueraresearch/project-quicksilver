@@ -1,10 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { Duplex } from 'node:stream'
 
 import { signWebhook } from '@quicksilver/kernel/triggers'
+import { issueExecutionAuthorization, type ExecutionAuthorizationRecord } from '@quicksilver/kernel/runtime'
+import { KernelQcsClient } from '@quicksilver/kernel/comms/qcs-client'
+import { DummyAdapter, QcsImpl, intentFingerprint, type AgentIdentity, type QcsContext, type QcsIntent, type SendMessageRequest } from '@quicksilver/qcs'
 
 import { ActionService, MemoryActionStore } from './actions.ts'
-import { emailRecipientAllowed, isPrivateAddress, resendNotificationTool, signedWebhookTool, localOutboxNotificationTool, localFileMutationTool, type HttpFetch } from './tool-adapters.ts'
+import { KernelQcsAuthority } from './qcs.ts'
+import { emailNotificationToolFromConfig, emailRecipientAllowed, isPrivateAddress, smtpNotificationTool, resendNotificationTool, signedWebhookTool, localOutboxNotificationTool, localFileMutationTool, type HttpFetch } from './tool-adapters.ts'
 import { dryRunTools, EffectfulToolExecutor, type ToolCall } from './tool-executor.ts'
 
 // No network: every call goes to a fake that records what it was asked.
@@ -25,6 +30,164 @@ const SECRET = 'webhook-signing-secret-0123456789abcdef'
 const call = (toolId: string, input: unknown): ToolCall => ({ toolId, input, tenantId: 'acme', runId: 'ap-1', nodeId: 'action', idempotencyKey: 'ap-1' })
 
 // ── Email ─────────────────────────────────────────────────────────────────
+
+test('SMTP: native TLS submission needs no mail API and refuses unsafe input before connecting', async () => {
+  const writes: string[] = []
+  let connections = 0
+  const tool = smtpNotificationTool({
+    host: 'smtp.example.com', username: 'quicksilver@example.com', password: API_KEY,
+    from: 'quicksilver@example.com', recipients: ['ops@example.com'],
+    connector: (options) => {
+      connections++
+      assert.deepEqual(options, { host: 'smtp.example.com', port: 465, servername: 'smtp.example.com', rejectUnauthorized: true })
+      const socket = new Duplex({
+        read() {},
+        write(chunk, _encoding, callback) {
+          const line = chunk.toString()
+          writes.push(line)
+          if (line.startsWith('EHLO')) this.push('250-smtp.example.com\r\n250 AUTH PLAIN LOGIN\r\n')
+          else if (line.startsWith('AUTH')) this.push('235 authenticated\r\n')
+          else if (line.startsWith('DATA')) this.push('354 send message\r\n')
+          else if (!line.startsWith('QUIT')) this.push('250 accepted\r\n')
+          callback()
+        },
+      })
+      queueMicrotask(() => { socket.emit('secureConnect'); socket.push('220 ready\r\n') })
+      return socket
+    },
+  })
+  for (const input of [
+    { to: 'spy@example.com', subject: 's', text: 't' },
+    { to: 'ops@example.com', subject: 's\r\nBcc: spy@example.com', text: 't' },
+  ]) await assert.rejects(tool.run(call('notification.send', input)))
+  assert.equal(connections, 0)
+  const key = { keyId: 'acme:host-1', secret: '0123456789abcdef0123456789abcdef' }
+  const service = new ActionService({ tenantId: 'acme', store: new MemoryActionStore('acme'), executor: new EffectfulToolExecutor({ tools: [tool], signingKey: key }), policy: { enabledTools: ['notification.send'] }, signingKey: key })
+  const proposed = await service.propose({ id: 'agent', kind: 'agent' }, { toolId: 'notification.send', input: { to: 'ops@example.com', subject: 'Report ready', text: 'Hello\n.\nWorld' }, reason: 'Tell ops.', evidence: ['report:1'] })
+  assert.ok(proposed.ok)
+  assert.equal(connections, 0, 'proposing cannot send mail')
+  const approved = await service.approve(proposed.proposal.id, { id: 'human' })
+  assert.ok(approved.ok)
+  assert.equal(approved.proposal.status, 'executed')
+  assert.equal(connections, 1)
+  assert.equal(tool.manifest.provider, 'smtp')
+  assert.ok(approved.proposal.result!.outputDigest)
+  assert.ok(!JSON.stringify(approved.proposal).includes(API_KEY))
+  assert.ok(writes.some((line) => line.includes('Message-ID: <') && line.includes(Buffer.from('Hello\n.\nWorld').toString('base64'))))
+  assert.equal((await service.approve(proposed.proposal.id, { id: 'human' })).ok, false)
+  assert.equal(connections, 1, 'repeated approval cannot send twice')
+  assert.throws(() => smtpNotificationTool({ host: 'smtp.example.com', username: 'user', password: '', from: 'qs@example.com', recipients: ['ops@example.com'] }), /username and password/)
+})
+
+test('SMTP: configuration selects native delivery explicitly and refuses missing credentials or unknown providers', () => {
+  const config = { provider: 'smtp', from: 'qs@example.com', recipients: ['ops@example.com'], smtp: { host: 'smtp.example.com', port: 465 } }
+  const env = { QUICKSILVER_SMTP_USERNAME: 'user', QUICKSILVER_SMTP_PASSWORD: API_KEY }
+  const tool = emailNotificationToolFromConfig(config, env)
+  assert.equal(tool.manifest.provider, 'smtp')
+  assert.equal(tool.manifest.requiresApproval, true)
+  assert.throws(() => emailNotificationToolFromConfig(config, {}), /username and password/)
+  assert.throws(() => emailNotificationToolFromConfig({ ...config, provider: 'typo' }, env), /Unknown email provider/)
+  assert.throws(() => emailNotificationToolFromConfig({ ...config, smtp: { host: 'smtp.example.com', port: '465' } }, env), /numeric TLS port/)
+  assert.notEqual(tool.configDigest, emailNotificationToolFromConfig({ ...config, smtp: { host: 'other.example.com' } }, env).configDigest)
+  assert.equal(emailNotificationToolFromConfig({ from: 'qs@example.com', recipients: ['ops@example.com'] }, { QUICKSILVER_EMAIL_API_KEY: API_KEY }).manifest.provider, 'resend')
+})
+
+test('SMTP: authentication refusal leaks no secret and never submits a message', async () => {
+  const writes: string[] = []
+  const tool = smtpNotificationTool({
+    host: 'smtp.example.com', username: 'user', password: API_KEY, from: 'qs@example.com', recipients: ['ops@example.com'],
+    connector: () => {
+      const socket = new Duplex({
+        read() {},
+        write(chunk, _encoding, callback) {
+          writes.push(chunk.toString())
+          this.push(chunk.toString().startsWith('EHLO') ? '250 AUTH PLAIN\r\n' : `535 rejected ${API_KEY}\r\n`)
+          callback()
+        },
+      })
+      queueMicrotask(() => { socket.emit('secureConnect'); socket.push('220 ready\r\n') })
+      return socket
+    },
+  })
+  await assert.rejects(tool.run(call('notification.send', { to: 'ops@example.com', subject: 's', text: 't' })), (error: Error) => /SMTP submission failed/.test(error.message) && !error.message.includes(API_KEY))
+  assert.equal(writes.some((line) => line.startsWith('MAIL FROM')), false)
+})
+
+test('SMTP: TLS failures, early closes, missing authentication and malformed replies fail closed', async () => {
+  for (const failure of ['tls', 'close', 'auth', 'multiline', 'oversized', 'recipient', 'data']) {
+    const writes: string[] = []
+    const tool = smtpNotificationTool({
+      host: 'smtp.example.com', username: 'user', password: API_KEY, from: 'qs@example.com', recipients: ['ops@example.com'],
+      connector: () => {
+        const socket = new Duplex({
+          read() {},
+          write(chunk, _encoding, callback) {
+            const line = chunk.toString()
+            writes.push(line)
+            if (line.startsWith('EHLO')) {
+              this.push(failure === 'auth' ? '250 no authentication\r\n' : failure === 'multiline' ? '250-first\r\n550 wrong code\r\n' : failure === 'oversized' ? '250 ' + 'x'.repeat(65536) + '\r\n' : '250 AUTH PLAIN\r\n')
+            } else if (line.startsWith('AUTH')) this.push('235 authenticated\r\n')
+            else if (line.startsWith('RCPT') && failure === 'recipient') this.push('550 refused\r\n')
+            else if (line.startsWith('DATA')) this.push('354 send message\r\n')
+            else if (line.startsWith('From:')) this.push('554 refused\r\n')
+            else this.push('250 accepted\r\n')
+            callback()
+          },
+        })
+        queueMicrotask(() => {
+          if (failure === 'tls') socket.destroy(new Error(`Certificate invalid ${API_KEY}`))
+          else if (failure === 'close') socket.destroy()
+          else { socket.emit('secureConnect'); socket.push('220 ready\r\n') }
+        })
+        return socket
+      },
+    })
+    await assert.rejects(tool.run(call('notification.send', { to: 'ops@example.com', subject: 's', text: 't' })), (error: Error) => /SMTP submission failed/.test(error.message) && !error.message.includes(API_KEY), failure)
+    if (failure !== 'data') assert.equal(writes.some((line) => line.startsWith('From:')), false, failure)
+  }
+})
+
+test('QCS: kernel client reaches dummy transport only with exact, human-bound kernel grants', async () => {
+  const key = { keyId: 'acme:qcs', secret: SECRET }
+  const principal = { tenant_id: 'acme', principal_id: 'person:owner' }
+  const binding = { runId: 'run:qcs', nodeId: 'send', workflowDigest: 'sha256:workflow', approvalDigest: 'sha256:human-approval', evidenceCount: 1 }
+  const adapter = new DummyAdapter()
+  const audit: string[] = []
+  const authority = new KernelQcsAuthority(key, async (_intent, context) => {
+    if (context.principal_id !== principal.principal_id) throw new Error('Unknown authenticated principal')
+    return binding
+  })
+  const qcs = new QcsImpl({ authority, adapters: [adapter], routes: { email: 'dummy' }, audit: async (record) => { audit.push(record.status) } })
+  const grant = (intent: QcsIntent): ExecutionAuthorizationRecord => issueExecutionAuthorization({
+    tenantId: intent.tenant_id, runId: binding.runId, nodeId: binding.nodeId,
+    actionFingerprint: intentFingerprint(intent), policySnapshot: 'sha256:policy', evidenceDigest: 'sha256:evidence',
+    evidenceCount: binding.evidenceCount, workflowDigest: binding.workflowDigest, approvalDigest: binding.approvalDigest,
+    capability: `qcs.${intent.operation}`, expiresAt: Date.now() + 60_000,
+  }, key)
+  const identity: AgentIdentity = { agent_id: 'agent:ops', display_name: 'Operations', roles: ['operator'], permissions: ['email'], channels: [{ channel_type: 'email', address: 'ops@example.com', metadata: {} }] }
+  const registration: QcsIntent = { ...principal, operation: 'register_agent', body: { identity: identity as never } }
+  await qcs.registerAgent(identity, { ...principal, authorization: grant(registration) })
+  const request: SendMessageRequest = { from_agent_id: identity.agent_id, to_external_address: 'owner@example.com', channel_type: 'email', payload: 'hello' }
+  const intent: QcsIntent = { ...principal, operation: 'send_message', body: { request: request as never, channel_type: 'email', from_address: 'ops@example.com', to_external_address: 'owner@example.com', adapter_id: 'dummy' } }
+  const record = grant(intent)
+  const context: QcsContext = { ...principal, authorization: record }
+  const client = new KernelQcsClient(qcs)
+  await assert.rejects(client.kernelSendMessage(identity.agent_id, request, principal), /authorization refused/)
+  await assert.rejects(client.kernelSendMessage(identity.agent_id, { ...request, payload: 'changed after approval' }, context), /authorization refused/)
+  await assert.rejects(client.kernelSendMessage(identity.agent_id, request, { ...context, principal_id: 'person:intruder' }), /authorization refused/)
+  await assert.rejects(client.kernelSendMessage(identity.agent_id, request, { ...context, authorization: { ...record, tenantId: 'other' } }), /authorization refused/)
+  const expired = issueExecutionAuthorization({ ...record, authorizationId: 'auth:expired', issuedAt: Date.now() - 5000, expiresAt: Date.now() - 1000 }, key, Date.now() - 5000)
+  await assert.rejects(client.kernelSendMessage(identity.agent_id, request, { ...principal, authorization: expired }), /authorization refused/)
+  assert.equal(adapter.messages.length, 0, 'all grant refusals happen before transport dispatch')
+  const simultaneous = await Promise.allSettled([
+    client.kernelSendMessage(identity.agent_id, request, context),
+    client.kernelSendMessage(identity.agent_id, request, context),
+  ])
+  assert.equal(simultaneous.filter((result) => result.status === 'fulfilled').length, 1)
+  assert.equal(adapter.messages.length, 1)
+  assert.equal(adapter.messages[0]!.tenant_id, 'acme')
+  assert.ok(audit.includes('refused') && audit.includes('simulated'))
+})
 
 test('email: only addresses on the list qualify, and look-alikes do not', () => {
   const list = ['ops@example.com', '@team.example.org']

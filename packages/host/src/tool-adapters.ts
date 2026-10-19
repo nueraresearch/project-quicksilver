@@ -4,6 +4,7 @@ import { isIP } from 'node:net'
 
 import { signWebhook } from '@quicksilver/kernel/triggers'
 
+import { sendSmtpMail, validateSmtpOptions, type SmtpOptions, type SmtpConnector } from './smtp.ts'
 import { sha256, type ToolDefinition } from './tool-executor.ts'
 
 /**
@@ -11,12 +12,13 @@ import { sha256, type ToolDefinition } from './tool-executor.ts'
  * POST to an allowed host. They run only after a different human approved the exact call and the
  * kernel-signed grant was checked (see actions.ts); everything here is a second wall, not the first.
  *
- *   notification.send  -> Resend. The recipient must be on the owner's list, so this is an operational
+ *   notification.send  -> SMTP or Resend. The recipient must be on the owner's list, so this is an operational
  *                         notice to your own people. It cannot reach a customer, which would need a WAES review.
  *   webhook.dispatch   -> HTTPS POST to a host on the owner's list, signed with the kernel webhook scheme.
  *
- * Both: https only, fixed provider or allow-listed host, no redirects, a timeout, a size cap, the
- * proposal's idempotency key sent along, and the secret never in a result or an error.
+ * HTTP adapters: https only, fixed provider or allow-listed host, no redirects, a timeout, a size cap,
+ * and the proposal's idempotency key sent along. SMTP uses verified TLS and a stable Message-ID,
+ * not provider-side deduplication. Secrets never appear in results or errors.
  * There is deliberately no real `sanity.mutate`: a generic "apply this mutation" tool is too broad to
  * approve safely. Department changes already have their own narrow executor.
  */
@@ -69,6 +71,42 @@ function emailProblem(input: unknown, recipients: readonly string[]): string | u
   if (typeof subject !== 'string' || !subject.trim() || subject.length > 200 || CONTROL.test(subject)) return 'subject must be 1 to 200 characters on one line.'
   if (typeof text !== 'string' || !text.trim() || text.length > 5000) return 'text must be 1 to 5000 characters.'
   return undefined
+}
+
+export function emailNotificationToolFromConfig(config: Record<string, unknown>, env: Readonly<Record<string, string | undefined>>): ToolDefinition {
+  const common = { from: typeof config.from === 'string' ? config.from : '', recipients: Array.isArray(config.recipients) ? config.recipients.filter((recipient): recipient is string => typeof recipient === 'string') : [] }
+  if (config.provider === 'smtp') {
+    const smtp = objectOf(config.smtp)
+    if (smtp.port !== undefined && typeof smtp.port !== 'number') throw new Error('SMTP needs a numeric TLS port.')
+    return smtpNotificationTool({
+      ...common,
+      host: typeof smtp.host === 'string' ? smtp.host : '',
+      port: smtp.port as number | undefined,
+      username: env[typeof smtp.usernameEnv === 'string' ? smtp.usernameEnv : 'QUICKSILVER_SMTP_USERNAME'] ?? '',
+      password: env[typeof smtp.passwordEnv === 'string' ? smtp.passwordEnv : 'QUICKSILVER_SMTP_PASSWORD'] ?? '',
+    })
+  }
+  if (config.provider !== undefined && config.provider !== 'resend') throw new Error('Unknown email provider; use smtp or resend.')
+  return resendNotificationTool({ ...common, apiKey: env[typeof config.apiKeyEnv === 'string' ? config.apiKeyEnv : 'QUICKSILVER_EMAIL_API_KEY'] ?? '' })
+}
+
+export function smtpNotificationTool(options: SmtpOptions & { from: string; recipients: readonly string[]; connector?: SmtpConnector }): ToolDefinition {
+  validateSmtpOptions(options)
+  if (!ADDRESS.test(options.from) || CONTROL.test(options.from)) throw new Error('SMTP needs a valid from address.')
+  if (!options.recipients.length) throw new Error('SMTP needs at least one allowed recipient.')
+  return {
+    manifest: { id: 'notification.send', contractVersion: 1, provider: 'smtp', access: 'side-effect', requiresApproval: true, description: 'Email an operational notice to an allowed internal recipient through SMTP.' },
+    live: true,
+    configDigest: sha256({ provider: 'smtp', host: options.host, port: options.port ?? 465, username: options.username, from: options.from, recipients: [...options.recipients].map((recipient) => recipient.toLowerCase()).sort() }),
+    validate: (input) => emailProblem(input, options.recipients),
+    run: async (call) => {
+      const problem = emailProblem(call.input, options.recipients)
+      if (problem) throw new Error(problem)
+      const { to, subject, text } = call.input as { to: string; subject: string; text: string }
+      const result = await sendSmtpMail(options, { from: options.from, to: to.trim().toLowerCase(), subject, text, idempotencyKey: `${call.tenantId}:${call.idempotencyKey}` }, options.connector)
+      return { executed: true, dryRun: false, provider: 'smtp', to: to.trim().toLowerCase(), messageId: result.messageId, inputDigest: sha256(call.input), idempotencyKey: call.idempotencyKey }
+    },
+  }
 }
 
 export function resendNotificationTool(options: EmailAdapterOptions): ToolDefinition {
