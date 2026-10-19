@@ -1,0 +1,16 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_metrics",
+  "info": { "singularName": "metric", "pluralName": "metrics", "displayName": "Metric" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "name": { "type": "string", "required": true },
+    "unit": { "type": "string" },
+    "currentValue": { "type": "decimal" },
+    "targetValue": { "type": "decimal" },
+    "observedAt": { "type": "datetime" },
+    "department": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.department", "inversedBy": "metrics" },
+    "evidence": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.evidence", "mappedBy": "metric" }
+  }
+}

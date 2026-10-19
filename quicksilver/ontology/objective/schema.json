@@ -1,0 +1,19 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_objectives",
+  "info": { "singularName": "objective", "pluralName": "objectives", "displayName": "Objective" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "title": { "type": "string", "required": true },
+    "description": { "type": "text" },
+    "status": { "type": "enumeration", "enum": ["draft", "active", "achieved", "cancelled"], "default": "draft" },
+    "organization": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.organization", "inversedBy": "objectives" },
+    "department": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.department", "inversedBy": "objectives" },
+    "parentObjective": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.objective", "inversedBy": "childObjectives" },
+    "childObjectives": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.objective", "mappedBy": "parentObjective" },
+    "workflows": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.workflow", "mappedBy": "objective" },
+    "evidence": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.evidence", "mappedBy": "objective" },
+    "decisions": { "type": "relation", "relation": "oneToMany", "target": "plugin::quicksilver.decision", "mappedBy": "objective" }
+  }
+}

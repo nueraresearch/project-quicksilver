@@ -1,0 +1,15 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_entities",
+  "info": { "singularName": "entity", "pluralName": "entities", "displayName": "Entity" },
+  "options": { "draftAndPublish": true },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "name": { "type": "string", "required": true },
+    "kind": { "type": "enumeration", "enum": ["human", "agent", "system", "organization"], "required": true },
+    "externalId": { "type": "string" },
+    "metadata": { "type": "json" },
+    "departments": { "type": "relation", "relation": "manyToMany", "target": "plugin::quicksilver.department", "inversedBy": "entities" },
+    "capabilities": { "type": "relation", "relation": "manyToMany", "target": "plugin::quicksilver.capability", "mappedBy": "entities" }
+  }
+}

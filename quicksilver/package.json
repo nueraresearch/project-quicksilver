@@ -1,0 +1,10 @@
+{
+  "name": "@quicksilver/strapi-plugin-quicksilver",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Quicksilver CMS Module plugin for a Strapi host",
+  "type": "module",
+  "main": "./server/src/index.ts",
+  "strapi": { "kind": "plugin", "name": "quicksilver", "displayName": "Quicksilver CMS Module" }
+}

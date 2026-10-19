@@ -1,0 +1,18 @@
+{
+  "kind": "collectionType",
+  "collectionName": "qs_decisions",
+  "info": { "singularName": "decision", "pluralName": "decisions", "displayName": "Decision" },
+  "options": { "draftAndPublish": false },
+  "attributes": {
+    "tenantId": { "type": "string", "required": true, "configurable": false },
+    "title": { "type": "string", "required": true },
+    "status": { "type": "enumeration", "enum": ["proposed", "approved", "rejected", "executed", "rolled-back"], "default": "proposed" },
+    "proposal": { "type": "json", "required": true },
+    "outcome": { "type": "json" },
+    "objective": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.objective", "inversedBy": "decisions" },
+    "workflow": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.workflow", "inversedBy": "decisions" },
+    "proposedBy": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.entity" },
+    "approvedBy": { "type": "relation", "relation": "manyToOne", "target": "plugin::quicksilver.entity" },
+    "evidence": { "type": "relation", "relation": "manyToMany", "target": "plugin::quicksilver.evidence", "inversedBy": "decisions" }
+  }
+}

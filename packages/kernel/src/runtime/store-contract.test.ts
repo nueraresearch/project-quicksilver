@@ -4,7 +4,7 @@
  * WASM Postgres, when `@electric-sql/pglite` is installed). Run with:
  *   node --experimental-strip-types --no-warnings --test packages/kernel/src/runtime/store-contract.test.ts
  */
-import { test } from 'node:test'
+import { afterEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -25,11 +25,12 @@ const graph: WorkflowGraph = {
   edges: [{ id: 'e1', from: 'start', to: 'agent-1' }, { id: 'e2', from: 'agent-1', to: 'done' }],
 }
 
-type Backend = { name: string; open(): Promise<WorkflowRunStore> }
+type EmbeddedSqlClient = SqlClient & { close(): Promise<void> }
+type Backend = { name: string; open(): Promise<WorkflowRunStore>; close?(store: WorkflowRunStore): Promise<void> }
 
-async function pglite(): Promise<{ create(): Promise<SqlClient> } | undefined> {
+async function pglite(): Promise<{ create(): Promise<EmbeddedSqlClient> } | undefined> {
   try {
-    const mod = await import('@electric-sql/pglite') as { PGlite: { create(): Promise<SqlClient> } }
+    const mod = await import('@electric-sql/pglite') as { PGlite: { create(): Promise<EmbeddedSqlClient> } }
     return { create: () => mod.PGlite.create() }
   } catch {
     return undefined
@@ -37,21 +38,42 @@ async function pglite(): Promise<{ create(): Promise<SqlClient> } | undefined> {
 }
 
 const embedded = await pglite()
+const embeddedClients = new WeakMap<WorkflowRunStore, EmbeddedSqlClient>()
 const backends: Backend[] = [
   { name: 'memory', open: async () => new InMemoryWorkflowRunStore() },
   { name: 'file', open: async () => FileWorkflowRunStore.open(join(await mkdtemp(join(tmpdir(), 'qs-contract-')), 'runs.jsonl'), { fsync: false }) },
   ...(embedded ? [{
     name: 'postgres',
     open: async () => {
-      const store = new PostgresWorkflowRunStore(await embedded.create())
-      await store.migrate()
-      await store.migrate() // idempotent
-      return store
+      const client = await embedded.create()
+      const store = new PostgresWorkflowRunStore(client)
+      try {
+        await store.migrate()
+        await store.migrate() // idempotent
+        embeddedClients.set(store, client)
+        return store
+      } catch (error) {
+        await client.close()
+        throw error
+      }
     },
+    close: async (store: WorkflowRunStore) => { await embeddedClients.get(store)?.close() },
   }] : []),
 ]
 
 if (!embedded) test('Postgres contract', { skip: 'install @electric-sql/pglite to run the Postgres store contract' }, () => {})
+
+const openedStores: Array<{ backend: Backend; store: WorkflowRunStore }> = []
+
+async function openBackend(backend: Backend): Promise<WorkflowRunStore> {
+  const store = await backend.open()
+  openedStores.push({ backend, store })
+  return store
+}
+
+afterEach(async () => {
+  for (const { backend, store } of openedStores.splice(0).reverse()) await backend.close?.(store)
+})
 
 for (const backend of backends) {
   function queueOn(store: WorkflowRunStore, opts: Partial<ConstructorParameters<typeof WorkflowRunQueue>[0]> = {}) {
@@ -61,7 +83,7 @@ for (const backend of backends) {
   }
 
   test(`[${backend.name}] records round-trip as copies, filters work, and events are sequenced`, async () => {
-    const store = await backend.open()
+    const store = await openBackend(backend)
     const queue = queueOn(store)
     await queue.enqueue({ graph, input: { n: 1, nested: { list: [1, 'two', null] } }, tenantId: 'acme', idempotencyKey: 'k1', priority: 7 })
     await queue.enqueue({ graph, input: { n: 2 }, tenantId: 'globex' })
@@ -85,7 +107,7 @@ for (const backend of backends) {
   })
 
   test(`[${backend.name}] tenant-scoped host queues cannot enqueue, claim, read, or mutate another tenant's runs`, async () => {
-    const store = await backend.open()
+    const store = await openBackend(backend)
     const acme = queueOn(store, { tenantId: 'acme', newRunId: () => `${backend.name}-acme-run` })
     const globex = queueOn(store, { tenantId: 'globex', newRunId: () => `${backend.name}-globex-run` })
     const a = await acme.enqueue({ graph, input: 'acme', tenantId: 'acme', priority: 1 })
@@ -107,7 +129,7 @@ for (const backend of backends) {
   })
 
   test(`[${backend.name}] duplicates are refused and compare-and-set is revision-guarded`, async () => {
-    const store = await backend.open()
+    const store = await openBackend(backend)
     const queue = queueOn(store)
     const admitted = await queue.enqueue({ graph, input: 1, tenantId: 'acme', idempotencyKey: 'dup' })
     assert.ok(admitted.accepted)
@@ -123,7 +145,7 @@ for (const backend of backends) {
   })
 
   test(`[${backend.name}] concurrent claims hand each run to exactly one worker`, async () => {
-    const store = await backend.open()
+    const store = await openBackend(backend)
     const queue = queueOn(store)
     for (let i = 0; i < 5; i += 1) await queue.enqueue({ graph, input: i, tenantId: 't', maxAttempts: 1 })
     const claims = await Promise.all(Array.from({ length: 12 }, (_, i) => queue.claim(`w${i}`)))
@@ -133,7 +155,7 @@ for (const backend of backends) {
   })
 
   test(`[${backend.name}] separate queue instances (other processes) still respect the per-tenant limit`, async () => {
-    const store = await backend.open()
+    const store = await openBackend(backend)
     const producer = queueOn(store)
     for (let i = 0; i < 6; i += 1) await producer.enqueue({ graph, input: i, tenantId: 't' })
     const hosts = Array.from({ length: 4 }, () => queueOn(store, { maxRunningPerTenant: 2 }))
@@ -147,7 +169,7 @@ for (const backend of backends) {
   })
 
   test(`[${backend.name}] idempotent enqueue races resolve to one run`, async () => {
-    const store = await backend.open()
+    const store = await openBackend(backend)
     const queue = queueOn(store)
     const results = await Promise.all(Array.from({ length: 6 }, () => queue.enqueue({ graph, input: { e: 1 }, tenantId: 't', idempotencyKey: 'evt-9' })))
     const ids = new Set(results.map((r) => r.accepted && r.run.runId))
@@ -156,7 +178,7 @@ for (const backend of backends) {
   })
 
   test(`[${backend.name}] a worker completes queued runs end to end`, async () => {
-    const store = await backend.open()
+    const store = await openBackend(backend)
     const queue = queueOn(store)
     await queue.enqueue({ graph, input: 'a', tenantId: 't' })
     await queue.enqueue({ graph, input: 'b', tenantId: 't' })
