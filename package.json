@@ -17,6 +17,7 @@
     "dev:web": "npm run dev --workspace=@quicksilver/web",
     "dev:studio": "npm run dev --workspace=@quicksilver/studio",
     "host": "npm run start --workspace=@quicksilver/host --",
+    "qcs:test": "node --experimental-strip-types --no-warnings --test packages/qcs/tests/qcs.test.ts",
     "onboard": "npm run onboard --workspace=@quicksilver/host --",
     "build": "npm run build --workspaces --if-present",
     "verify": "node scripts/verify.mjs",

@@ -8,6 +8,8 @@ by Quicksilver, our Sanity Challenge 2026 submission, which lives separately at
 - [Product definition](NUERA-QUICKSILVER-PRODUCT.md): what Nuera Quicksilver is being built to become (layers, modes, playbooks, goals)
 - [NQC Kernel and Quicksilver Engine](nqc/README.md)
 - [Platform architecture](platform/README.md)
+- [Native local operation](platform/native-local.md): self-contained installation target, migration stages, and built-in SMTP setup
+- [Communications substrate](../packages/qcs/README.md): portable channel contracts, authority boundary, adapter scaffolds, and kernel integration
 - [API contract and OpenAPI](api/api-contract.md)
 - [Web governed-agent profiles](platform/agent-profiles.md): profile bindings, reviewed resources, and deployment-scoped memory limits
 - [Implementation roadmap](NUERA-QUICKSILVER-ROADMAP.md)

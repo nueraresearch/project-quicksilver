@@ -28,6 +28,7 @@
     "@quicksilver/agent": "*",
     "@quicksilver/aura": "*",
     "@quicksilver/kernel": "*",
+    "@quicksilver/qcs": "*",
     "@sanity/client": "^8.9.0",
     "pg": "^8.23.1"
   },
