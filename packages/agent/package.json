@@ -36,9 +36,9 @@
     "@ai-sdk/google": "^3.0.0",
     "@ai-sdk/mcp": "^1.0.0",
     "@ai-sdk/openai": "^3.0.0",
-    "@ai-sdk/openai-compatible": "^3.0.63",
+    "@ai-sdk/openai-compatible": "^3.0.80",
     "@quicksilver/kernel": "*",
-    "ai": "^7.0.127",
+    "ai": "^7.0.156",
     "zod": "^3.25.76",
     "@quicksilver/aura": "*"
   },
