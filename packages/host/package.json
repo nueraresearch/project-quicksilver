@@ -24,12 +24,12 @@
     "mcp:tasks": "node --experimental-strip-types --no-warnings src/mcp-tasks.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@quicksilver/agent": "*",
     "@quicksilver/aura": "*",
     "@quicksilver/kernel": "*",
     "@quicksilver/qcs": "*",
-    "@sanity/client": "^8.9.0",
+    "@sanity/client": "^8.13.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
