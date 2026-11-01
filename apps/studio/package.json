@@ -28,7 +28,7 @@
     "@sanity/vision": "^5.31.2",
     "react": "^19.2.2",
     "react-dom": "^19.2.2",
-    "sanity": "^5.1.0",
+    "sanity": "^6.21.0",
     "sanity-plugin-workflow": "^3.0.47",
     "styled-components": "^6.1.15"
   },
