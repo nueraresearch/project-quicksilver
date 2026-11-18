@@ -22,7 +22,7 @@
     "build": "npm run build --workspaces --if-present",
     "verify": "node scripts/verify.mjs",
     "resend:check": "node scripts/resend-check.mjs",
-    "parity:test": "node --test scripts/parity-matrix.test.mjs scripts/test-registration.test.mjs scripts/azure-template.test.mjs scripts/principal-token.test.mjs scripts/resend-check.test.mjs",
+    "parity:test": "node --test scripts/parity-matrix.test.mjs scripts/test-registration.test.mjs scripts/azure-template.test.mjs scripts/principal-token.test.mjs scripts/resend-check.test.mjs scripts/native-c0-gate.test.mjs",
     "audit:deps": "node scripts/dependency-audit.mjs",
     "sdk:test": "node --experimental-strip-types --no-warnings --test packages/sdk/src/index.test.ts",
     "schema:deploy": "npm run schema:deploy --workspace=@quicksilver/studio --",
@@ -67,7 +67,8 @@
     "operator": "node --experimental-strip-types --no-warnings packages/operator/src/cli.ts",
     "operator:test": "node --experimental-strip-types --no-warnings --test packages/operator/src/operator.test.ts packages/operator/src/operator-cli.test.ts packages/operator/src/channels.test.ts packages/operator/src/automations.test.ts packages/operator/src/setup.test.ts packages/operator/src/web-search.test.ts packages/operator/src/review.test.ts packages/operator/src/calendar.test.ts packages/operator/src/ical-adapter.test.ts packages/operator/src/routines.test.ts packages/operator/src/communications.test.ts",
     "operator:gateway": "node --experimental-strip-types --no-warnings packages/operator/src/gateway-cli.ts",
-    "operator:auto": "node --experimental-strip-types --no-warnings packages/operator/src/automations-cli.ts"
+    "operator:auto": "node --experimental-strip-types --no-warnings packages/operator/src/automations-cli.ts",
+    "native:c0:gate": "node scripts/native-c0-gate.mjs"
   },
   "engines": {
     "node": ">=22.6"
