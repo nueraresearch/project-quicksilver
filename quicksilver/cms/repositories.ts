@@ -20,11 +20,14 @@ import {
   CrossTenantRelationError,
   MalformedQueryError,
   NotFoundError,
+  RevisionConflictError,
   UnresolvedRelationError,
 } from './errors.ts'
 import { MemoryStore, digestOf, type StoredRow } from './store.ts'
+import { linkRelation, relationById } from './relations.ts'
+import { requireTenant, type TenantId } from './tenancy.ts'
 
-export type TenantId = string
+export { requireTenant, type TenantId } from './tenancy.ts'
 
 export interface PageRequest {
   cursor?: string
@@ -53,14 +56,6 @@ export interface ContentRecord {
 }
 
 const MAX_LIMIT = 100
-
-/** The one tenant check every repository and query goes through. */
-export function requireTenant(tenantId: unknown): TenantId {
-  if (typeof tenantId !== 'string' || tenantId.trim().length === 0) {
-    throw new MalformedQueryError('tenantId is required and must not be blank')
-  }
-  return tenantId
-}
 
 function encodeCursor(tenantId: TenantId, id: string): string {
   return Buffer.from(JSON.stringify({ tenant: tenantId, id })).toString('base64url')
@@ -283,18 +278,269 @@ export class ObjectiveRepository extends BaseRepository<ObjectiveRecord> {
   }
 }
 
+function link(store: MemoryStore, tenantId: TenantId, relationId: string, sourceId: string, targetId: string, options: WriteOptions): void {
+  linkRelation(store, tenantId, relationById(relationId), sourceId, targetId, options)
+}
+
+/** B06: a department member is a same-tenant entity. */
+export class DepartmentRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_departments')
+  }
+
+  async addMember(tenantId: TenantId, departmentId: string, entityId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'department.members', departmentId, entityId, options)
+  }
+}
+
+/** B06: authorizing an entity for a capability writes the same-tenant join row. */
+export class CapabilityRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_capabilities')
+  }
+
+  async authorizeEntity(tenantId: TenantId, capabilityId: string, entityId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'capability.authorizedEntities', capabilityId, entityId, options)
+  }
+}
+
+function appendDecisionEvent(
+  store: MemoryStore,
+  tenantId: TenantId,
+  decisionId: string,
+  eventType: string,
+  fromStatus: string | null,
+  toStatus: string,
+  actorId: string,
+): void {
+  const events = store
+    .rows('qs_decision_events')
+    .filter((row) => row.tenant_id === tenantId && row.decision_id === decisionId)
+    .sort((left, right) => Number(left.seq) - Number(right.seq))
+  const seq = events.reduce((max, row) => Math.max(max, Number(row.seq)), 0) + 1
+  const previous = events.at(-1) ?? null
+  const at = store.clock.now()
+  const digest = digestOf({ decisionId, seq, eventType, fromStatus, toStatus, actorId, at })
+  store.insert('qs_decision_events', {
+    tenant_id: tenantId,
+    id: store.ids.next('evt'),
+    decision_id: decisionId,
+    seq,
+    event_id: store.ids.next('ev'),
+    event_type: eventType,
+    from_status: fromStatus,
+    to_status: toStatus,
+    actor_id: actorId,
+    at,
+    payload_digest: digest,
+    prev_hash: previous?.hash ?? null,
+    hash: digest,
+  })
+}
+
+export type DecisionContextTarget = { entityId?: string; capabilityId?: string; policyId?: string }
+
+/** B07: exactly one typed context target, all same-tenant, one decision event. */
+export class DecisionRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_decisions')
+  }
+
+  async setContext(tenantId: TenantId, decisionId: string, target: DecisionContextTarget, options: WriteOptions): Promise<ContentRecord> {
+    const tenant = requireTenant(tenantId)
+    if (!options || typeof options.actorId !== 'string' || !options.actorId.trim()) {
+      throw new MalformedQueryError('actorId is required')
+    }
+    const decision = this.store.findById(this.table, tenant, decisionId)
+    if (!decision) throw new NotFoundError()
+
+    const provided = (['entityId', 'capabilityId', 'policyId'] as const).filter((key) => target?.[key] !== undefined)
+    if (provided.length !== 1) throw new MalformedQueryError('exactly one context target type is required')
+    const key = provided[0]!
+    const table = key === 'entityId' ? 'qs_entities' : key === 'capabilityId' ? 'qs_capabilities' : 'qs_policies'
+    const targetId = target[key]!
+
+    if (!this.store.findById(table, tenant, targetId)) {
+      if (this.store.existsInAnotherTenant(table, tenant, targetId)) throw new CrossTenantRelationError()
+      throw new UnresolvedRelationError()
+    }
+
+    const at = this.store.clock.now()
+    const updated = this.store.replace(this.table, tenant, decisionId, {
+      context_entity_id: key === 'entityId' ? targetId : null,
+      context_capability_id: key === 'capabilityId' ? targetId : null,
+      context_policy_id: key === 'policyId' ? targetId : null,
+      revision: Number(decision.revision ?? 0) + 1,
+      updated_at: at,
+      updated_by: options.actorId,
+    })
+    appendDecisionEvent(this.store, tenant, decisionId, 'context-linked', String(decision.status ?? 'proposed'), String(decision.status ?? 'proposed'), options.actorId)
+    return updated as ContentRecord
+  }
+}
+
+/** B08: one CAS winner per head, and a failed audit append leaves the head alone. */
+export class WorkflowPublicationHeadRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_workflow_publication_heads')
+  }
+
+  async cas(tenantId: TenantId, graphId: string, expectedCasRevision: number, activeVersion: number, options: WriteOptions): Promise<ContentRecord> {
+    return casPublicationHead(this.store, tenantId, graphId, expectedCasRevision, activeVersion, options, {
+      headTable: 'qs_workflow_publication_heads',
+      keyColumn: 'graph_id',
+      versionTable: 'qs_automation_workflows',
+      versionColumn: 'graph_id',
+      auditTable: 'qs_workflow_publication_audits',
+      auditEvent: 'publication-head-moved',
+    })
+  }
+}
+
+export class AgentPublicationHeadRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_agent_publication_heads')
+  }
+
+  async cas(tenantId: TenantId, agentId: string, expectedCasRevision: number, activeVersion: number, options: WriteOptions): Promise<ContentRecord> {
+    return casPublicationHead(this.store, tenantId, agentId, expectedCasRevision, activeVersion, options, {
+      headTable: 'qs_agent_publication_heads',
+      keyColumn: 'agent_id',
+      versionTable: 'qs_agent_definitions',
+      versionColumn: 'agent_id',
+      auditTable: 'qs_agent_publication_audits',
+      auditEvent: 'agent-publication-head-moved',
+    })
+  }
+}
+
+function casPublicationHead(
+  store: MemoryStore,
+  tenantId: TenantId,
+  keyValue: string,
+  expectedCasRevision: number,
+  activeVersion: number,
+  options: WriteOptions,
+  config: { headTable: string; keyColumn: string; versionTable: string; versionColumn: string; auditTable: string; auditEvent: string },
+): ContentRecord {
+  const tenant = requireTenant(tenantId)
+  if (!options || typeof options.actorId !== 'string' || !options.actorId.trim()) {
+    throw new MalformedQueryError('actorId is required')
+  }
+  if (!Number.isInteger(expectedCasRevision)) throw new MalformedQueryError('expectedCasRevision is required')
+  if (!Number.isInteger(activeVersion)) throw new MalformedQueryError('activeVersion is required')
+
+  const head = store.rows(config.headTable).find((row) => row.tenant_id === tenant && row[config.keyColumn] === keyValue)
+  if (!head) throw new NotFoundError()
+
+  const version = store
+    .rows(config.versionTable)
+    .find((row) => row.tenant_id === tenant && row[config.versionColumn] === keyValue && Number(row.version) === activeVersion)
+  if (!version) {
+    // The version is keyed by (tenant, graph/agent, version), so a same-number
+    // version that exists only in another tenant is the cross-tenant case.
+    const foreign = store
+      .rows(config.versionTable)
+      .some(
+        (row) =>
+          row.tenant_id !== tenant && row[config.versionColumn] === keyValue && Number(row.version) === activeVersion,
+      )
+    if (foreign) throw new CrossTenantRelationError()
+    throw new UnresolvedRelationError()
+  }
+
+  if (Number(head.cas_revision) !== expectedCasRevision) throw new RevisionConflictError()
+  if (store.consumeAuditFault('publication.cas', config.auditTable)) throw new AuditWriteFailedError()
+
+  const at = store.clock.now()
+  const updated = store.replace(config.headTable, tenant, String(head.id), {
+    active_version: activeVersion,
+    cas_revision: expectedCasRevision + 1,
+    updated_at: at,
+  })
+  store.insert(config.auditTable, {
+    tenant_id: tenant,
+    id: store.ids.next('aud'),
+    seq: store.rows(config.auditTable).filter((row) => row.tenant_id === tenant).length + 1,
+    event: config.auditEvent,
+    [config.keyColumn]: keyValue,
+    version: activeVersion,
+    actor_id: options.actorId,
+    at,
+    detail: null,
+  })
+  return updated as ContentRecord
+}
+
+/** B09: operator records link only to same-tenant targets. */
+export class CommitmentRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_commitments')
+  }
+
+  async linkDecision(tenantId: TenantId, id: string, decisionId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'commitment.linkedDecision', id, decisionId, options)
+  }
+}
+
+export class ScheduledItemRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_scheduled_items')
+  }
+
+  async linkCommitment(tenantId: TenantId, id: string, commitmentId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'scheduledItem.linkedCommitment', id, commitmentId, options)
+  }
+
+  async linkDecision(tenantId: TenantId, id: string, decisionId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'scheduledItem.linkedDecision', id, decisionId, options)
+  }
+
+  async linkContact(tenantId: TenantId, id: string, contactId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'scheduledItem.linkedContact', id, contactId, options)
+  }
+}
+
+export class DraftedCommunicationRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_drafted_communications')
+  }
+
+  async linkContact(tenantId: TenantId, id: string, contactId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'draftedCommunication.contact', id, contactId, options)
+  }
+
+  async linkCommitment(tenantId: TenantId, id: string, commitmentId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'draftedCommunication.commitment', id, commitmentId, options)
+  }
+
+  async linkDecision(tenantId: TenantId, id: string, decisionId: string, options: WriteOptions): Promise<void> {
+    link(this.store, tenantId, 'draftedCommunication.decision', id, decisionId, options)
+  }
+}
+
 export type RepositoryMap = Record<string, BaseRepository<ContentRecord>>
 
 /** Constructs one repository per catalog store; A02 requires all of them. */
 export function createRepositories(store: MemoryStore): RepositoryMap {
+  const specialized: Record<string, new (store: MemoryStore) => BaseRepository<ContentRecord>> = {
+    OrganizationRepository,
+    ObjectiveRepository,
+    DepartmentRepository,
+    CapabilityRepository,
+    DecisionRepository,
+    WorkflowPublicationHeadRepository,
+    AgentPublicationHeadRepository,
+    CommitmentRepository,
+    ScheduledItemRepository,
+    DraftedCommunicationRepository,
+  }
   const repositories: RepositoryMap = {}
   for (const definition of C1_STORES) {
-    repositories[definition.repository] =
-      definition.name === 'qs_organizations'
-        ? (new OrganizationRepository(store) as unknown as BaseRepository<ContentRecord>)
-        : definition.name === 'qs_objectives'
-          ? (new ObjectiveRepository(store) as unknown as BaseRepository<ContentRecord>)
-          : new BaseRepository<ContentRecord>(store, definition.name)
+    const Specialized = specialized[definition.repository]
+    repositories[definition.repository] = Specialized
+      ? new Specialized(store)
+      : new BaseRepository<ContentRecord>(store, definition.name)
   }
   return repositories
 }

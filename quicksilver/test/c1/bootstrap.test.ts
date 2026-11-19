@@ -12,7 +12,14 @@ import { after, test } from 'node:test'
 
 import { C1_COLLECTIONS, C1_DERIVED_STORES, C1_STORES, EXCLUDED_AUTH_STORES } from '../../cms/catalog.ts'
 import { MalformedQueryError, RepositoryError } from '../../cms/errors.ts'
-import { C1_QUERY_CONTRACTS } from '../../cms/queries.ts'
+import {
+  findContradictions,
+  getCapabilityGraph,
+  getDecisionHistory,
+  getEvidenceForMetric,
+  getObjectiveTree,
+  getWorkflowDAG,
+} from '../../cms/queries.ts'
 import type { OrganizationRepository } from '../../cms/repositories.ts'
 import { FORBIDDEN_ENV, TENANT_A, TENANT_B, clearForbiddenEnv, freshFixture } from './fixtures/two-tenants.ts'
 
@@ -120,10 +127,13 @@ test('C1-A03 refuses a missing or blank tenant with MalformedQuery and never sub
   await rejectsMalformed(organizations.list(undefined as unknown as string, { limit: 10 }))
   await rejectsMalformed(organizations.create(undefined as unknown as string, ORGANIZATION, { actorId: 'principal-a' }))
 
-  for (const contract of C1_QUERY_CONTRACTS) {
-    await rejectsMalformed((contract as (tenantId: unknown) => Promise<unknown>)(undefined))
-    await rejectsMalformed((contract as (tenantId: unknown) => Promise<unknown>)(''))
-  }
+  // Every contract refuses a missing or blank tenant before it reads a store.
+  await rejectsMalformed(getCapabilityGraph(store, undefined as unknown as string))
+  await rejectsMalformed(findContradictions(store, '   '))
+  await rejectsMalformed(getWorkflowDAG(store, undefined as unknown as string, 'shared-graph'))
+  await rejectsMalformed(getObjectiveTree(store, ''))
+  await rejectsMalformed(getEvidenceForMetric(store, undefined as unknown as string, 'metric'))
+  await rejectsMalformed(getDecisionHistory(store, ''))
 
   assert.equal(store.rawDump(TENANT_B, 'qs_organizations').length, 0, 'the environment value must not write rows')
   assert.equal(store.rawDump(TENANT_A, 'qs_organizations').length, 0)
