@@ -22,7 +22,7 @@ Repository errors are the C1 contract: `NotFound`, `CrossTenantRelation`, `Revis
 
 ### 2.1 Runner and planned files
 
-The implementation adds one command. It does not exist in this change, so C1 cannot exit yet.
+The implementation adds one command. It is wired as `npm run native:c1:test` and refuses closed while the files below are absent, so C1 cannot exit yet.
 
 ```bash
 npm run native:c1:test
