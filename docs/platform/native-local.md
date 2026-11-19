@@ -74,6 +74,53 @@ audit records and fail-closed execution apply equally to local deployments.
 Local credentials can be generated during setup; no external identity account
 should be required for a single-owner installation.
 
+## Capability matrix and removal gate
+
+The parity inventory is versioned in [native-capabilities.json](native-capabilities.json)
+(version 1, updated 2026-11-19). It records, per provider feature, the native status
+(`native`, `partial`, `absent`), whether an external account is required, the
+evidence path, the known gap, and the R1 disposition.
+
+The gate is executable and fail-closed:
+
+```sh
+npm run native:gate          # exit 0 only when every core capability is native
+node scripts/native-capability-matrix.mjs --json
+```
+
+Exit codes: `0` the removal gate passes; `1` blocked, with each non-native core
+capability and its gap printed; `2` the matrix itself is missing, empty,
+malformed, references a missing evidence path, or claims `native` without a
+test as evidence. A blocked gate is the expected state today: local BYO-model
+planning is the only native core row, the ontology scaffold, tenant-scoped query
+contracts, API response contracts, tenant isolation, SMTP submission and the
+migration rehearsal harness are partial, and the remaining Sanity content
+capabilities, local identity, model provisioning, inbound email, STARTTLS
+submission and live native delivery are absent.
+Sanity, OIDC and Resend stay required for those features; removing any of them
+before its rows are native would violate the gate and R1.
+
+### Migration rehearsal harness
+
+`scripts/native-migration-rehearsal.mjs` is the rehearsal mechanism the gate
+requires, over exported JSONL keyed by `_id`:
+
+```sh
+npm run native:rehearse -- compare --source source.jsonl --target target.jsonl
+npm run native:rehearse -- snapshot --source source.jsonl --out rehearsal/
+npm run native:rehearse -- verify --snapshot rehearsal/
+npm run native:rehearse -- restore --snapshot rehearsal/ --target restored.jsonl
+```
+
+It prints source and target counts and overall SHA-256 digests, refuses empty
+datasets and duplicate ids, exits 1 on any missing, extra or changed record, and
+writes a snapshot manifest with a per-record digest. `verify` detects a tampered
+snapshot; `restore` is the rollback path and re-verifies the written file. Exit
+codes are 0 clean, 1 diverged or corrupt, 2 invalid input. It proves
+export-to-export parity and rollback mechanics. It does not prove a Sanity
+extraction, tenant refusals, a deployed restart/restore, or owner sign-off; the
+matrix row stays `partial` until those exist.
+
 ## Delivery Order
 
 These are proposed implementation stages, not claims of completed migration.
