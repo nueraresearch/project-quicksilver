@@ -43,9 +43,15 @@ function digestOf(record) {
   return createHash('sha256').update(JSON.stringify(canonical(record))).digest('hex')
 }
 
+/**
+ * Code-unit order, never locale collation: a digest is cutover evidence, so the
+ * same dataset must produce the same digest on every machine.
+ */
+const byId = (left, right) => (String(left._id) < String(right._id) ? -1 : String(left._id) > String(right._id) ? 1 : 0)
+
 function overallDigest(records) {
   const lines = [...records]
-    .sort((left, right) => String(left._id).localeCompare(String(right._id)))
+    .sort(byId)
     .map((record) => `${record._id}:${digestOf(record)}`)
   return createHash('sha256').update(lines.join('\n')).digest('hex')
 }
@@ -75,7 +81,7 @@ function loadJsonl(file) {
 
 function serialise(records) {
   return `${[...records]
-    .sort((left, right) => String(left._id).localeCompare(String(right._id)))
+    .sort(byId)
     .map((record) => JSON.stringify(canonical(record)))
     .join('\n')}\n`
 }
@@ -121,7 +127,7 @@ function snapshot(source, outDir) {
     count: source.length,
     digest: overallDigest(source),
     records: [...source]
-      .sort((left, right) => String(left._id).localeCompare(String(right._id)))
+      .sort(byId)
       .map((record) => ({ id: record._id, digest: digestOf(record) })),
   }
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
@@ -144,6 +150,12 @@ function readSnapshot(dir) {
   if (!Number.isInteger(manifest.count) || manifest.count < 1) fail('snapshot manifest has no positive count')
   if (typeof manifest.digest !== 'string' || !/^[0-9a-f]{64}$/.test(manifest.digest)) fail('snapshot manifest digest is invalid')
   if (!Array.isArray(manifest.records)) fail('snapshot manifest has no record digests')
+  if (manifest.records.some((entry) => !entry || typeof entry.id !== 'string' || !entry.id.trim())) {
+    fail('snapshot manifest has a record digest with no id')
+  }
+  if (new Set(manifest.records.map((entry) => entry.id)).size !== manifest.records.length) {
+    fail('snapshot manifest repeats a record id')
+  }
   const records = loadJsonl(recordsPath)
   return { manifest, records, recordsPath, manifestPath }
 }

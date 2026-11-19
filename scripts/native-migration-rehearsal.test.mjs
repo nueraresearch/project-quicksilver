@@ -105,6 +105,29 @@ test('a snapshot verifies, detects tampering and never overwrites itself', () =>
   assert.match(corrupt.stdout, /SNAPSHOT VERIFY FAILED/)
 })
 
+test('record order is code-unit, not locale-collated, so a digest cannot vary by machine', () => {
+  // 'B' precedes 'a' by code unit but follows it under ICU collation, so a
+  // locale-sensitive sort would change the digest of the same dataset.
+  const source = file('order-source.jsonl', jsonl([{ _id: 'a', value: 1 }, { _id: 'B', value: 2 }]))
+  const out = path.join(temp, 'order-snapshot')
+  assert.equal(run(['snapshot', '--source', source, '--out', out]).status, 0)
+  const manifest = JSON.parse(readFileSync(path.join(out, 'manifest.json'), 'utf8'))
+  assert.deepEqual(manifest.records.map((entry) => entry.id), ['B', 'a'])
+})
+
+test('a manifest that repeats a record id is invalid input, not a verify failure', () => {
+  const source = file('dup-manifest-source.jsonl', jsonl(original))
+  const out = path.join(temp, 'dup-manifest-snapshot')
+  assert.equal(run(['snapshot', '--source', source, '--out', out]).status, 0)
+  const manifestPath = path.join(out, 'manifest.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  manifest.records = [manifest.records[0], manifest.records[0]]
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  const result = run(['verify', '--snapshot', out])
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /repeats a record id/)
+})
+
 test('restore writes the snapshot back and verifies the digest', () => {
   const source = file('restore-source.jsonl', jsonl(original))
   const out = path.join(temp, 'restore-snapshot')
