@@ -602,6 +602,10 @@ export class DecisionRepository extends BaseRepository<ContentRecord> {
       throw new UnresolvedRelationError()
     }
 
+    // The event is the obligation: a failed append leaves the projection and
+    // the hash chain exactly as they were (E04).
+    if (this.store.consumeAuditFault('decision.event', 'qs_decision_events')) throw new AuditWriteFailedError()
+
     const at = this.store.clock.now()
     const updated = this.store.replace(this.table, tenant, decisionId, {
       context_entity_id: key === 'entityId' ? targetId : null,
@@ -613,6 +617,43 @@ export class DecisionRepository extends BaseRepository<ContentRecord> {
     })
     appendDecisionEvent(this.store, tenant, decisionId, 'context-linked', String(decision.status ?? 'proposed'), String(decision.status ?? 'proposed'), options.actorId)
     return updated as ContentRecord
+  }
+}
+
+/**
+ * E05: an observation is the authority and the metric row is its projection;
+ * a failed observation append leaves the projection untouched.
+ */
+export class MetricRepository extends BaseRepository<ContentRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_metrics')
+  }
+
+  async observe(tenantId: TenantId, metricId: string, value: number, options: WriteOptions): Promise<ContentRecord> {
+    const tenant = requireTenant(tenantId)
+    if (!options || typeof options.actorId !== 'string' || !options.actorId.trim()) {
+      throw new MalformedQueryError('actorId is required')
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new MalformedQueryError('value must be a finite number')
+    const metric = this.store.findById(this.table, tenant, metricId)
+    if (!metric) throw new NotFoundError()
+    if (this.store.consumeAuditFault('metric.observe', 'qs_metric_observations')) throw new AuditWriteFailedError()
+
+    const at = this.store.clock.now()
+    this.store.insert('qs_metric_observations', {
+      tenant_id: tenant,
+      id: this.store.ids.next('obs'),
+      metric_id: metricId,
+      value,
+      observed_at: at,
+      actor_id: options.actorId,
+    })
+    return this.store.replace(this.table, tenant, metricId, {
+      value,
+      revision: Number(metric.revision ?? 0) + 1,
+      updated_at: at,
+      updated_by: options.actorId,
+    }) as ContentRecord
   }
 }
 
@@ -779,6 +820,31 @@ export class AppendOnlyRepository extends BaseRepository<ContentRecord> {
   }
 }
 
+/** E07: the audit store's only write is an append, and its failure is surfaced. */
+export class DepartmentAuditRepository extends AppendOnlyRepository {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_department_execution_audits')
+  }
+
+  async append(tenantId: TenantId, entry: Record<string, unknown>, options: WriteOptions): Promise<Record<string, unknown>> {
+    const tenant = requireTenant(tenantId)
+    if (!options || typeof options.actorId !== 'string' || !options.actorId.trim()) {
+      throw new MalformedQueryError('actorId is required')
+    }
+    if (this.store.consumeAuditFault('department.execution-audit', this.table)) throw new AuditWriteFailedError()
+    const at = this.store.clock.now()
+    const row = {
+      ...entry,
+      tenant_id: tenant,
+      id: this.store.ids.next('dea'),
+      executed_at: at,
+      actor_id: options.actorId,
+    }
+    this.store.insert(this.table, row)
+    return structuredClone(row)
+  }
+}
+
 export type RepositoryMap = Record<string, BaseRepository<ContentRecord>>
 
 /** Constructs one repository per catalog store; A02 requires all of them. */
@@ -794,6 +860,8 @@ export function createRepositories(store: MemoryStore): RepositoryMap {
     CommitmentRepository,
     ScheduledItemRepository,
     DraftedCommunicationRepository,
+    MetricRepository,
+    DepartmentAuditRepository,
   }
   const repositories: RepositoryMap = {}
   for (const definition of C1_STORES) {

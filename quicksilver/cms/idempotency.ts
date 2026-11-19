@@ -97,9 +97,7 @@ export async function runIdempotent<T>(
     const result = await body()
     const responseDigest = digestOf(result)
     const recordedAt = store.clock.now()
-    store.insert('qs_idempotency_keys', {
-      tenant_id: tenant,
-      id: store.ids.next('idem'),
+    const record = {
       operation,
       key,
       request_digest: requestDigest,
@@ -110,7 +108,14 @@ export async function runIdempotent<T>(
       response: result,
       created_at: recordedAt,
       expires_at: new Date(Date.parse(recordedAt) + TTL_MS).toISOString(),
-    })
+    }
+    // An expired key is replaced in place: the row is the key's slot, so
+    // retrying an old key does not accumulate a second row for it.
+    if (existing && typeof existing.id === 'string') {
+      store.replace('qs_idempotency_keys', tenant, existing.id, record)
+    } else {
+      store.insert('qs_idempotency_keys', { tenant_id: tenant, id: store.ids.next('idem'), ...record })
+    }
     const outcome: IdempotentOutcome<T> = { result, requestDigest, responseDigest, replayed: false }
     settle.resolve(outcome)
     return outcome

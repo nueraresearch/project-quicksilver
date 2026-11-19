@@ -127,6 +127,28 @@ test('C1-D05 a create that fails before commit leaves no key and its retry succe
   assert.ok(findIdempotencyKey(store, TENANT_A, 'create', 'k-fail'))
 })
 
+test('an expired key is reused in place instead of accumulating a second row', async () => {
+  const { store, repositories } = seededFixture()
+  const organizations = organizationsOf(repositories)
+  const target = await organizations.getRoot(TENANT_A)
+
+  await organizations.updateIdempotent(TENANT_A, target.id, { name: 'Before expiry' }, { ...actor, expectedRevision: 1, idempotencyKey: 'k-expire' })
+  const original = findIdempotencyKey(store, TENANT_A, 'update', 'k-expire')
+  assert.ok(original)
+  const originalDigest = String(original.response_digest)
+
+  // Move the key's window into the past; the same key is then a new attempt.
+  store.replace('qs_idempotency_keys', TENANT_A, String(original.id), { expires_at: '2025-01-01T00:00:00.000Z' })
+  const refreshed = await organizations.updateIdempotent(TENANT_A, target.id, { name: 'After expiry' }, { ...actor, expectedRevision: 2, idempotencyKey: 'k-expire' })
+  assert.equal(refreshed.revision, 3)
+
+  const keys = store.rawDump(TENANT_A, 'qs_idempotency_keys')
+  assert.equal(keys.length, 1, 'the expired row is reused, not duplicated')
+  assert.equal(keys[0]?.id, original.id, 'the key keeps its row id')
+  assert.notEqual(String(keys[0]?.response_digest), originalDigest, 'the row records the new response')
+  assert.equal(String(keys[0]?.record_id), target.id)
+})
+
 test('C1-D06 a repeated update or publish replays, and a different request under the key conflicts', async () => {
   const { store, repositories } = seededFixture()
   const organizations = organizationsOf(repositories)

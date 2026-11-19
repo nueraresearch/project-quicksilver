@@ -140,7 +140,7 @@ These are implementation support, not additional Sanity types:
 | `qs_decision_events` | Append-only, ordered decision transitions. The `decision` row is a projection; the event log is the authority for history. Each event records `seq`, event type, from/to status, actor, time, action fingerprint, policy snapshot, process version/revision, payload digest, previous hash, and hash. |
 | `qs_metric_observations` | Append-only value observations produced by decision `observe` and native metric updates. The `metric` row is the current projection. |
 | `qs_idempotency_keys` | Tenant-scoped idempotency records (§2.4). |
-| Typed relation tables | One per multi-valued relation, such as `qs_department_members`, `qs_department_capabilities`, `qs_entity_capabilities`, `qs_entity_policy_links`, `qs_capability_inherits`, `qs_capability_requires`, `qs_capability_conflicts`, `qs_objective_children`, `qs_workflow_required_capabilities`, `qs_decision_evidence`, `qs_decision_context`, `qs_evidence_related_entities`, `qs_evidence_supports`, `qs_policy_applies_to`, and `qs_policy_approvals`. Every join carries one `tenant_id` and both composite endpoint keys. |
+| Typed relation tables | One per multi-valued relation, such as `qs_department_members`, `qs_department_capabilities`, `qs_entity_capabilities`, `qs_entity_policy_links`, `qs_capability_inherits`, `qs_capability_requires`, `qs_capability_conflicts`, `qs_objective_children`, `qs_workflow_required_capabilities`, `qs_decision_evidence`, `qs_decision_context`, `qs_evidence_related_entities`, `qs_evidence_supports`, `qs_policy_applies_to`, `qs_policy_approvals`, `qs_organization_resources`, `qs_capability_policies`, `qs_policy_supersedes`, and `qs_evidence_contradictions`. A relation never borrows another relation's table: organization resources, capability policies, policy supersession and evidence contradiction each have their own, even where a broader relation looks reusable. Every join carries one `tenant_id` and both composite endpoint keys. |
 
 ## 4. Derived and audit stores (13)
 
@@ -355,6 +355,8 @@ interface ObjectiveNode {
   departmentId: string | null
   status: string
   childIds: string[]
+  /** The child nodes themselves; `childIds` alone cannot be walked. */
+  children: ObjectiveNode[]
 }
 interface ObjectiveTree {
   roots: ObjectiveNode[]
