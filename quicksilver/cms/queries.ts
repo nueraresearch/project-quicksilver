@@ -6,11 +6,12 @@
  * contract's empty result — never another tenant's row, and never a widened
  * result. Queries never write.
  *
- * Implemented here: the structural parts B10 exercises (tenant scope, foreign
- * IDs, deterministic ordering, bounds). The refinements Gate G adds later —
- * cycle/dangling refusal in the capability graph, policy-conflict and
- * metric-drift contradiction kinds, and DAG validation against the kernel — are
- * marked where they belong rather than claimed.
+ * Implemented here: tenant scope, foreign IDs, deterministic ordering and
+ * bounds, plus the refinements Gate G exercises — cycle and dangling-edge
+ * refusal in the capability graph and objective tree, and the policy-conflict,
+ * evidence-contradiction and metric-drift finding kinds. Validation of a DAG
+ * against kernel semantics is **not** implemented; the contract checks graph
+ * structure only.
  */
 import {
   MalformedQueryError,
