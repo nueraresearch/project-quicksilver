@@ -5,7 +5,7 @@
 - **Deciders:** Product owner (Nuera RDL)
 - **Supersedes:** none
 - **Superseded by:** none
-- **Body digest:** sha256:4596151be559c15713f3659098587843a4f4bfbd9ea31cd5a32071d471a045c3
+- **Body digest:** sha256:10a39cd96b8704dd0a3fe80bae022a5c03cd8ab5b93a1797c09717ba35703c33
 - **Related:** [Native local operation](native-local.md) · [Parity tests](parity-tests.md) · [Current status](../CURRENT-STATUS.md) · [v1 credential prerequisites](v1-credential-prerequisites.md) · [Threat model](threat-model.md)
 
 This is the first architecture decision record in this repository, and it is
@@ -52,9 +52,12 @@ Quicksilver's development and test surface leans on third-party services. The
 most expensive of these is not the one with the largest bill; it is the one
 sitting inside the development loop.
 
-**Sanity is inside that loop.** 42 of the 46 importable web route handlers answer
-401 or 503 without a Sanity credential, and `apps/studio` runs `sanity dev`,
-which requires `SANITY_STUDIO_PROJECT_ID`. The root `npm run dev` runs dev in
+**Sanity is inside that loop.** Without a Sanity credential the guarded web
+route handlers answer 401 or 503: 42 of the 46 importable handlers did when
+that was measured at `3f7261c`, and the tree is now 48 route files / 51
+operations, of which 37 return a validated body only because the
+response-schema harness supplies a mocked empty store. `apps/studio` runs
+`sanity dev`, which requires `SANITY_STUDIO_PROJECT_ID`. The root `npm run dev` runs dev in
 every workspace, so on a clean clone it cannot complete. Content retrieval,
 entity creation, planning and workflow testing all sit behind a hosted CMS.
 

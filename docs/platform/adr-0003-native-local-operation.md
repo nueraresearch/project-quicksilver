@@ -5,7 +5,7 @@
 - **Deciders:** Product owner (Nuera RDL)
 - **Supersedes:** none
 - **Superseded by:** none
-- **Body digest:** sha256:4aea520b165fac6b96d3f73cb7f9677d05f111404395b15818c76d4c3c4c1ce8
+- **Body digest:** sha256:72b2812a8fda9b5bbb2c16ababd044ea3a449aacfc9256c88167e1eb2a2cbc50
 - **Related:** [ADR 0001](adr-0001-native-first-ownership.md) · [ADR 0002](adr-0002-provider-compatibility-policy.md) · [Native local operation](native-local.md) · [Parity tests](parity-tests.md) · [Current status](../CURRENT-STATUS.md)
 
 This record was written on 2026-11-10 to capture a definition already in force.
@@ -74,7 +74,7 @@ Recorded so the decision is not mistaken for the plan.
 | Zero-configuration console | **In force.** `npm run dev` starts the console with no environment; Studio is outside that path | ADR 0001; `npm run check:clean-install`; CI `clean-install` |
 | Governed SMTP notification transport | **Implemented, not operationally proven.** Implicit TLS on 465, `AUTH PLAIN` only inside verified TLS; no STARTTLS, IMAP, attachments, inbound mail or plaintext downgrade | [native local operation](native-local.md); no live mailbox submission on record |
 | Quicksilver-owned default backend | **Not at parity.** A Strapi-compatible ontology/query scaffold exists; there is no Strapi host and the plugin is not loaded at runtime | [Current status](../CURRENT-STATUS.md) |
-| Console without a hosted CMS | **Not yet.** 42 of the 46 importable web route handlers answer 401 or 503 without a Sanity credential | ADR 0001; P-118 notes |
+| Console without a hosted CMS | **Not yet.** Without a Sanity credential the guarded web route handlers answer 401 or 503 — 42 of 46 importable handlers at `3f7261c`, and today 48 route files / 51 operations with 37 validated only against a mocked empty store | ADR 0001; P-118 notes |
 | Local identity | **Not implemented.** Stage 4 target: first-owner enrollment, local keys, rotation, recovery, revocation | [native local operation](native-local.md) |
 | Local inference | **Partial.** Local BYO-model planning produced dated evidence (P-017, 2026-10-18); automatic runtime provisioning and model installation are targets | [Parity tests](parity-tests.md); [native local operation](native-local.md) |
 
