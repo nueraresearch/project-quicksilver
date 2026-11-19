@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
+import { C1_STORES } from '../../cms/catalog.ts'
 import { RepositoryError } from '../../cms/errors.ts'
 import {
   findContradictions,
@@ -34,6 +35,16 @@ test('C1-G01 the capability graph is tenant-scoped, ordered, and refuses danglin
   assert.deepEqual(graph.nodes.map((node) => node.id), [seed.capability, seed.capability2].sort())
   assert.deepEqual(graph.edges, [{ from: seed.capability, to: seed.capability2, kind: 'inherits' }])
   assert.ok(!graph.nodes.some((node) => node.id === seeds[TENANT_B].capability), 'B nodes never appear')
+
+  // Positive control for the published-only filter: a draft and a tombstoned
+  // capability are absent. Dropping the filter puts both in the graph.
+  const published = store.rows('qs_capabilities').find((row) => row.id === seed.capability && row.tenant_id === TENANT_A)!
+  const detached = { ...published, inherits_ids: [], requires_ids: [], conflicts_with_ids: [] }
+  store.insert('qs_capabilities', { ...detached, id: 'cap_draft', lifecycle: 'draft' })
+  store.insert('qs_capabilities', { ...detached, id: 'cap_gone', deleted_at: '2026-01-02T00:00:00.000Z' })
+  const filtered = await getCapabilityGraph(store, TENANT_A)
+  assert.ok(!filtered.nodes.some((node) => node.id === 'cap_draft'), 'a draft capability is not the published graph')
+  assert.ok(!filtered.nodes.some((node) => node.id === 'cap_gone'), 'a tombstoned capability is not the published graph')
 
   const dangling = seededFixture()
   dangling.store.replace('qs_capabilities', TENANT_A, dangling.seeds[TENANT_A].capability2, { requires_ids: ['cap_missing'] })
@@ -275,6 +286,8 @@ test('C1-G07 all six contracts exist, return their typed shape, and have a refus
 
 test('C1-G07 the public entry points execute the contracts and no stub remains', async () => {
   const { store, seeds } = seededFixture()
+  const snapshot = () => digestOf(C1_STORES.map(({ name }) => store.rawDump(TENANT_A, name)))
+  const before = snapshot()
   const contracts: Array<[string, () => Promise<number>]> = [
     ['getCapabilityGraph', async () => (await publicQuery.getCapabilityGraph(store, TENANT_A)).nodes.length],
     ['findContradictions', async () => (await publicQuery.findContradictions(store, TENANT_A)).length],
@@ -296,6 +309,8 @@ test('C1-G07 the public entry points execute the contracts and no stub remains',
     'the public entry point still refuses a blank tenant',
   )
   assert.deepEqual(await publicQuery.getEvidenceForMetric(store, TENANT_A, seeds[TENANT_B].metric), [])
+
+  assert.equal(snapshot(), before, 'the six contracts write nothing')
 
   const source = readFileSync(new URL('../../query/index.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(source, /\bTODO\b|not implemented/i, 'no query entry point may remain a stub')

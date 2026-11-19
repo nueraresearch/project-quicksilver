@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, test } from 'node:test'
 
 import { checkMatrixRun, matrixCaseIds } from './native-c1-matrix.mjs'
+import { MUTATIONS } from './native-c1-mutations.mjs'
 
 // A gate that exists but is not run is the same as a gate that was never
 // written. The runner discovers files instead of naming them, so these tests
@@ -56,6 +57,21 @@ test('a missing directory and an unknown option are refusals, not passes', () =>
   const badFlag = run('--nope')
   assert.equal(badFlag.status, 2)
   assert.match(badFlag.stderr, /unknown option --nope/)
+})
+
+// A provocation whose guard text has drifted becomes a silent no-op: the edit
+// applies to nothing, the suite still passes, and the run claims the guard was
+// checked. Pin the literal target of every mutation.
+test('every guard-removal mutation still has a unique target and a real gate file', () => {
+  for (const mutation of MUTATIONS) {
+    const source = readFileSync(path.resolve(mutation.file), 'utf8')
+    assert.equal(
+      source.split(mutation.from).length - 1,
+      1,
+      `${mutation.id}: the guard text must occur exactly once in ${mutation.file}`,
+    )
+    assert.ok(existsSync(path.resolve(mutation.gate)), `${mutation.id}: ${mutation.gate} does not exist`)
+  }
 })
 
 // Stage 8 closes the gate on the matrix, not on file count: a deleted case, a
