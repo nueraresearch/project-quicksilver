@@ -2,7 +2,7 @@
 
 - **Status:** Design-only review sheet. Nothing here runs an export, freezes Sanity, imports data, touches credentials, signs a manifest, changes a provider status, or authorizes C1 code.
 - **Date:** 2026-11-18
-- **Purpose:** one page for the five things that actually hold C0, then the exact order in which they must be decided and signed.
+- **Purpose:** one page for the six recorded blockers — five for C0 exit and one for C1 Stage 0 — then the exact order in which they must be decided and signed. Four remain open: the read-only baseline export, the signed ownership manifest, the C0 scope signature, and the C1 entry bundle.
 - **Governing records:** [native CMS cutover](native-cms-cutover.md) (C0/C1), [C0 inventory](native-cms-c0-inventory.md), [playbook brief](native-cms-playbook-decision-brief.md), [asset and deletion baseline](native-cms-c0-asset-deletion-baseline.md), [ownership resolution and redacted manifest](native-cms-c0-ownership-resolution-manifest.md), [C1 implementation sequence](native-cms-c1-implementation-sequence.md).
 - **Current disposition:** 21 native, 13 derived, 2 optional adapter, 0 retirement — both C0 owner decisions are recorded (2026-11-19: `playbook` retained, chassis = direct native repositories); Sanity `required`; 48 route files / 51 operations; `npm run native:gate` exits 1.
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-11-10",
+  "updated": "2026-11-19",
   "gate": "default-backend removal gate",
   "providers": [
     { "id": "sanity", "status": "required", "r1": "Sanity stays authoritative until every core row below is native and the full matrix passes; it may not be retired in the milestone that introduces its replacement." },

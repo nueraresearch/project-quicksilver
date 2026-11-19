@@ -165,7 +165,7 @@ These are durable native stores. “Derived” does not mean disposable, and non
 ### 4.1 Excluded from the C1 CMS schema
 
 - `oidcLoginTransaction` and `oidcWebSession` remain auth-plane adapters. They are not copied into CMS content and are not queried through these repositories.
-- `playbook` remains **unimplemented** pending the Product Owner’s retain/retire decision. If retained for M4, it gets `qs_playbooks` with tenant, playbookId, version, modes, definitionJson, status, digest, and author/publish metadata, with the same composite-FK and revision rules. It is not counted in the 33 retained stores above.
+- `playbook` is **retained** (2026-11-19) and appears in §3 above as `qs_playbooks`, with the same composite-FK and revision rules. It stays unimplemented until C1 builds it, and `deploy/playbooks/*.json` remains the runtime authority until M4 integration. It is counted in the 34 retained stores.
 - Binary Sanity assets are not one of the 36 schema types. Their native object-store mapping belongs to the asset gate, not this collection list. See the [asset tenancy and sharing policy](native-cms-asset-tenancy-sharing-policy.md) for exclusive/shared ownership, keys, deletion, and delivery.
 
 ## 5. Repository map

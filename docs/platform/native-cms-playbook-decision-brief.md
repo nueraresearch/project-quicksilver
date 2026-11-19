@@ -3,7 +3,7 @@
 - **Owner:** Product Owner (Nuera RDL)
 - **Status:** **Decided 2026-11-19 — retained as native, scope-fenced.** The C0 count, C1 scope, and A01 are updated to match. The option tables below are kept as the decision record.
 - **Date:** 2026-11-17
-- **Why now:** `playbook` is the only C0 type still marked **Retirement — owner approval required**. C0 cannot exit until the Product Owner either approves retirement or changes the disposition to **Native**.
+- **Why now:** `playbook` was the only C0 type marked **Retirement — owner approval required**, and C0 could not exit until the Product Owner approved retirement or changed the disposition to **Native**. That decision is now recorded in §6.
 - **Current C0 row:** [C0 cutover inventory](native-cms-c0-inventory.md).
 
 ## 1. Decision requested
