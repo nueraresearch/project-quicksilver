@@ -19,7 +19,7 @@ These are constraints, not stage objectives.
 7. **Real exports, not fixtures, are the cutover evidence.** Fixtures prove the harness works; they do not prove migration parity.
 8. **R1 — retire after replacement.** Sanity may not be demoted in the same milestone that introduces its replacement. Replacement evidence lands first; demotion is a later, separately approved change.
 
-## 2. Current baseline (matrix v1, 2026-11-10)
+## 2. Current baseline (matrix v1, 2026-11-10; API counts re-measured at HEAD, 2026-11-19)
 
 The executable gate currently exits **1**:
 
@@ -27,8 +27,8 @@ The executable gate currently exits **1**:
 - **14 content capabilities:** 0 native, 4 partial, 10 absent.
 - Sanity is still `required`; the Strapi chassis is an optional, non-runtime-registered scaffold.
 - The current Sanity Studio defines **36 schema types**.
-- **37 of 51** API operations validate against a mocked empty store; **14 of 51** are not successful (401/500/503) and need native seeded data or another configured dependency.
-- The older **42 of 46** figure is the pre-operator P-118 snapshot at `3f7261c`; PR #120 added three operator route files and five operations, producing today's 48 files / 51 operations. See C0's reconciliation.
+- **48 route files / 51 operations**, matching the 51 operations declared in `docs/api/openapi.json`. The invocation harness enumerates all 51 with **0 unimportable** modules, validates **37 of 51** against the declared response schema, and leaves **14 of 51** not successful: 8 answer 500 (unconfigured model provider, product-memory root, or entity store), 5 answer 503, and 1 answers 401 (no browser session). Those 14 need native seeded data or another configured dependency. Measured with `QS_SCHEMA_REPORT=1` against `apps/web/lib/api-response-schema.test.ts`.
+- The older **42 of 46** figure is the pre-operator credential-baseline snapshot at `3f7261c` (45 route files / 46 operations), not a second inventory: PR #120 added three operator route files and five operations, producing today's 48 files / 51 operations. See [C0's reconciliation](native-cms-c0-inventory.md#the-46-importable-handlers-figure).
 - The rehearsal harness proves export-to-export parity, snapshot integrity, and JSONL restore only. It has **not** run against a real Sanity export, does not prove tenant refusals or a deployed restart/restore, and has no owner sign-off.
 
 No cutover is authorized from this baseline.
@@ -78,7 +78,7 @@ Work:
 - Keep the NQC Kernel as the authority. Content storage does not approve, execute, or grant capability.
 - Port every data-backed web route and host content store to the native repositories.
 - Public delivery follows the [native CMS public-delivery contract](native-cms-public-delivery-contract.md) for URL stability, slug aliases, publish/delete events, and cache revalidation. C2 does not wire the public plane before that contract is approved.
-- Validate all 51 API operations against native seeded data, including the 28 that currently need real data or per-route provider stubs.
+- Validate all 51 API operations against native seeded data, including the 14 that currently need real data or per-route provider stubs.
 - Preserve 401/403 behavior and add explicit cross-tenant 404/403 tests.
 
 **Exit gate:** no retained route reaches Sanity; the native path answers with Sanity unset; P-118 has 51/51 operations validated with no CMS-caused 401/503; every route has an auth and tenant-refusal test.
