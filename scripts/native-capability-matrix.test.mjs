@@ -55,8 +55,8 @@ function fixture(name, matrix) {
   return file
 }
 
-function run(file) {
-  return spawnSync(process.execPath, [script, file], { cwd: root, env, encoding: 'utf8' })
+function run(file, ...rest) {
+  return spawnSync(process.execPath, [script, file, ...rest], { cwd: root, env, encoding: 'utf8' })
 }
 
 test('a complete matrix passes with exit 0', () => {
@@ -129,4 +129,27 @@ test('malformed JSON is invalid input', () => {
   const result = run(fixture('broken.json', '{'))
   assert.equal(result.status, 2)
   assert.match(result.stderr, /not valid JSON/)
+})
+
+// Prevents: a mistyped flag such as `--jsn` falling back to human output while
+// still exiting 0, so a caller that parses the JSON sees prose and no error.
+test('an unknown flag is invalid input, not silently ignored', () => {
+  const result = run(fixture('complete.json', baseMatrix()), '--jsn')
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /unknown option --jsn/)
+  assert.match(result.stderr, /This is not a pass/)
+})
+
+// Prevents: a second matrix path being dropped while the gate reports on the
+// first, which reads as a pass over the file the caller meant to check.
+test('a second positional argument is rejected', () => {
+  const result = run(fixture('complete.json', baseMatrix()), fixture('other.json', baseMatrix()))
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /unexpected argument/)
+})
+
+test('--json still selects machine output', () => {
+  const result = run(fixture('complete.json', baseMatrix()), '--json')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(JSON.parse(result.stdout).passed, true)
 })

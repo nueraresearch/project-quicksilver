@@ -17,6 +17,8 @@ const TEST_EVIDENCE = /\.(test|spec)\.(?:ts|tsx|mjs|cjs|js)$/
 
 class GateInputError extends Error {}
 
+const USAGE = 'usage: native-capability-matrix.mjs [matrix.json] [--json]'
+
 function fail(message) {
   throw new GateInputError(message)
 }
@@ -94,9 +96,12 @@ function load(file) {
 
 function main() {
   const args = process.argv.slice(2)
+  const unknown = args.filter((arg) => arg.startsWith('-') && arg !== '--json')
+  if (unknown.length > 0) fail(`unknown option ${unknown.join(', ')}; ${USAGE}`)
+  const positional = args.filter((arg) => !arg.startsWith('-'))
+  if (positional.length > 1) fail(`unexpected argument ${positional.slice(1).join(', ')}; ${USAGE}`)
   const json = args.includes('--json')
-  const file = args.find((arg) => !arg.startsWith('--')) ?? 'docs/platform/native-capabilities.json'
-  const doc = load(file)
+  const doc = load(positional[0] ?? 'docs/platform/native-capabilities.json')
 
   const core = doc.capabilities.filter((capability) => capability.core)
   const optional = doc.capabilities.filter((capability) => !capability.core)
