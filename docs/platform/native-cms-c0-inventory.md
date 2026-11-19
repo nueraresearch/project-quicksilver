@@ -174,7 +174,7 @@ The exact reconciliation is therefore **46 -> 51 operations, not 46 -> 48**: fiv
 
 ## 4. Query inventory
 
-The web app has **18 query families**. The six native query contracts required by C1 are not implemented; they are the target for the current Sanity query paths.
+The web app has **18 query families**. The six native query contracts required by C1 are implemented in `quicksilver/query/index.ts` over the native repositories and green on the fixture store; no route calls them yet, so the current Sanity query paths remain the served ones.
 
 | # | Query family and current location | `_type`s touched | Disposition | Target |
 |---|---|---|---|---|
@@ -194,7 +194,7 @@ The web app has **18 query families**. The six native query contracts required b
 | Q14 | Product-memory decision existence: `app/api/memory` | `decision` | **Native** | Native decision existence check within the principal's tenant. |
 | Q15 | Context MCP GROQ/KB retrieval: `packages/agent/src/{planner,query,assistant,business-agents}.ts` | Any retained type, via arbitrary `groq_query` / KB entries | **Optional adapter** | Replace with the six native query contracts and bounded context assembly in C3. No arbitrary GROQ in the default path. |
 | Q16 | Studio/deploy/seed/smoke queries: `apps/studio/scripts`, `apps/studio/seed` | Broad, including `organization`, `capability`, `policy`, `entity`, `department`, `decision`, `evidence`, `workflow`, `metric`, `workflow.metadata` | **Optional adapter** | Native fixtures/admin smoke replace these; Studio tooling retires with the adapter. |
-| Q17 | Native query contracts (C1 target, currently TODO): `quicksilver/query/index.ts` | Capability graph, contradictions, workflow DAG, objective tree, evidence-for-metric, decision history | **Native** | Implement against native repositories with tenant-derived scope, fixtures, and refusal tests. |
+| Q17 | Native query contracts (C1 target; implemented on the fixture store, not routed): `quicksilver/query/index.ts` | Capability graph, contradictions, workflow DAG, objective tree, evidence-for-metric, decision history | **Native** | Implement against native repositories with tenant-derived scope, fixtures, and refusal tests. |
 
 ## 5. Studio and operations actions
 

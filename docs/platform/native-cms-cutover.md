@@ -61,7 +61,7 @@ Work:
 - Before C1 implementation, complete the [field-level source-to-native mapping and tenant ownership registry](native-cms-field-mapping-tenant-registry.md). Every retained field and every record/asset tenant assignment must be resolved; the registry is a reviewed input, not an inferred default.
 - Register and run the native CMS store catalog without an external Strapi project or CMS host (chassis decided 2026-11-19: direct native repositories). The ten existing ontology collection schemas are the starting point, not the complete model.
 - Add native equivalents for every retained Sanity type: decisions and audit, evaluations, agent catalog and publication records, workflow publication/revision records, chat and inbox, reviews, commitments, contacts, scheduled items, drafted communications, and the audit/authority records that back them.
-- Implement the six query contracts currently marked TODO in `quicksilver/query/index.ts`: capability graph, contradictions, workflow DAG, objective tree, evidence for metric, and decision history.
+- Implement the six query contracts in `quicksilver/query/index.ts`: capability graph, contradictions, workflow DAG, objective tree, evidence for metric, and decision history. They are implemented and green on the fixture store ([C1 query contract report](native-cms-c1-evidence/c1-query-contract-report.md)); no route calls them yet.
 - Enforce same-tenant composite relations in the repository layer; a `tenantId` column alone is not a boundary.
 - Implement filters, sorting, pagination, draft/publish, revisions, idempotency keys, and optimistic concurrency.
 - Keep append-only decision/audit records append-only; a failed audit write aborts the mutation.
