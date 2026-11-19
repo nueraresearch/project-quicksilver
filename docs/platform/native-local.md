@@ -3,11 +3,12 @@
 ## Target and boundaries
 
 The migration proceeds from the current Sanity-backed application, through a
-customized Strapi chassis, to the Quicksilver CMS Module as the product-owned
-backend. Strapi is an implementation chassis, not a reason to couple
-Quicksilver's domain logic to generic CMS behavior. Sanity and standalone Strapi
-may remain optional adapters or migration sources after cutover, but neither may
-be a required external service for the built-in product.
+native store catalog and repository layer, to the Quicksilver CMS Module as the
+product-owned backend. Strapi is not the chassis (decided 2026-11-19): it remains
+an optional adapter example, not a reason to couple Quicksilver's domain logic to
+generic CMS behavior. Sanity and standalone Strapi may remain optional adapters or
+migration sources after cutover, but neither may be a required external service
+for the built-in product.
 
 The target is a Quicksilver-owned, self-hosted experience: no mandatory CMS
 account, hosted model key, or paid API for features that can run locally. A clean
@@ -79,7 +80,7 @@ These are proposed implementation stages, not claims of completed migration.
 
 | Stage | Work | Acceptance check |
 |---|---|---|
-| 1. Strapi chassis and parity inventory | Add the local Quicksilver Strapi plugin chassis and map current Sanity schemas, APIs, workflows and data to the ontology. Keep Sanity active until parity is evidenced. | Versioned capability matrix covers every provider feature, with migration fixtures and documented differences. |
+| 1. Native chassis and parity inventory | Add the local Quicksilver CMS store catalog and repositories and map current Sanity schemas, APIs, workflows and data to the ontology. Keep Sanity active until parity is evidenced. | Versioned capability matrix covers every provider feature, with migration fixtures and documented differences. |
 | 2. Quicksilver-owned default backend | Complete local repositories, admin/API experience, authorization, audit, migrations, backups and recovery. Make both CMS integrations optional. | Clean install works with Sanity and external Strapi settings unset; existing capability and refusal suites pass against the new backend. |
 | 3. Parity rehearsal and cutover | Rehearse import, compare records and behavior, test rollback, then switch one deployment at a time with one authoritative writer. | Full feature matrix passes, data divergence is resolved, rollback is rehearsed, and owner signs off before changing defaults. |
 | 4. Local identity | Add first-owner enrollment and local authentication using standard security primitives; generate local signing/encryption keys and support rotation, recovery and revocation. Keep OIDC optional. | No external identity account required; remote unauthenticated enrollment, self-grants and invalid sessions refuse. |
