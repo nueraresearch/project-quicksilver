@@ -46,7 +46,7 @@ The question is whether the C1 repositories run on the **Strapi chassis** or dir
 | What it costs | Needs a Strapi host and dependency before the chassis can be claimed; Strapi's relation model cannot express composite tenant keys, so the repository layer must still enforce them | The ten ontology schemas must be restated in the native catalog; any CMS conveniences are rebuilt |
 | Invariants | Composite tenant keys, revisions, idempotency, append-only audit, and the six query contracts are enforced in the repository | Same invariants, same place |
 
-Rules that do not depend on the choice: no external Strapi project or Sanity project may be required; A01–A04 must pass with no CMS client, network call, or credential read; `platform.strapi-chassis` stays `partial` until a host actually registers the plugin; and the composite-key and revision rules may not be weakened to fit whichever chassis is chosen.
+Rules that do not depend on the choice: no external Strapi project or Sanity project may be required; A01–A04 must pass with no CMS client, network call, or credential read; `platform.strapi-chassis` is `absent` because the chosen architecture registers no plugin — the row is `core: false`, so it never blocks the gate, and the plugin example stays an optional-adapter example rather than a partial capability; and the composite-key and revision rules may not be weakened to fit whichever chassis is chosen.
 
 Record the adapter name and version as the entry bundle's `adapter` field, together with the schema catalog version and relation inventory digest. The chassis choice does not change C0 counts or the ownership manifest.
 
