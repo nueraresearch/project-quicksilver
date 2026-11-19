@@ -3,7 +3,7 @@
 - **Status:** Design-only draft for C1 readiness. No runtime schema, repository, migration, or route is implemented by this document.
 - **Date:** 2026-11-17
 - **Sources:** The 36-type [C0 cutover inventory](native-cms-c0-inventory.md), the [C1 schema and repository map](native-cms-c1-schema-repository-map.md), and the registered Studio/Quicksilver schema files.
-- **Scope:** The 20 native collections and 13 derived/audit stores retained by C1. The two OIDC types remain auth-plane adapters and are not mapped into CMS content. `playbook` remains conditional on the owner decision.
+- **Scope:** The 21 native collections and 13 derived/audit stores retained by C1. The two OIDC types remain auth-plane adapters and are not mapped into CMS content. `playbook` was retained on 2026-11-19, so its field-mapping table is a C1 Stage-0 requirement rather than a conditional entry.
 - **Hard rule:** Every retained source field is mapped, preserved as an extension, or explicitly excluded with an owner-approved reason. No field is silently dropped. Every retained record and asset has a confirmed tenant before import.
 
 ## 1. Mapping conventions
@@ -150,7 +150,7 @@ If two tenants share a business key or asset, the record is `ambiguous` until th
 | `telemetryTraceSpan` | `tenantId` | Validate; metadata-only spans remain tenant-scoped. |
 | `review` | None | Assign to the operator tenant; generated snapshot references must agree. |
 | `oidcLoginTransaction`, `oidcWebSession` | Auth plane | Excluded from CMS ownership; keep in the auth adapter. |
-| `playbook` | None | No ownership action until retain/retire; if retained, assign like other content. |
+| `playbook` | None | Retained 2026-11-19: assign ownership like other content; resolves in the C0 ownership manifest. |
 
 ### 2.4 Ownership gate before C1
 

@@ -88,7 +88,7 @@ The runner records the command, commit, adapter, schema version, timestamp, matr
 
 | ID | Setup | Action | Expected result |
 |---|---|---|---|
-| **C1-A01** | Fresh store; no CMS configured. | Register the C1 schema and enumerate stores. | Exactly 20 native collections and 13 derived/audit stores are present. The two OIDC adapters and conditional `playbook` are absent. |
+| **C1-A01** | Fresh store; no CMS configured. | Register the C1 schema and enumerate stores. | Exactly 21 native collections and 13 derived/audit stores are present. The two OIDC adapters are absent. |
 | **C1-A02** | All `SANITY_*`, `NEXT_PUBLIC_SANITY_*`, and external-Strapi variables unset. | Construct every repository, create one organization, read it back. | The create/read succeeds with no CMS client construction, network call, or credential read. |
 | **C1-A03** | `QUICKSILVER_TENANT_ID=tenant-b`. | Call a repository and all six query functions with a missing or blank tenant. | `MalformedQuery`; no row is read or written; the environment value never substitutes for the argument. |
 | **C1-A04** | `QUICKSILVER_TENANT_ID=tenant-b`; caller passes `tenant-a`. | Read and write a tenant-a record. | The operation uses tenant A only. Tenant B is unchanged and no default-tenant fallback occurs. |

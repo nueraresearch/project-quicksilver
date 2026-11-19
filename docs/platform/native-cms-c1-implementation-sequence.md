@@ -2,7 +2,7 @@
 
 - **Status:** Planning-only. This document does not add schema, repository, migration, route, test code, production data, or runtime behavior.
 - **Date:** 2026-11-17
-- **Scope:** The implementation order for the [C1 native schema and repository map](native-cms-c1-schema-repository-map.md) and the [C1 acceptance test matrix](native-cms-c1-acceptance-test-matrix.md). It covers the 20 native collections, 13 derived/audit stores, repository boundary, and six query contracts.
+- **Scope:** The implementation order for the [C1 native schema and repository map](native-cms-c1-schema-repository-map.md) and the [C1 acceptance test matrix](native-cms-c1-acceptance-test-matrix.md). It covers the 21 native collections, 13 derived/audit stores, repository boundary, and six query contracts.
 - **Exit rule:** C1 is complete only when all **50** cases pass with **zero skipped, zero todo, and zero failing**, against the selected persistence adapter, with the evidence artifact required by the matrix. This sequence does not change that rule.
 - **Non-goals:** No C2 route wiring, production import, provider-status change, Sanity/Strapi demotion, or asset import. A green C1 suite is repository evidence, not migration evidence.
 
@@ -49,8 +49,8 @@ Stages 4 and 5 may overlap in implementation, but neither gate may close before 
 
 - Obtain the signed C0 ownership manifest with zero `ambiguous`, zero `unresolved`, and zero `blocked` retained records.
 - Obtain the production read-only export and asset/deletion baseline digests. C1 may start from synthetic fixtures, but C1 sign-off still requires these inputs.
-- Decide `playbook`: A01 expects exactly 20 native collections and 13 derived stores, with `playbook` absent. If `playbook` is retained, stop and revise the C1 map, A01, and the store count before writing implementation code.
-- Select the persistence adapter/chassis and record whether Strapi remains the chassis or native repositories run directly. The composite-key and revision rules may not be weakened by that choice.
+- `playbook` is retained (decided 2026-11-19): A01 expects exactly 21 native collections and 13 derived stores, including `qs_playbooks`.
+- Persistence adapter decided (2026-11-19): direct native repositories, no CMS host. Record `adapter` as `direct native repositories (no external CMS host)` in the entry bundle. The composite-key and revision rules are unchanged.
 - Freeze the schema catalog version, the C1 §6 relation inventory, the repository error vocabulary, and the planned harness paths.
 - Freeze rich-text field designation and the [rich-text parity contract](native-cms-rich-text-parity-contract.md). No plain `text` field becomes Portable Text without an owner-approved C0 mapping.
 - Confirm the tenant registry and principal-to-tenant bindings are the only tenant source; no environment default is permitted.
@@ -74,7 +74,7 @@ Stages 4 and 5 may overlap in implementation, but neither gate may close before 
 **Work:**
 
 - Create the C1 test runner, deterministic clock and ID source, two-tenant fixture module, fail-audit seam, concurrency barrier, and read-only `rawDump` seam described in the matrix.
-- Register the complete store catalog: 20 native collections and 13 derived/audit stores. Exclude the two OIDC adapters and the conditional `playbook`.
+- Register the complete store catalog: 21 native collections (including `qs_playbooks`) and 13 derived/audit stores. Exclude the two OIDC adapters.
 - Construct every repository and the six query entry points without a CMS client, network call, or credential read.
 - Require explicit `tenantId` on every repository and query call; reject missing or blank tenant with `MalformedQuery`.
 - Prove `QUICKSILVER_TENANT_ID` and every default-tenant path have no effect.
@@ -82,13 +82,13 @@ Stages 4 and 5 may overlap in implementation, but neither gate may close before 
 
 **Evidence artifacts:**
 
-- `c1-bootstrap-report`: A01–A04 pass/fail, store enumeration manifest, counts (20 native, 13 derived, 0 OIDC, 0 conditional playbook), fixture manifest digest, environment-absence proof, and no-network/no-credential result.
+- `c1-bootstrap-report`: A01–A04 pass/fail, store enumeration manifest, counts (21 native, 13 derived, 0 OIDC), fixture manifest digest, environment-absence proof, and no-network/no-credential result.
 - `c1-schema-catalog`: canonical store names, keys, tenant columns, revision/lifecycle columns, relation inventory reference, and schema version.
 - `c1-fixture-manifest`: tenant A/B roots, collisions, deterministic IDs, fixed clock, graph coverage, append-only coverage, and relation-manifest digest.
 
 **Stop point:**
 
-- Stop if A01 does not enumerate exactly 20 + 13 stores, if any repository constructs a CMS client, if any credential is read, or if a missing tenant can fall back to an environment value.
+- Stop if A01 does not enumerate exactly 21 + 13 stores, if any repository constructs a CMS client, if any credential is read, or if a missing tenant can fall back to an environment value.
 - Do not proceed to relation writes while the bootstrap is fixture-only or the store catalog is still moving.
 
 ## 5. Stage 2 — Tenant boundary, stores, and relation core
@@ -100,7 +100,7 @@ Stages 4 and 5 may overlap in implementation, but neither gate may close before 
 **Work:**
 
 - Implement tenant-qualified primary keys, composite foreign keys, and repository checks for every relation in the first vertical slice: organization, department, entity, capability, policy, objective, workflow, automation workflow, publication heads, decisions, evidence, metrics, agents, and operator records.
-- Expose the complete list surface for all 20 native collections and 13 derived stores, even where a specialized write path is scheduled later. B03 must not pass on a partial repository list.
+- Expose the complete list surface for all 21 native collections and 13 derived stores, even where a specialized write path is scheduled later. B03 must not pass on a partial repository list.
 - Implement tenant-bound reads, lists, and cursors; a foreign ID returns `NotFound` with no existence signal; a foreign cursor returns `MalformedQuery`.
 - Implement same-tenant relation writes with no partial joins: department members/capabilities, decision context, workflow/agent heads, commitment/contact/decision links, scheduled-item links, and drafted-communication links.
 - Reject required relations to a missing same-tenant target with `UnresolvedRelation`.

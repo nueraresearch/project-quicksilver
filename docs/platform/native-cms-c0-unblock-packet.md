@@ -4,14 +4,14 @@
 - **Date:** 2026-11-18
 - **Purpose:** one page for the five things that actually hold C0, then the exact order in which they must be decided and signed.
 - **Governing records:** [native CMS cutover](native-cms-cutover.md) (C0/C1), [C0 inventory](native-cms-c0-inventory.md), [playbook brief](native-cms-playbook-decision-brief.md), [asset and deletion baseline](native-cms-c0-asset-deletion-baseline.md), [ownership resolution and redacted manifest](native-cms-c0-ownership-resolution-manifest.md), [C1 implementation sequence](native-cms-c1-implementation-sequence.md).
-- **Current disposition:** 20 native, 13 derived, 2 optional adapter, 1 proposed retirement; Sanity `required`; 48 route files / 51 operations; `npm run native:gate` exits 1.
+- **Current disposition:** 21 native, 13 derived, 2 optional adapter, 0 retirement — both C0 owner decisions are recorded (2026-11-19: `playbook` retained, chassis = direct native repositories); Sanity `required`; 48 route files / 51 operations; `npm run native:gate` exits 1.
 
 ## 1. What blocks C0
 
 | # | Blocker | Decider | Closes when |
 |---|---|---|---|
-| 1 | `playbook` is still a proposed retirement | Product Owner | The decision is recorded in [brief §6](native-cms-playbook-decision-brief.md#6-sign-off) and the C0 count is updated |
-| 2 | Persistence adapter/chassis is unchosen | Product Owner, implemented by Content platform | Adapter and version are recorded for the C1 entry bundle |
+| 1 | ~~`playbook` is still a proposed retirement~~ — **closed 2026-11-19** | Product Owner | Recorded in [brief §6](native-cms-playbook-decision-brief.md#6-sign-off) as retained; the C0 count, C1 scope, and A01 are updated |
+| 2 | ~~Persistence adapter/chassis is unchosen~~ — **closed 2026-11-19** | Product Owner, implemented by Content platform | Decided for direct native repositories; the `adapter` value is recorded in §3 for the C1 entry bundle |
 | 3 | No production read-only baseline exists | Product Owner authorizes; Technical baseline lead runs | The approved redacted baseline record and its digests exist |
 | 4 | Tenant ownership is unresolved | Tenant Authorities and Product Owner | The redacted manifest is signed with zero blockers and the C0 gate exits 0 |
 | 5 | C0 scope and known behavior differences are unsigned | Product Owner | The C0 scope note, including the difference list and accepting owner per item, is signed |
@@ -33,6 +33,8 @@ Blockers 1–5 are C0 exit. Blocker 6 is C1 Stage 0; it consumes C0's output.
 
 Either way the export counts `playbook` documents; neither option may claim a production count from the seed baseline. Record the decision in the brief's sign-off block, then update the inventory count and, if retained, the C1 map and A01 before any C1 code.
 
+**Recorded 2026-11-19 — retained, scope-fenced.** [Brief §6](native-cms-playbook-decision-brief.md#6-sign-off) records Option A. The inventory count is now **21 native, 13 derived, 2 optional adapter, 0 retirement**; C1 is **34 stores**, `C1-A01` expects **21 native + 13 derived**, and the [C1 map](native-cms-c1-schema-repository-map.md#3-native-collections-21) carries the `qs_playbooks` collection. `deploy/playbooks/*.json` remains the runtime authority, with no native admin screen or write path before M4 integration.
+
 ## 3. Decision 2 — persistence adapter/chassis
 
 The question is whether the C1 repositories run on the **Strapi chassis** or directly on **native repositories**. It is not a question about authority: the kernel authorizes either way, and Strapi is a scaffold today — not a host, dependency, or runtime registration.
@@ -47,6 +49,8 @@ The question is whether the C1 repositories run on the **Strapi chassis** or dir
 Rules that do not depend on the choice: no external Strapi project or Sanity project may be required; A01–A04 must pass with no CMS client, network call, or credential read; `platform.strapi-chassis` stays `partial` until a host actually registers the plugin; and the composite-key and revision rules may not be weakened to fit whichever chassis is chosen.
 
 Record the adapter name and version as the entry bundle's `adapter` field, together with the schema catalog version and relation inventory digest. The chassis choice does not change C0 counts or the ownership manifest.
+
+**Recorded 2026-11-19 — Option B, direct native repositories.** The C1 repositories run on the native store catalog with no CMS host: no Strapi dependency, no plugin registration, and no external Strapi project. Entry-bundle `adapter` value: `direct native repositories (no external CMS host)`; the schema catalog version and relation inventory digest are frozen at C1 Stage 0 as above. `quicksilver/` stays only as an optional-adapter example, and the matrix records the non-adoption instead of an unimplemented scaffold. The composite-key, revision, idempotency, and append-only rules are unchanged, and A01–A04 must still pass with no CMS client, network call, or credential read.
 
 ## 4. Read-only production export and asset/deletion baseline
 
@@ -76,7 +80,7 @@ This packet does not run the export. It names what the run must produce so the s
 
 The order matters because each signature consumes the previous artifact. Steps 1 and 2 also have an internal order: the `playbook` decision fixes `scopeTypes` for the export.
 
-1. **Product Owner — `playbook` decision.** Records retain or retire in the brief, then the C0 count is updated. If retained, the C1 map, A01, and store count are revised before C1 code.
+1. **Product Owner — `playbook` decision.** **Done 2026-11-19: retained, scope-fenced.** The C0 count, C1 map, A01, and store count are updated to match.
 2. **Product Owner — baseline authorization.** Approves scope, freeze window, and Viewer token use; confirms no Sanity writes will run.
 3. **Technical baseline lead — run and record.** Executes the read-only export, canonicalization, hashing, and reconciliation; records commands and digests privately.
 4. **Security reviewer — read-only and redaction review.** Confirms Viewer-only access, no write credential, private store controls, no private data in the public record.
@@ -91,15 +95,15 @@ The order matters because each signature consumes the previous artifact. Steps 1
 
 ## 7. What this packet does not do
 
-No export, freeze, manifest, credential, import, or C1 code. Sanity stays `required`, ADR 0004 and ADR 0005 stay Proposed, C6 stays a one-tenant canary, and public delivery stays design-only. `playbook` and chassis remain open until their decisions are recorded.
+No export, freeze, manifest, credential, import, or C1 code. Sanity stays `required`, ADR 0004 and ADR 0005 stay Proposed, C6 stays a one-tenant canary, and public delivery stays design-only. The `playbook` and chassis decisions are recorded (§2, §3); every data-dependent C0 item still requires the read-only export, the signed manifest, and the scope signature.
 
 ## 8. Owner checklist
 
-- [ ] `playbook`: retain / retire recorded, count updated
+- [x] `playbook`: retain / retire recorded, count updated
 - [ ] Baseline scope, freeze, and Viewer token approved
 - [ ] Redacted baseline record approved with digests
 - [ ] Tenant Authorities attested; Security review complete
 - [ ] Redacted manifest signed; gate exits 0
 - [ ] C0 scope and difference list signed
-- [ ] Adapter/chassis chosen and recorded
+- [x] Adapter/chassis chosen and recorded
 - [ ] C1 entry bundle signed by owner and Security reviewer

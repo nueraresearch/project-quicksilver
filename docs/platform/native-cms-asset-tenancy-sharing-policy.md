@@ -19,7 +19,7 @@
 
 ## 2. Design records
 
-These are asset-plane records, not additions to the 20 native content collections or the 13 derived stores.
+These are asset-plane records, not additions to the 21 native content collections or the 13 derived stores.
 
 | Record | Required fields | Purpose |
 |---|---|---|

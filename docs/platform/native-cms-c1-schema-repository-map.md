@@ -3,7 +3,7 @@
 - **Status:** Draft for owner review — this is a design document. It does not implement a schema, migration, repository, route, or provider change.
 - **Date:** 2026-11-17
 - **Scope:** The C1 design deliverable in [native CMS cutover](native-cms-cutover.md#c1--native-content-model-and-tenant-scoped-repositories). It derives the target from the [C0 cutover inventory](native-cms-c0-inventory.md).
-- **Source of truth:** C0’s 36-type disposition: **20 native collections, 13 derived/audit stores, 2 optional auth adapters, and 1 proposed retirement**. The ten existing `quicksilver/ontology` collection schemas are the starting point; the remaining retained types are added here.
+- **Source of truth:** C0’s 36-type disposition: **21 native collections, 13 derived/audit stores, 2 optional auth adapters, and 0 retirements** (the 2026-11-19 decision retained `playbook` as native). The ten existing `quicksilver/ontology` collection schemas are the starting point; the remaining retained types are added here.
 - **Field and ownership input:** [Field-level mapping and tenant ownership registry](native-cms-field-mapping-tenant-registry.md). It maps every retained source field and defines the pre-C1 ownership gate; this document supplies the target collections and relations.
 - **Exit-gate tests:** [C1 acceptance test matrix](native-cms-c1-acceptance-test-matrix.md). The 50 named cases are the executable C1 exit gate; this document supplies the contracts they test.
 - **Implementation sequence:** [C1 implementation sequence](native-cms-c1-implementation-sequence.md). It orders the design into evidence-gated stages; it does not implement them.
@@ -102,7 +102,7 @@ interface Page<T> {
 
 Every method takes `tenantId` as its first argument. Repository errors are typed and fail closed: `NotFound` (including a foreign-tenant ID), `CrossTenantRelation`, `RevisionConflict`, `IdempotencyConflict`, `UnresolvedRelation`, `MalformedQuery`, `AppendOnlyViolation`, and `AuditWriteFailed`. The HTTP layer maps them later; C1 does not add routes.
 
-## 3. Native collections (20)
+## 3. Native collections (21)
 
 The table names are proposed persistence names, not a commitment to SQL DDL. Field lists name the retained source fields; a one-for-one field mapping is required, not merely the examples shown.
 
@@ -128,6 +128,7 @@ The table names are proposed persistence names, not a commitment to SQL DDL. Fie
 | `qs_contacts` | `contact` | name, kind (person/organization), email, notes, checkBackCadence, lastInteractionAt, status, externalSync, created/updated metadata | commitments, scheduled items, drafted communications | active/archived; revisioned; soft delete; no direct web route yet | `ContactRepository` |
 | `qs_scheduled_items` | `scheduledItem` | title, kind, startsAt, endsAt, allDay, recurrence, notes, status, createdBy, createdAt, externalSync | linked commitment, decision, contact | upcoming/done/cancelled; revisioned; soft delete; external sync optional | `ScheduledItemRepository` |
 | `qs_drafted_communications` | `draftedCommunication` | kind (email/message/note), recipient (`to`), subject, body, linkedCommitment, linkedDecision, status, deliveryChannel, sentAt, createdBy, createdAt, processHistory | contact, commitment, decision | draft/approved/sent/cancelled; revisioned; delivery adapter separate | `DraftedCommunicationRepository` |
+| `qs_playbooks` | `playbook` | playbookId, version, name, modes, definitionJson, status, digest, authoredBy, publishedBy, publishedAt | none carried; definitions are self-contained and validated as one document | draft/published; revisioned; content digest pinned; human-and-not-author publish only | `PlaybookRepository` |
 
 ### 3.1 Internal native tables
 
@@ -432,7 +433,7 @@ interface DecisionEvent {
 
 | C1 requirement | Design evidence | Acceptance cases |
 |---|---|---|
-| Every retained type has a native schema | 20 native + 13 derived tables above; 2 auth adapters excluded; `playbook` conditional. Every retained source field is classified in the [field mapping](native-cms-field-mapping-tenant-registry.md). | A01 |
+| Every retained type has a native schema | 21 native + 13 derived tables above; 2 auth adapters excluded; 0 retirements. Every retained source field is classified in the [field mapping](native-cms-field-mapping-tenant-registry.md). | A01 |
 | Same-tenant composite relations | §2.2 and §6; every relation is tenant-qualified at the database and repository boundaries. | B01–B11 |
 | Revisions and optimistic concurrency | §2.3; expected revision, immutable snapshots, 409 on mismatch. | C01–C08 |
 | Draft/publish | Per-collection lifecycle columns; published revision pointer; default published read. | C03, C06, E03 |
@@ -445,8 +446,8 @@ The executable C1 exit gate is the [C1 acceptance test matrix](native-cms-c1-acc
 
 ## 9. Decisions still owned outside this draft
 
-- **`playbook`:** retain as a native M4 collection or approve retirement. See the [retain/retire decision brief](native-cms-playbook-decision-brief.md). It is not included in the 33 retained stores and has no repository until that decision.
-- **Chassis:** whether the implementation uses the Strapi chassis or native repositories directly. The composite-key and revision rules above are chassis-neutral and may not be weakened by that choice.
+- **`playbook`:** **decided 2026-11-19 — retained** as a native M4 collection ([brief §6](native-cms-playbook-decision-brief.md#6-sign-off)). It is one of the 34 retained stores, its repository is `PlaybookRepository`, and `deploy/playbooks/*.json` remains the runtime authority until M4 integration.
+- **Chassis:** **decided 2026-11-19 — direct native repositories**, with no CMS host ([packet §3](native-cms-c0-unblock-packet.md#3-decision-2--persistence-adapterchassis)). The composite-key and revision rules above are unchanged and enforceable only in the repository layer.
 - **Production counts and migration scope:** C0’s seed counts are not production counts; the read-only export is still required before any mapping is treated as complete.
 
 No schema, migration, repository, route, provider status, or runtime behavior is changed by this document.

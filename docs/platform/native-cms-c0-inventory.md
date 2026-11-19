@@ -19,7 +19,7 @@ No schema type, route, query family, Studio action, seed, or Context MCP tool is
 
 ## 2. All 36 schema types
 
-Counts: **20 native, 13 derived, 2 optional adapter, 1 proposed retirement, 0 approved retirements.** The seed baseline is **53 documents** across nine populated types; 27 types have no seed fixture and therefore show **0** below. A zero means “no seed document,” not “no production document.” Production per-type counts remain unavailable until the read-only C0 export, and Sanity image/file assets are not among the 36 registered types; they are covered by the separate asset gate.
+Counts: **21 native, 13 derived, 2 optional adapter, 0 retirements**; the 2026-11-19 owner decision retained `playbook` as a native collection rather than retiring it. The seed baseline is **53 documents** across nine populated types; 27 types have no seed fixture and therefore show **0** below. A zero means “no seed document,” not “no production document.” Production per-type counts remain unavailable until the read-only C0 export, and Sanity image/file assets are not among the 36 registered types; they are covered by the separate asset gate.
 
 **Owner legend.** The owner is the accountable workstream for migration and for closing the known difference. The **Product Owner (Nuera RDL)** is the acceptance authority for the aggregate difference list and the only approver of a retirement; no other individual is named here. **Content platform** owns the native CMS chassis, repositories, and admin; **Kernel** owns policy/decision/process authority; **Workflow platform** owns workflow publication and run history; **Agent platform** owns agent catalog/publication and evaluations; **Aura** owns intent graph/ledger/learner; **Genesis/Host** owns department execution, finance, experiments, shadow mode, and content review; **Operator** owns commitments, contacts, calendar, reviews, and drafts; **Security** owns authorization audit; **Identity** owns the OIDC/session adapter; **Observability** owns traces; **Product Owner** owns the `playbook` retain/retire decision.
 
@@ -45,7 +45,7 @@ No known difference below is accepted yet. The Product Owner signs the aggregate
 | `evaluationRecord` | Quicksilver Engine evaluation for query, workflow-run, or business-agent calls; evaluation store | **Derived** | Native evaluation audit | 0 | Agent platform | Native evaluation audit is append-only. Preserve source, agent, task, model, subject, requester, run/node, scores, issues, corrections, and safety decision; no read query exists today. |
 | `intentGraph` | Aura objective graph with provenance-tagged variables and edges; Aura intent store | **Native** | Aura intent store | 0 | Aura | The host file/DB store is already the runtime source; Sanity is only a read-only projection. Native must not make Sanity authoritative or lose graph history and question feedback. |
 | `intentLedgerEntry` | Hash-chained Aura intent ledger; Aura ledger store | **Native** | Aura ledger | 0 | Aura | Native ledger is append-only and preserves sequence, previous/current hash, optional signature, actor, role, change, previous value, and reason. Entries are never edited in place. |
-| `playbook` | M4 business playbook definition; schema and kernel playbook docs | **Retirement — owner approval required** | None proposed | 0 | Product Owner | [Retain/retire decision brief](native-cms-playbook-decision-brief.md). No `_type` reader/writer was found in the inspected web, host, or Studio code; the schema is registered but the runtime path is not connected. Retain as native if M4 delivery is still committed, otherwise approve retirement with a migration note. |
+| `playbook` | M4 business playbook definition; schema and kernel playbook docs | **Native** (retained 2026-11-19) | `playbook` | 0 | Product Owner | [Retain/retire decision brief](native-cms-playbook-decision-brief.md#6-sign-off) records retention, scope-fenced. No `_type` reader/writer was found in the inspected web, host, or Studio code; `deploy/playbooks/*.json` stays the runtime authority and there is no native admin screen or write path before M4 integration. A zero seed count is not a production count. |
 | `shadowRecommendation` | Shadow-mode recommendation and owner verdict; host file store or optional Sanity store | **Derived** | Native shadow log | 0 | Genesis/Host | `QUICKSILVER_SHADOW_STORE=sanity` is optional; the native log is append-only. Preserve recommendation, prediction, verdict, and outcome; shadow mode never executes. |
 | `auraVerdictLearner` | Aura’s learner state for one intent; host file store or optional Sanity store | **Derived** | Native learner state | 0 | Aura | `AGENT_INFERRED` only; never authority. Rebuildable from verdicts, but native should migrate current state and observation count for continuity. |
 | `moneyEntry` | Append-only Genesis money ledger; finance dashboard | **Derived** | Native money ledger | 0 | Genesis/Host | Native preserves sequence, kind, amount, source, decision/recommendation, confirmation, occurrence/recording times, and hash chain. No seed; no money movement is added. |
@@ -295,7 +295,7 @@ C1 must add a required tenant key to each retained type, make every relation com
 | `auraVerdictLearner` | Aura learner state | Add `tenantId`; learner state is per tenant and intent | Resolve learner state from the Aura tenant, not a global intent ID |
 | `intentGraph` | Aura objective graph | Add `tenantId`; graph history and feedback are tenant-scoped | Query the graph through the Aura tenant; Sanity remains a projection, not authority |
 | `oidcLoginTransaction` | Short-lived OIDC transaction | Keep it in the auth plane; key it by tenant, issuer, and subject rather than adding it to CMS content | Do not let a CMS query read it; session exchange must reject a transaction minted for another tenant |
-| `playbook` | M4 playbook definition, currently proposed for retirement | If retained, add `tenantId`; otherwise retire with the owner-approved migration note | No native query until the retain/retire decision; if retained, tenant-scope it like other content |
+| `playbook` | M4 playbook definition, retained as native (2026-11-19) | Add `tenantId` and the native tenant/revision/audit columns | No native query until an M4 integration makes the collection authoritative; tenant-scope it like other content |
 
 ### 8.2 Types with a tenant-like field (13)
 
@@ -351,7 +351,7 @@ The following paths are the concrete C0 gaps. `None` means the query has no tena
 
 **No schema type, route, query family, Studio action, seed, or Context MCP tool is approved for retirement by this draft.**
 
-- **`playbook`** is the only schema type proposed for retirement. It has no current web or host reader/writer in the inspected code; the kernel's playbook docs/tests use code/file definitions. The owner must either retain it as a native collection for M4 or approve retirement with a migration note. Until then it is not counted as native.
+- **`playbook`** was the only schema type proposed for retirement. It has no current web or host reader/writer in the inspected code; the kernel's playbook docs/tests use code/file definitions. The Product Owner retained it as a native collection on 2026-11-19 ([brief §6](native-cms-playbook-decision-brief.md#6-sign-off)), so it is counted as native and `deploy/playbooks/*.json` remains authoritative until M4 integration.
 - **OIDC login transaction/session** are optional adapters now. They are candidates for replacement at local identity Stage 4, not C0 retirements.
 - **Studio Workflows kanban, Vision, and Studio scripts** are optional adapters. They may be retired with Sanity after C7, but the native admin must first cover decision triage and the seed/smoke/reset workflows.
 
@@ -359,7 +359,7 @@ The following paths are the concrete C0 gaps. `None` means the query has no tena
 
 | C0 item | Status |
 |---|---|
-| All 36 schema types mapped | **Complete for review**: 20 native, 13 derived, 2 optional adapter, 1 proposed retirement; every row has an accountable owner, seed baseline, and known difference. |
+| All 36 schema types mapped | **Complete**: 21 native, 13 derived, 2 optional adapter, 0 retirement; every row has an accountable owner, seed baseline, and known difference. |
 | All 51 route operations mapped | **Complete for review**: 34 native, 12 derived, 5 optional adapter. |
 | Query families mapped | **Complete for review**: 18 families, including six native query contracts still to implement. |
 | Studio actions and seeds mapped | **Complete for review**: 16 action groups and 53 seed documents. |
@@ -367,7 +367,7 @@ The following paths are the concrete C0 gaps. `None` means the query has no tena
 | Tenant-scope gaps mapped | **Complete for review**: 23 types have no tenant field and 13 have only a tenant-like field; C1/C2 enforcement is listed for every type and query path. |
 | Principal-derived tenant queries | **Not implemented**: no current Sanity query derives tenant from the authenticated principal; operator calendar/queue/reviews, entities, dashboards, decisions, inbox, plan, and memory use no tenant predicate or the environment tenant. |
 | Production data inventory | **Not done**: requires a read-only export by tenant, draft state, references, assets, and deletions. The [C0 asset and deletion baseline procedure](native-cms-c0-asset-deletion-baseline.md) defines the export, hashing, tombstone evidence, and private-manifest rules. |
-| Owner-approved retirements | **None**: `playbook` needs an explicit retain/retire decision. |
+| Owner-approved retirements | **None required**: `playbook` was retained rather than retired (2026-11-19). |
 | Scope freeze and owner signature | **Not done**. |
 
-C0 is therefore **not exited**. The remaining blockers are the read-only data/asset/deletion baseline, the `playbook` owner decision, the C1/C2 tenant-scope gate (no current query derives tenant from the principal), and the Product Owner's scope signature. No Sanity writes occurred while preparing this inventory.
+C0 is therefore **not exited**. The remaining blockers are the read-only data/asset/deletion baseline, the C1/C2 tenant-scope gate (no current query derives tenant from the principal), and the Product Owner's scope signature; the `playbook` and chassis decisions are recorded and no longer block. No Sanity writes occurred while preparing this inventory.

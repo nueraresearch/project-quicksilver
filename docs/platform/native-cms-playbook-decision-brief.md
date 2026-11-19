@@ -1,7 +1,7 @@
 # Playbook retain/retire decision brief (draft)
 
 - **Owner:** Product Owner (Nuera RDL)
-- **Status:** Decision requested. This brief does not change the current C0 disposition.
+- **Status:** **Decided 2026-11-19 — retained as native, scope-fenced.** The C0 count, C1 scope, and A01 are updated to match. The option tables below are kept as the decision record.
 - **Date:** 2026-11-17
 - **Why now:** `playbook` is the only C0 type still marked **Retirement — owner approval required**. C0 cannot exit until the Product Owner either approves retirement or changes the disposition to **Native**.
 - **Current C0 row:** [C0 cutover inventory](native-cms-c0-inventory.md).
@@ -67,14 +67,16 @@ Either choice preserves the existing kernel playbook behavior. The decision is w
 
 **Retire if M4’s CMS authoring path is no longer committed.** In that case, retire the Sanity type, keep the kernel/deploy playbooks, and update the product/roadmap language in the same decision. Do not retain a dormant editable collection without an owner and a delivery date.
 
+**Recorded decision (2026-11-19): Option A — retained, scope-fenced.** M4’s CMS authoring path is still committed, so the collection is created in C1 while `deploy/playbooks/*.json` remains the runtime authority.
+
 The production export is required under either option. Neither choice can claim a zero production count from the seed baseline.
 
 ## 6. Sign-off
 
-- [ ] **Retain as native**, with deploy JSON authoritative until M4 integration.
+- [x] **Retain as native**, with deploy JSON authoritative until M4 integration.
 - [ ] **Retire the Sanity type**, keep kernel/deploy playbooks, and update the product/roadmap language.
 - [ ] **Defer** (C0 remains blocked; no disposition change).
 
-Product Owner: ____________________  Date: __________
+Product Owner: Nuera RDL  Date: 2026-11-19
 
-Decision note / conditions: ________________________________________________
+Decision note / conditions: Retained, scope-fenced. C0 count is **21 native, 13 derived, 2 optional adapter, 0 retirement**; C1 scope is **34 stores** and `C1-A01` expects 21 + 13. Conditions: no native admin screen and no native write path before M4 integration; `deploy/playbooks/*.json` remains authoritative and the kernel playbook tests remain the regression proof; `playbook` stays in the export `scopeTypes` and imports only documents that validate against the current kernel `PlaybookDefinition`; no seed data is invented if the export finds no documents.
