@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 /**
- * Produces the redacted C1 evidence artifacts (matrix §2.5; implementation
- * sequence Stage 8): `c1-acceptance-report` and `c1-query-contract-report`.
+ * Produces the redacted C1 evidence artifacts from a run that just happened:
+ * `c1-acceptance-report` (implementation sequence Stage 8) and
+ * `c1-query-contract-report` (the Stage 7 report the same matrix run supports).
  *
- * It runs the matrix gate and the guard-removal provocation itself, so the
- * artifacts describe a run that just happened rather than a remembered one, and
- * it refuses to write anything unless both are green. Contents are limited to
- * commands, counts, matrix IDs, digests and metadata: no record bodies, ids or
- * tenant names. A private-input check rejects anything that looks like one.
+ * It runs the matrix gate and the guard-removal provocation itself, so an
+ * artifact cannot describe a remembered run, and it refuses to write unless both
+ * are green and every mutation the provocation knows about was caught. Contents
+ * are limited to commands, counts, matrix IDs and digests: no record bodies,
+ * record ids or tenant names, and a pattern check rejects anything that looks
+ * like one.
  *
- * C0 inputs and owner sign-off are not inputs this repository can supply, so
- * the artifacts mark them blocked instead of claiming an exit.
+ * The claim binds to a commit *before* the run: the paths that decide the run
+ * must be clean, and the `native:c1:test` script in `package.json` must be the
+ * one HEAD defines, so the artifact cannot name a commit whose command differs
+ * from the one that executed.
+ *
+ * C0 inputs and owner sign-off are not inputs this repository can supply, so the
+ * artifacts mark them blocked instead of claiming an exit.
  *
  * Usage: native-c1-evidence [--check]
  *   --check  compare a fresh run with the committed artifacts; write nothing
@@ -20,7 +27,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { checkMatrixRun, matrixCaseIds, runCaseResults } from './native-c1-matrix.mjs'
+import { checkMatrixRun, matrixCaseIds } from './native-c1-matrix.mjs'
+import { MUTATIONS } from './native-c1-mutations.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const MATRIX_FILE = 'docs/platform/native-cms-c1-acceptance-test-matrix.md'
@@ -29,8 +37,27 @@ const ADAPTER = 'direct native repositories (no external CMS host); in-memory Me
 const COMMAND = 'npm run native:c1:test'
 const PRIVATE = /\btenant-[ab]\b|\bshared-(root|graph|agent|lineage)\b|\btenant-b-graph\b/
 
-const check = process.argv.includes('--check')
-for (const argument of process.argv.slice(2)) {
+// The paths that decide the run. The report names the commit it tested, so these
+// must be committed. Unrelated working-tree changes elsewhere are not part of the
+// claim, and `package.json` is bound separately below because its working copy
+// carries unrelated edits.
+const INPUTS = [
+  'quicksilver',
+  'scripts/native-c1-test.mjs',
+  'scripts/native-c1-run.mjs',
+  'scripts/native-c1-matrix.mjs',
+  'scripts/native-c1-mutations.mjs',
+  'scripts/native-c1-provoke.mjs',
+  'scripts/native-c1-fixture-digest.ts',
+  'scripts/native-c1-evidence.mjs',
+  'scripts/native-c1-run.test.mjs',
+  'scripts/native-c1-test.test.mjs',
+  MATRIX_FILE,
+]
+
+const args = process.argv.slice(2)
+const check = args.includes('--check')
+for (const argument of args) {
   if (argument !== '--check') {
     console.error(`unknown argument: ${argument}\nusage: native-c1-evidence [--check]`)
     process.exit(2)
@@ -46,7 +73,31 @@ function fail(message, output = '') {
   process.exit(1)
 }
 
-// 1. The matrix run.
+const git = (...argv) => spawnSync('git', argv, { cwd: root, encoding: 'utf8' })
+
+// 1. Bind the claim to a commit before spending minutes on a run.
+const dirty = git('status', '--porcelain', '--', ...INPUTS).stdout?.trim()
+if (dirty) fail(`C1 EVIDENCE FAILED: commit the matrix inputs first; the report must name the commit it tested.\n${dirty}`)
+
+const commit = git('rev-parse', 'HEAD').stdout?.trim()
+if (!commit) fail('C1 EVIDENCE FAILED: HEAD cannot be resolved.')
+
+const scriptOf = (json) => {
+  try {
+    return JSON.parse(json).scripts?.['native:c1:test'] ?? ''
+  } catch {
+    return ''
+  }
+}
+const headPackage = git('show', 'HEAD:package.json')
+if (headPackage.status !== 0) fail(`C1 EVIDENCE FAILED: cannot read package.json from ${commit}.`)
+const script = scriptOf(headPackage.stdout)
+if (!script) fail(`C1 EVIDENCE FAILED: ${commit} defines no native:c1:test script.`)
+if (scriptOf(readFileSync(join(root, 'package.json'), 'utf8')) !== script) {
+  fail('C1 EVIDENCE FAILED: the working copy\'s "native:c1:test" script differs from the committed one.')
+}
+
+// 2. The matrix run.
 const gate = spawnSync('npm', ['run', '--silent', 'native:c1:test'], { cwd: root, encoding: 'utf8', shell, env })
 const gateOutput = `${gate.stdout ?? ''}\n${gate.stderr ?? ''}`
 if (gate.status !== 0) fail('C1 EVIDENCE FAILED: the matrix gate is not green.', gateOutput)
@@ -55,7 +106,9 @@ const matrix = readFileSync(join(root, MATRIX_FILE), 'utf8')
 const accounting = checkMatrixRun({ output: gateOutput, markdown: matrix, status: gate.status })
 if (accounting.problems.length > 0) fail(`C1 EVIDENCE FAILED: ${accounting.problems.join('; ')}`, gateOutput)
 
-// 2. Guard-removal provocation.
+// 3. Guard-removal provocation. The gate above proves the cases pass; only the
+//    provocation proves they would notice a guard going missing. It must report
+//    every mutation this repository defines, not a shorter list it chose.
 const provoke = spawnSync(process.execPath, [join(root, 'scripts/native-c1-provoke.mjs'), '--json'], {
   cwd: root,
   encoding: 'utf8',
@@ -68,10 +121,16 @@ try {
   fail('C1 EVIDENCE FAILED: the guard-removal provocation did not report JSON.', `${provoke.stdout ?? ''}${provoke.stderr ?? ''}`)
 }
 if (provoke.status !== 0 || !provocation.ok) {
+  if (!provocation.baselineOk) {
+    fail('C1 EVIDENCE FAILED: the unmutated C1 suite does not pass, so no guard removal can be interpreted.', provoke.stderr ?? '')
+  }
   fail('C1 EVIDENCE FAILED: a removed guard was not caught by its positive control.', provoke.stderr ?? '')
 }
+if (provocation.mutations.length !== MUTATIONS.length) {
+  fail(`C1 EVIDENCE FAILED: the provocation reported ${provocation.mutations.length} of ${MUTATIONS.length} mutations.`)
+}
 
-// 3. Redaction-safe manifest digests.
+// 4. Redaction-safe manifest digests.
 const digest = spawnSync(
   process.execPath,
   ['--experimental-strip-types', '--no-warnings', join(root, 'scripts/native-c1-fixture-digest.ts')],
@@ -84,27 +143,8 @@ try {
   fail('C1 EVIDENCE FAILED: the fixture manifest digest could not be computed.', `${digest.stdout ?? ''}${digest.stderr ?? ''}`)
 }
 
-// The report names the commit it tested, so the paths that decide the run must be
-// committed. Unrelated working-tree changes elsewhere are not part of this claim.
-const inputs = [
-  'quicksilver',
-  'scripts/native-c1-test.mjs',
-  'scripts/native-c1-run.mjs',
-  'scripts/native-c1-matrix.mjs',
-  'scripts/native-c1-mutations.mjs',
-  'scripts/native-c1-provoke.mjs',
-  'scripts/native-c1-fixture-digest.ts',
-  'scripts/native-c1-evidence.mjs',
-  'scripts/native-c1-run.test.mjs',
-  'scripts/native-c1-test.test.mjs',
-  MATRIX_FILE,
-]
-const dirty = spawnSync('git', ['status', '--porcelain', '--', ...inputs], { cwd: root, encoding: 'utf8' }).stdout?.trim()
-if (dirty) fail(`C1 EVIDENCE FAILED: commit the matrix inputs first; the report must name the commit it tested.\n${dirty}`)
-
-const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).stdout?.trim() || 'unknown'
 const timestamp = new Date().toISOString()
-const results = runCaseResults(gateOutput)
+const results = accounting.results
 const ids = [...matrixCaseIds(matrix)]
 const gates = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((gateName) => {
   const members = ids.filter((id) => id.startsWith(`C1-${gateName}`))
@@ -114,6 +154,7 @@ const gates = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((gateName) => {
 const counts = accounting.counts
 const header = [
   `- **Command:** \`${COMMAND}\``,
+  `- **Script:** \`${script}\``,
   `- **Commit under test:** \`${commit}\``,
   '- **Artifact commit:** a later, documentation-only commit; the code under test is the commit above.',
   `- **Adapter:** ${ADAPTER}`,
@@ -214,37 +255,51 @@ const queryReport = [
   '',
 ]
 
-for (const [name, text] of [
-  ['c1-acceptance-report.md', acceptance.join('\n')],
-  ['c1-query-contract-report.md', queryReport.join('\n')],
-]) {
-  const leak = text.match(PRIVATE)
-  if (leak) fail(`C1 EVIDENCE FAILED: ${name} is not redacted (found ${leak[0]}).`)
-}
-
 const directory = join(root, OUTPUT_DIR)
 const files = [
   ['c1-acceptance-report.md', acceptance.join('\n')],
   ['c1-query-contract-report.md', queryReport.join('\n')],
 ]
 
+for (const [name, text] of files) {
+  const leak = text.match(PRIVATE)
+  if (leak) fail(`C1 EVIDENCE FAILED: ${name} is not redacted (found ${leak[0]}).`)
+}
+
+const namedCommit = (text) => /^- \*\*Commit under test:\*\* `([0-9a-f]{7,40})`$/m.exec(text)?.[1]
+
 if (check) {
+  // Timestamps and the commit line legitimately change between runs.
+  const normalize = (value) => value.replace(/^- \*\*(Timestamp|Commit under test):\*\*.*$/gm, '')
   const stale = files.filter(([name, text]) => {
     const path = join(directory, name)
-    if (!existsSync(path)) return true
-    const committed = readFileSync(path, 'utf8')
-    // Timestamps and the commit line legitimately change between runs.
-    const normalize = (value) => value.replace(/^- \*\*(Timestamp|Commit under test):\*\*.*$/gm, '')
-    return normalize(committed) !== normalize(text)
+    return !existsSync(path) || normalize(readFileSync(path, 'utf8')) !== normalize(text)
   })
   if (stale.length > 0) fail(`C1 EVIDENCE FAILED: stale artifact(s): ${stale.map(([name]) => name).join(', ')}`)
-  console.log('C1 evidence: committed artifacts match a fresh green run.')
+
+  // Matching text is not enough: a code change that leaves every digest intact
+  // would compare equal while the artifacts still name an earlier commit. So the
+  // named commit must describe the same inputs as HEAD.
+  const named = files.map(([name]) => namedCommit(readFileSync(join(directory, name), 'utf8')))
+  if (named.some((value) => !value) || new Set(named).size !== 1) {
+    fail('C1 EVIDENCE FAILED: the artifacts do not name one commit under test; regenerate them.')
+  }
+  const drift = git('diff', '--quiet', named[0], commit, '--', ...INPUTS)
+  if (drift.status === 1) {
+    fail(`C1 EVIDENCE FAILED: the artifacts name ${named[0]}, but the matrix inputs differ at ${commit}; regenerate them without --check.`)
+  }
+  if (drift.status !== 0) {
+    fail(`C1 EVIDENCE FAILED: cannot compare ${named[0]} with ${commit}; the artifact cannot be reproduced from this history.\n${(drift.stderr ?? '').trim()}`)
+  }
+
+  console.log(`C1 evidence: committed artifacts match a fresh green run of ${named[0]}.`)
   process.exit(0)
 }
 
 mkdirSync(directory, { recursive: true })
 for (const [name, text] of files) writeFileSync(join(directory, name), text)
 
+const caught = provocation.mutations.filter((entry) => entry.caught).length
 console.log(
-  `C1 evidence: wrote ${files.length} artifacts to ${OUTPUT_DIR}; ${accounting.covered}/${accounting.expected} cases, ${provocation.mutations.length}/${provocation.mutations.length} guard removals caught.`,
+  `C1 evidence: wrote ${files.length} artifacts to ${OUTPUT_DIR} for ${commit}; ${accounting.covered}/${accounting.expected} cases, ${caught}/${provocation.mutations.length} guard removals caught.`,
 )

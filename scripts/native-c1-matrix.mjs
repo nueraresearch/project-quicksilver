@@ -35,7 +35,7 @@ function summary(output) {
 }
 
 /**
- * @returns {{ problems: string[], counts: object, covered: number, expected: number }}
+ * @returns {{ problems: string[], counts: object, results: Map<string, string>, covered: number, expected: number }}
  * `problems` is empty only when every matrix case ran and passed with no skip or todo.
  */
 export function checkMatrixRun({ output, markdown, status }) {
@@ -60,5 +60,5 @@ export function checkMatrixRun({ output, markdown, status }) {
   if (counts.fail > 0) problems.push(`${counts.fail} test(s) failed`)
   if (status !== 0) problems.push(`the test run exited ${status}`)
 
-  return { problems, counts, covered: results.size, expected: expected.size }
+  return { problems, counts, results, covered: results.size, expected: expected.size }
 }

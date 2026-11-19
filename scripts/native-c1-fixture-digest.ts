@@ -7,12 +7,7 @@
  *
  * Run with: node --experimental-strip-types scripts/native-c1-fixture-digest.ts
  */
-import {
-  C1_COLLECTIONS,
-  C1_DERIVED_STORES,
-  C1_STORES,
-  EXCLUDED_AUTH_STORES,
-} from '../quicksilver/cms/catalog.ts'
+import { C1_STORES } from '../quicksilver/cms/catalog.ts'
 import { RELATION_INVENTORY } from '../quicksilver/cms/relations.ts'
 import { digestOf } from '../quicksilver/cms/store.ts'
 import { seededFixture } from '../quicksilver/test/c1/fixtures/two-tenants.ts'
@@ -37,8 +32,5 @@ console.log(
     schemaVersion: `c1-catalog-${digestOf(catalog).slice('sha256:'.length, 'sha256:'.length + 12)}`,
     schemaCatalogDigest: digestOf(catalog),
     relationInventoryDigest: digestOf(RELATION_INVENTORY.map(({ id }) => id).sort()),
-    collections: C1_COLLECTIONS.length,
-    derived: C1_DERIVED_STORES.length,
-    excludedAuth: EXCLUDED_AUTH_STORES.length,
   }),
 )
