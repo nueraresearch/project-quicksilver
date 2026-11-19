@@ -26,6 +26,7 @@ import {
 } from './errors.ts'
 import { MemoryStore, digestOf, type StoredRow } from './store.ts'
 import { linkRelation, relationById } from './relations.ts'
+import { runIdempotent } from './idempotency.ts'
 import { requireTenant, type TenantId } from './tenancy.ts'
 
 export { requireTenant, type TenantId } from './tenancy.ts'
@@ -193,10 +194,12 @@ export class BaseRepository<T extends ContentRecord> {
     const snapshot = this.store
       .rows('qs_content_revisions')
       .find((candidate) => candidate.tenant_id === tenant && candidate.record_id === id && Number(candidate.revision) === revision)
-    if (snapshot && typeof snapshot.id === 'string') {
-      this.store.replace('qs_content_revisions', tenant, snapshot.id, { state: 'published' })
+    // Every revision row is addressable; publishing marks it rather than
+    // appending a second row with the same revision number.
+    if (!snapshot || typeof snapshot.id !== 'string') {
+      throw new MalformedQueryError('revision snapshot is missing its id')
     }
-    else this.snapshot(tenant, id, revision, 'published', updated, options.actorId, at)
+    this.store.replace('qs_content_revisions', tenant, snapshot.id, { state: 'published' })
     return updated as T
   }
 
@@ -231,6 +234,44 @@ export class BaseRepository<T extends ContentRecord> {
     })
     this.snapshot(tenant, id, revision, 'tombstoned', updated, options.actorId, at)
     return updated as T
+  }
+
+  /** A repeated update with the same key replays its first result (§6 D06). */
+  async updateIdempotent(
+    tenantId: TenantId,
+    id: string,
+    patch: Record<string, unknown>,
+    options: WriteOptions & { expectedRevision: number; idempotencyKey: string },
+  ): Promise<T> {
+    const { idempotencyKey, ...write } = options
+    const outcome = await runIdempotent(
+      this.store,
+      tenantId,
+      'update',
+      idempotencyKey,
+      { id, patch, expectedRevision: options.expectedRevision, actorId: options.actorId },
+      () => this.update(tenantId, id, patch, write),
+    )
+    return structuredClone(outcome.result) as T
+  }
+
+  /** A repeated publish with the same key replays its first result (§6 D06). */
+  async publishIdempotent(
+    tenantId: TenantId,
+    id: string,
+    revision: number,
+    options: WriteOptions & { expectedRevision: number; idempotencyKey: string },
+  ): Promise<T> {
+    const { idempotencyKey, ...write } = options
+    const outcome = await runIdempotent(
+      this.store,
+      tenantId,
+      'publish',
+      idempotencyKey,
+      { id, revision, expectedRevision: options.expectedRevision, actorId: options.actorId },
+      () => this.publish(tenantId, id, revision, write),
+    )
+    return structuredClone(outcome.result) as T
   }
 
   async restore(tenantId: TenantId, id: string, options: WriteOptions & { expectedRevision: number }): Promise<T> {
@@ -392,6 +433,24 @@ export class OrganizationRepository extends BaseRepository<OrganizationRecord> {
     this.store.insert(this.table, record)
     this.store.insert('qs_content_revisions', revision)
     return structuredClone(record)
+  }
+
+  /** A repeated create with the same key returns the first record (§6 D01). */
+  async createIdempotent(
+    tenantId: TenantId,
+    input: OrganizationInput,
+    options: WriteOptions & { idempotencyKey: string },
+  ): Promise<OrganizationRecord> {
+    const { idempotencyKey, ...write } = options
+    const outcome = await runIdempotent(
+      this.store,
+      tenantId,
+      'create',
+      idempotencyKey,
+      { table: this.table, input, actorId: options.actorId },
+      () => this.create(tenantId, input, write),
+    )
+    return structuredClone(outcome.result)
   }
 }
 

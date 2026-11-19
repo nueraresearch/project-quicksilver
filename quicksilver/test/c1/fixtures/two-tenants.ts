@@ -66,6 +66,7 @@ function insertContent(store: MemoryStore, table: string, recordType: string, ro
   store.insert(table, row)
   store.insert('qs_content_revisions', {
     tenant_id: row.tenant_id,
+    id: store.ids.next('rev'),
     record_type: recordType,
     record_id: row.id,
     revision: row.revision,

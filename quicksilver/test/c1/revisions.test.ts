@@ -149,6 +149,40 @@ test('C1-C06 revision 1 stays immutable while the published read keeps returning
   assert.notEqual(digestTwo, digestOne, 'revision 2 has a new digest')
 })
 
+test('C1-C06b the default read resolves the published revision and falls back to the draft when unpublished', async () => {
+  const { store, repositories } = seededFixture()
+  const organizations = repositories.OrganizationRepository as unknown as OrganizationRepository
+  const target = await organizations.getRoot(TENANT_A)
+
+  // Never published: the default read is the current row, not an empty result.
+  const unpublished = await organizations.get(TENANT_A, target.id)
+  assert.equal(unpublished.revision, 1)
+  assert.equal(unpublished.name, target.name)
+
+  await organizations.publish(TENANT_A, target.id, 1, { ...actor, expectedRevision: 1 })
+  const publishedName = (await organizations.get(TENANT_A, target.id)).name
+  await organizations.update(TENANT_A, target.id, { name: 'Draft after publish' }, { ...actor, expectedRevision: 1 })
+
+  const byDefault = await organizations.get(TENANT_A, target.id)
+  assert.equal(byDefault.revision, 1, 'the default read is still revision 1')
+  assert.equal(byDefault.name, publishedName)
+  assert.deepEqual(await organizations.get(TENANT_A, target.id, { revision: 1 }), byDefault, 'a pinned read agrees')
+
+  const draft = await organizations.get(TENANT_A, target.id, { includeDraft: true })
+  assert.equal(draft.revision, 2)
+  assert.equal(draft.name, 'Draft after publish')
+
+  // Publishing marks the existing snapshot; it adds no row with the same number.
+  const revisions = (await organizations.revisions(TENANT_A, target.id, { limit: 10 })).items
+  assert.deepEqual(
+    revisions.map((item) => item.revision),
+    [2, 1],
+    'one row per revision, newest first',
+  )
+  assert.equal(revisions.find((item) => item.revision === 1)?.state, 'published')
+  assert.equal(store.rawDump(TENANT_A, 'qs_content_revisions').filter((row) => row.record_id === target.id).length, 2)
+})
+
 test('C1-C07 two head CAS moves at the same casRevision produce one winner and one audit row', async () => {
   const { store, repositories } = seededFixture()
   const heads = repositories.WorkflowPublicationHeadRepository as unknown as {
