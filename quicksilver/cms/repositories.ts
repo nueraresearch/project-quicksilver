@@ -159,6 +159,12 @@ export class BaseRepository<T extends ContentRecord> {
   /** Expected-revision compare-and-swap; a mismatch never overwrites (§2.3). */
   async update(tenantId: TenantId, id: string, patch: Record<string, unknown>, options: WriteOptions & { expectedRevision: number }): Promise<T> {
     const tenant = requireTenant(tenantId)
+    if (!patch || typeof patch !== 'object') throw new MalformedQueryError('patch is required')
+    // Identity and ownership are never patchable: a tenant is the call's, not a
+    // payload field (F06).
+    if ('tenant_id' in patch || 'id' in patch) {
+      throw new MalformedQueryError('tenant_id and id are not patchable')
+    }
     const row = this.writable(tenant, id, options, 'content.update')
     const revision = Number(row.revision) + 1
     const at = this.store.clock.now()

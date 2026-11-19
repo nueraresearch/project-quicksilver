@@ -119,6 +119,18 @@ const EVIDENCE_MAX = 500
 
 const visible = (row: StoredRow): boolean => row.lifecycle === 'published' && typeof row.deleted_at !== 'string'
 
+/** The decision status projection values the API accepts (F03, G06). */
+const DECISION_STATUSES = new Set([
+  'proposed',
+  'awaiting-approval',
+  'approved',
+  'executed',
+  'failed',
+  'rejected',
+  'rollback-proposed',
+  'rolled-back',
+])
+
 function tenantRows(store: MemoryStore, table: string, tenantId: TenantId): StoredRow[] {
   return store.rows(table).filter((row) => row.tenant_id === tenantId)
 }
@@ -146,6 +158,26 @@ export async function getCapabilityGraph(store: MemoryStore, tenantId: TenantId)
     }
   }
 
+  // Inheritance and requirement edges must be acyclic; a conflict edge is not an
+  // ordering constraint, so it cannot close a cycle (G01).
+  const successors = new Map<string, string[]>()
+  for (const edge of edges) {
+    if (edge.kind === 'conflictsWith') continue
+    const list = successors.get(edge.from) ?? []
+    list.push(edge.to)
+    successors.set(edge.from, list)
+  }
+  const state = new Map<string, 'visiting' | 'done'>()
+  const walk = (id: string): void => {
+    const current = state.get(id)
+    if (current === 'visiting') throw new UnresolvedRelationError(`capability ${id} participates in a cycle`)
+    if (current === 'done') return
+    state.set(id, 'visiting')
+    for (const next of successors.get(id) ?? []) walk(next)
+    state.set(id, 'done')
+  }
+  for (const id of byId.keys()) walk(id)
+
   edges.sort((left, right) => `${left.from}\u0000${left.to}\u0000${left.kind}`.localeCompare(`${right.from}\u0000${right.to}\u0000${right.kind}`))
   const nodes = [...byId.values()]
     .sort((left, right) => String(left.id).localeCompare(String(right.id)))
@@ -164,7 +196,7 @@ export async function getCapabilityGraph(store: MemoryStore, tenantId: TenantId)
   }
 }
 
-/** §7.2 — evidence contradictions now; policy and metric kinds arrive with G02. */
+/** §7.2 — policy conflicts, evidence contradictions and metric drift. */
 export async function findContradictions(store: MemoryStore, tenantId: TenantId): Promise<ContradictionFinding[]> {
   const tenant = requireTenant(tenantId)
   const evidence = tenantRows(store, 'qs_evidence', tenant).filter((row) => typeof row.deleted_at !== 'string')
@@ -185,6 +217,60 @@ export async function findContradictions(store: MemoryStore, tenantId: TenantId)
     }
   }
 
+  // A policy lineage resolves to one effect; two active effects on one lineage
+  // is a conflict, whatever order they were written in.
+  const policies = tenantRows(store, 'qs_policies', tenant).filter(visible)
+  const lineages = new Map<string, StoredRow[]>()
+  for (const policy of policies) {
+    const lineage = typeof policy.lineage_id === 'string' && policy.lineage_id ? policy.lineage_id : null
+    if (!lineage) continue
+    lineages.set(lineage, [...(lineages.get(lineage) ?? []), policy])
+  }
+  for (const [lineage, group] of lineages) {
+    for (let i = 0; i < group.length; i += 1) {
+      for (let j = i + 1; j < group.length; j += 1) {
+        const left = group[i]!
+        const right = group[j]!
+        if (left.effect === right.effect) continue
+        const ids = [String(left.id), String(right.id)].sort()
+        findings.push({
+          id: `policy:${lineage}:${ids[0]}:${ids[1]}`,
+          kind: 'policy-conflict',
+          subjectIds: ids,
+          severity: 'high',
+          reason: 'one policy lineage carries two active effects',
+        })
+      }
+    }
+  }
+
+  // A metric whose latest two observations differ by half again has drifted
+  // from its own baseline (G02). Observations are the authority.
+  const observations = tenantRows(store, 'qs_metric_observations', tenant)
+  const byMetric = new Map<string, StoredRow[]>()
+  for (const observation of observations) {
+    const metricId = String(observation.metric_id)
+    byMetric.set(metricId, [...(byMetric.get(metricId) ?? []), observation])
+  }
+  for (const [metricId, group] of byMetric) {
+    const ordered = group.slice().sort((left, right) => {
+      const a = String(left.observed_at)
+      const b = String(right.observed_at)
+      return a === b ? String(left.id).localeCompare(String(right.id)) : a.localeCompare(b)
+    })
+    const previous = Number(ordered.at(-2)?.value)
+    const latest = Number(ordered.at(-1)?.value)
+    if (!Number.isFinite(previous) || !Number.isFinite(latest) || previous === 0) continue
+    if (Math.abs(latest - previous) / Math.abs(previous) < 0.5) continue
+    findings.push({
+      id: `metric:${metricId}`,
+      kind: 'metric-drift',
+      subjectIds: [metricId],
+      severity: 'medium',
+      reason: 'the latest observation moved more than half from the previous one',
+    })
+  }
+
   findings.sort((left, right) => `${left.kind}\u0000${left.id}`.localeCompare(`${right.kind}\u0000${right.id}`))
   return findings.slice(0, CONTRADICTIONS)
 }
@@ -203,9 +289,47 @@ export async function getWorkflowDAG(store: MemoryStore, tenantId: TenantId, gra
     (row) => row.graph_id === graphId && row.version === head.active_version,
   )
   if (!version) return null
+  // A head may not resolve a draft or tombstoned version; there is no draft
+  // fallback and no promotion of an unpublished version (G03).
+  if (typeof version.deleted_at === 'string') return null
+  if (version.lifecycle !== 'active' && version.lifecycle !== 'published') return null
 
   const nodes = ((version.nodes as WorkflowDAG['nodes'] | undefined) ?? []).slice().sort((left, right) => left.id.localeCompare(right.id))
   const edges = ((version.edges as WorkflowDAG['edges'] | undefined) ?? []).slice().sort((left, right) => left.id.localeCompare(right.id))
+
+  if (nodes.length > 500 || edges.length > 2000) {
+    throw new MalformedQueryError('graph exceeds the validated node or edge bound')
+  }
+  const nodeIds = new Set<string>()
+  for (const node of nodes) {
+    if (nodeIds.has(node.id)) throw new MalformedQueryError(`duplicate node id: ${node.id}`)
+    nodeIds.add(node.id)
+  }
+  if (!nodeIds.has(String(version.entry_node_id ?? ''))) {
+    throw new MalformedQueryError('entry node is missing from the graph')
+  }
+  const edgeIds = new Set<string>()
+  for (const edge of edges) {
+    if (edgeIds.has(edge.id)) throw new MalformedQueryError(`duplicate edge id: ${edge.id}`)
+    edgeIds.add(edge.id)
+    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+      throw new UnresolvedRelationError(`edge ${edge.id} points at a node that does not exist`)
+    }
+  }
+  const adjacency = new Map<string, string[]>()
+  for (const edge of edges) adjacency.set(edge.from, [...(adjacency.get(edge.from) ?? []), edge.to])
+  const visiting = new Set<string>()
+  const done = new Set<string>()
+  const detect = (id: string): void => {
+    if (visiting.has(id)) throw new MalformedQueryError('graph contains a cycle')
+    if (done.has(id)) return
+    visiting.add(id)
+    for (const next of adjacency.get(id) ?? []) detect(next)
+    visiting.delete(id)
+    done.add(id)
+  }
+  for (const id of nodeIds) detect(id)
+
   return {
     graphId,
     version: Number(version.version),
@@ -220,7 +344,9 @@ export async function getWorkflowDAG(store: MemoryStore, tenantId: TenantId, gra
 /** §7.4 — one subtree or the roots; a foreign root yields an empty tree. */
 export async function getObjectiveTree(store: MemoryStore, tenantId: TenantId, objectiveId?: string): Promise<ObjectiveTree> {
   const tenant = requireTenant(tenantId)
-  const objectives = tenantRows(store, 'qs_objectives', tenant).filter(visible)
+  const objectives = tenantRows(store, 'qs_objectives', tenant).filter(
+    (row) => visible(row) && row.status === 'active',
+  )
   const byId = new Map(objectives.map((row) => [String(row.id), row]))
 
   if (objectiveId !== undefined) {
@@ -239,8 +365,16 @@ export async function getObjectiveTree(store: MemoryStore, tenantId: TenantId, o
     return buildTree([objectiveId], byId)
   }
 
+  // A parent outside the visible set is an orphan: refusing is safer than
+  // silently promoting the node to a root (G04).
+  for (const row of objectives) {
+    const parent = row.parent_id
+    if (parent !== null && parent !== undefined && !byId.has(String(parent))) {
+      throw new UnresolvedRelationError(`objective ${row.id} has parent ${parent} that does not resolve`)
+    }
+  }
   const roots = objectives
-    .filter((row) => row.parent_id === null || row.parent_id === undefined || !byId.has(String(row.parent_id)))
+    .filter((row) => row.parent_id === null || row.parent_id === undefined)
     .map((row) => String(row.id))
   return buildTree(roots, byId)
 }
@@ -254,17 +388,21 @@ function buildTree(rootIds: string[], byId: Map<string, StoredRow>): ObjectiveTr
     return String(a.name ?? '').localeCompare(String(b.name ?? '')) || left.localeCompare(right)
   })
 
+  const path = new Set<string>()
   const visit = (id: string, depth: number): ObjectiveNode | null => {
+    if (path.has(id)) throw new UnresolvedRelationError(`objective ${id} participates in a cycle`)
     if (nodes >= TREE_NODES || depth > TREE_DEPTH) {
       truncated = true
       return null
     }
+    path.add(id)
     nodes += 1
     const row = byId.get(id)!
     const childIds = order(((row.child_ids as string[] | undefined) ?? []).filter((childId) => byId.has(childId)))
     const children = childIds
       .map((childId) => visit(childId, depth + 1))
       .filter((node): node is ObjectiveNode => node !== null)
+    path.delete(id)
     return {
       id,
       name: String(row.name ?? ''),
@@ -335,6 +473,9 @@ export async function getDecisionHistory(
     throw new MalformedQueryError('kind must be plan or rollback')
   }
   if (filters.status !== undefined && !Array.isArray(filters.status)) throw new MalformedQueryError('status must be an array')
+  for (const status of filters.status ?? []) {
+    if (!DECISION_STATUSES.has(String(status))) throw new MalformedQueryError(`unknown decision status: ${status}`)
+  }
   const from = filters.from === undefined ? null : Date.parse(filters.from)
   const to = filters.to === undefined ? null : Date.parse(filters.to)
   if (from !== null && Number.isNaN(from)) throw new MalformedQueryError('from must be an ISO timestamp')
