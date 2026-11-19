@@ -350,27 +350,47 @@ test('C1-B10 every query contract returns its empty result for a foreign id and 
   )
 })
 
-test('C1-B11 every inventory relation has a same-tenant success and a cross-tenant refusal', () => {
+test('C1-B11 every inventory relation lands in its declared table and refuses a foreign target', () => {
   const { store, seeds } = seededFixture()
+  const joinTables = [...new Set(RELATION_INVENTORY.flatMap((relation) => (relation.joinTable ? [relation.joinTable] : [])))]
+  const counts = () =>
+    Object.fromEntries(joinTables.map((table) => [table, store.rows(table).filter((row) => row.tenant_id === TENANT_A).length]))
 
   for (const relation of RELATION_INVENTORY) {
     const sourceA = rowFor(seeds, relation.sourceTable, TENANT_A)
     const targetA = rowFor(seeds, relation.targetTable, TENANT_A)
     const targetB = rowFor(seeds, relation.targetTable, TENANT_B)
-    const joins = () =>
-      relation.joinTable ? store.rows(relation.joinTable).filter((row) => row.tenant_id === TENANT_A).length : 0
 
-    const before = joins()
+    const before = counts()
     linkRelation(store, TENANT_A, relation, sourceA, targetA, { actorId: 'principal-a' })
-    if (relation.joinTable) assert.equal(joins(), before + 1, `${relation.id}: a same-tenant link inserts one join row`)
+    const after = counts()
+
+    if (relation.joinTable) {
+      assert.equal(after[relation.joinTable], before[relation.joinTable]! + 1, `${relation.id}: one row in ${relation.joinTable}`)
+      // The row must be in this relation's own table, not a reused one.
+      assert.ok(
+        store
+          .rows(relation.joinTable)
+          .some((row) => row.tenant_id === TENANT_A && row.from_id === sourceA && row.to_id === targetA),
+        `${relation.id}: the link is recorded in ${relation.joinTable}`,
+      )
+      for (const table of joinTables) {
+        if (table === relation.joinTable) continue
+        assert.equal(after[table], before[table]!, `${relation.id}: no row may be written to ${table}`)
+      }
+    }
 
     assert.throws(
       () => linkRelation(store, TENANT_A, relation, sourceA, targetB, { actorId: 'principal-a' }),
       (error: unknown) => code(error) === 'CrossTenantRelation',
       `${relation.id}: a foreign target must be refused`,
     )
-    assert.equal(joins(), relation.joinTable ? before + 1 : 0, `${relation.id}: a refusal inserts no join row`)
+    assert.deepEqual(counts(), after, `${relation.id}: a refusal inserts no join row`)
   }
 
   assert.ok(RELATION_INVENTORY.length >= 50, 'the inventory must cover the §6 content relations')
+
+  // Every many-to-many relation names a join table, and no table serves two different relations.
+  const declarations = RELATION_INVENTORY.filter((relation) => relation.kind === 'many-to-many').map((relation) => relation.joinTable)
+  assert.ok(declarations.every((table) => typeof table === 'string'), 'every many-to-many relation declares its table')
 })

@@ -82,6 +82,10 @@ export const C1_INTERNAL_TABLES: readonly string[] = [
   'qs_evidence_supports',
   'qs_policy_applies_to',
   'qs_policy_approvals',
+  'qs_organization_resources',
+  'qs_capability_policies',
+  'qs_policy_supersedes',
+  'qs_evidence_contradictions',
 ]
 
 export const C1_STORES: readonly StoreDefinition[] = [...C1_COLLECTIONS, ...C1_DERIVED_STORES]

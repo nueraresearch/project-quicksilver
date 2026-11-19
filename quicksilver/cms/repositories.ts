@@ -16,6 +16,7 @@
  */
 import { C1_STORES } from './catalog.ts'
 import {
+  AppendOnlyViolationError,
   AuditWriteFailedError,
   CrossTenantRelationError,
   MalformedQueryError,
@@ -98,12 +99,189 @@ export class BaseRepository<T extends ContentRecord> {
     this.table = table
   }
 
-  async get(tenantId: TenantId, id: string): Promise<T> {
+  async get(tenantId: TenantId, id: string, options: { revision?: number; includeDraft?: boolean } = {}): Promise<T> {
     const tenant = requireTenant(tenantId)
     if (typeof id !== 'string' || id.trim().length === 0) throw new MalformedQueryError('id is required')
     const row = findRow(this.store, this.table, tenant, id)
     if (!row) throw new NotFoundError()
+    if (options.revision !== undefined) return this.getRevision(tenant, id, options.revision) as Promise<T>
+    // Editorial readers default to the published revision (§2.3). A record that
+    // was never published has no published revision to resolve.
+    if (!options.includeDraft && row.published_revision !== undefined && row.published_revision !== null) {
+      const snapshot = this.store
+        .rows('qs_content_revisions')
+        .find(
+          (candidate) =>
+            candidate.tenant_id === tenant &&
+            candidate.record_id === id &&
+            Number(candidate.revision) === Number(row.published_revision) &&
+            candidate.state !== 'draft',
+        )
+      if (snapshot) return structuredClone(snapshot.snapshot) as T
+    }
     return structuredClone(row) as T
+  }
+
+  /** Immutable revision snapshots, newest first. */
+  async revisions(tenantId: TenantId, id: string, page: PageRequest): Promise<Page<{ revision: number; digest: string; state: string; actor_id: string; created_at: string }>> {
+    const tenant = requireTenant(tenantId)
+    const limit = requireLimit(page)
+    if (!findRow(this.store, this.table, tenant, id)) throw new NotFoundError()
+    const rows = this.store
+      .rows('qs_content_revisions')
+      .filter((row) => row.tenant_id === tenant && row.record_id === id)
+      .sort((left, right) => Number(right.revision) - Number(left.revision))
+      .slice(0, limit)
+      .map((row) => ({
+        revision: Number(row.revision),
+        digest: String(row.digest),
+        state: String(row.state),
+        actor_id: String(row.actor_id),
+        created_at: String(row.created_at),
+      }))
+    return { items: rows, nextCursor: null, truncated: false }
+  }
+
+  async getRevision(tenantId: TenantId, id: string, revision: number): Promise<T> {
+    const tenant = requireTenant(tenantId)
+    if (!Number.isInteger(revision) || revision < 1) throw new MalformedQueryError('revision must be a positive integer')
+    const row = this.store
+      .rows('qs_content_revisions')
+      .find(
+        (candidate) =>
+          candidate.tenant_id === tenant && candidate.record_id === id && Number(candidate.revision) === revision,
+      )
+    if (!row) throw new NotFoundError('revision not found')
+    return structuredClone(row.snapshot) as T
+  }
+
+  /** Expected-revision compare-and-swap; a mismatch never overwrites (§2.3). */
+  async update(tenantId: TenantId, id: string, patch: Record<string, unknown>, options: WriteOptions & { expectedRevision: number }): Promise<T> {
+    const tenant = requireTenant(tenantId)
+    const row = this.writable(tenant, id, options, 'content.update')
+    const revision = Number(row.revision) + 1
+    const at = this.store.clock.now()
+    const updated = this.store.replace(this.table, tenant, id, {
+      ...patch,
+      tenant_id: tenant,
+      revision,
+      updated_at: at,
+      updated_by: options.actorId,
+    })
+    this.snapshot(tenant, id, revision, 'draft', updated, options.actorId, at)
+    return updated as T
+  }
+
+  /** Publishes one existing revision; it does not allocate a new one. */
+  async publish(tenantId: TenantId, id: string, revision: number, options: WriteOptions & { expectedRevision: number }): Promise<T> {
+    const tenant = requireTenant(tenantId)
+    const row = this.writable(tenant, id, options, 'content.publish')
+    if (!Number.isInteger(revision) || revision < 1) throw new MalformedQueryError('revision must be a positive integer')
+    const exists = this.store
+      .rows('qs_content_revisions')
+      .some((candidate) => candidate.tenant_id === tenant && candidate.record_id === id && Number(candidate.revision) === revision)
+    if (!exists) throw new NotFoundError('revision not found')
+    const at = this.store.clock.now()
+    const updated = this.store.replace(this.table, tenant, id, {
+      lifecycle: 'published',
+      published_revision: revision,
+      updated_at: at,
+      updated_by: options.actorId,
+    })
+    // Publishing marks the existing snapshot; it does not rewrite its body or
+    // allocate a revision, so the published digest cannot change under review.
+    const snapshot = this.store
+      .rows('qs_content_revisions')
+      .find((candidate) => candidate.tenant_id === tenant && candidate.record_id === id && Number(candidate.revision) === revision)
+    if (snapshot && typeof snapshot.id === 'string') {
+      this.store.replace('qs_content_revisions', tenant, snapshot.id, { state: 'published' })
+    }
+    else this.snapshot(tenant, id, revision, 'published', updated, options.actorId, at)
+    return updated as T
+  }
+
+  async archive(tenantId: TenantId, id: string, options: WriteOptions & { expectedRevision: number }): Promise<T> {
+    const tenant = requireTenant(tenantId)
+    const row = this.writable(tenant, id, options, 'content.archive')
+    const revision = Number(row.revision) + 1
+    const at = this.store.clock.now()
+    const updated = this.store.replace(this.table, tenant, id, {
+      lifecycle: 'archived',
+      revision,
+      updated_at: at,
+      updated_by: options.actorId,
+    })
+    this.snapshot(tenant, id, revision, 'archived', updated, options.actorId, at)
+    return updated as T
+  }
+
+  async softDelete(tenantId: TenantId, id: string, options: WriteOptions & { expectedRevision: number }): Promise<T> {
+    const tenant = requireTenant(tenantId)
+    const row = this.writable(tenant, id, options, 'content.delete')
+    const revision = Number(row.revision) + 1
+    const at = this.store.clock.now()
+    const updated = this.store.replace(this.table, tenant, id, {
+      revision,
+      deleted_at: at,
+      deleted_by: options.actorId,
+      delete_reason: 'soft-delete',
+      purge_after: new Date(Date.parse(at) + 30 * 86_400_000).toISOString(),
+      updated_at: at,
+      updated_by: options.actorId,
+    })
+    this.snapshot(tenant, id, revision, 'tombstoned', updated, options.actorId, at)
+    return updated as T
+  }
+
+  async restore(tenantId: TenantId, id: string, options: WriteOptions & { expectedRevision: number }): Promise<T> {
+    const tenant = requireTenant(tenantId)
+    const row = this.writable(tenant, id, options, 'content.restore')
+    const revision = Number(row.revision) + 1
+    const at = this.store.clock.now()
+    const updated = this.store.replace(this.table, tenant, id, {
+      revision,
+      deleted_at: null,
+      deleted_by: null,
+      delete_reason: null,
+      purge_after: null,
+      updated_at: at,
+      updated_by: options.actorId,
+    })
+    this.snapshot(tenant, id, revision, 'restored', updated, options.actorId, at)
+    return updated as T
+  }
+
+  /** Shared checks for a mutating write: actor, expected revision, audit fault. */
+  protected writable(
+    tenant: TenantId,
+    id: string,
+    options: WriteOptions & { expectedRevision?: number },
+    auditOperation: string,
+  ): StoredRow {
+    if (!options || typeof options.actorId !== 'string' || !options.actorId.trim()) {
+      throw new MalformedQueryError('actorId is required')
+    }
+    const row = findRow(this.store, this.table, tenant, id)
+    if (!row) throw new NotFoundError()
+    if (!Number.isInteger(options.expectedRevision)) throw new MalformedQueryError('expectedRevision is required')
+    if (Number(row.revision) !== options.expectedRevision) throw new RevisionConflictError()
+    if (this.store.consumeAuditFault(auditOperation, 'qs_content_revisions')) throw new AuditWriteFailedError()
+    return row
+  }
+
+  private snapshot(tenant: TenantId, id: string, revision: number, state: string, snapshot: StoredRow, actorId: string, at: string): void {
+    this.store.insert('qs_content_revisions', {
+      tenant_id: tenant,
+      id: this.store.ids.next('rev'),
+      record_type: this.table,
+      record_id: id,
+      revision,
+      state,
+      snapshot,
+      digest: digestOf(snapshot),
+      actor_id: actorId,
+      created_at: at,
+    })
   }
 
   /** Business-key lookup. Tenant-qualified, so a collision cannot merge rows. */
@@ -519,6 +697,29 @@ export class DraftedCommunicationRepository extends BaseRepository<ContentRecord
   }
 }
 
+/** Derived and audit stores have no update or delete path (§4, C08). */
+export class AppendOnlyRepository extends BaseRepository<ContentRecord> {
+  async update(): Promise<never> {
+    throw new AppendOnlyViolationError()
+  }
+
+  async archive(): Promise<never> {
+    throw new AppendOnlyViolationError()
+  }
+
+  async softDelete(): Promise<never> {
+    throw new AppendOnlyViolationError()
+  }
+
+  async restore(): Promise<never> {
+    throw new AppendOnlyViolationError()
+  }
+
+  async hardDelete(): Promise<never> {
+    throw new AppendOnlyViolationError()
+  }
+}
+
 export type RepositoryMap = Record<string, BaseRepository<ContentRecord>>
 
 /** Constructs one repository per catalog store; A02 requires all of them. */
@@ -540,7 +741,9 @@ export function createRepositories(store: MemoryStore): RepositoryMap {
     const Specialized = specialized[definition.repository]
     repositories[definition.repository] = Specialized
       ? new Specialized(store)
-      : new BaseRepository<ContentRecord>(store, definition.name)
+      : definition.kind === 'derived'
+        ? new AppendOnlyRepository(store, definition.name)
+        : new BaseRepository<ContentRecord>(store, definition.name)
   }
   return repositories
 }

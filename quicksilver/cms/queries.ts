@@ -52,6 +52,8 @@ export interface ObjectiveNode {
   departmentId: string | null
   status: string
   childIds: string[]
+  /** The child nodes themselves, so a tree can be walked without a second read. */
+  children: ObjectiveNode[]
 }
 
 export interface ObjectiveTree {
@@ -234,9 +236,7 @@ export async function getObjectiveTree(store: MemoryStore, tenantId: TenantId, o
         stack.push(childId)
       }
     }
-    const roots = [...selected].filter((id) => id === objectiveId || byId.get(id)?.parent_id !== objectiveId)
-    const built = buildTree(roots, byId)
-    return { roots: built.roots, truncated: built.truncated }
+    return buildTree([objectiveId], byId)
   }
 
   const roots = objectives
@@ -262,6 +262,9 @@ function buildTree(rootIds: string[], byId: Map<string, StoredRow>): ObjectiveTr
     nodes += 1
     const row = byId.get(id)!
     const childIds = order(((row.child_ids as string[] | undefined) ?? []).filter((childId) => byId.has(childId)))
+    const children = childIds
+      .map((childId) => visit(childId, depth + 1))
+      .filter((node): node is ObjectiveNode => node !== null)
     return {
       id,
       name: String(row.name ?? ''),
@@ -269,7 +272,8 @@ function buildTree(rootIds: string[], byId: Map<string, StoredRow>): ObjectiveTr
       ownerId: (row.owner_id as string | null | undefined) ?? null,
       departmentId: (row.department_id as string | null | undefined) ?? null,
       status: String(row.status ?? ''),
-      childIds: childIds.filter((childId) => visit(childId, depth + 1) !== null || truncated),
+      childIds,
+      children,
     }
   }
 
