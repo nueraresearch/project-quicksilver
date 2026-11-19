@@ -75,7 +75,8 @@
     "native:gate": "node scripts/native-capability-matrix.mjs",
     "native:c0:gate": "node scripts/native-c0-gate.mjs",
     "native:rehearse": "node scripts/native-migration-rehearsal.mjs",
-    "native:c1:test": "node scripts/native-c1-test.mjs"
+    "native:c1:test": "node scripts/native-c1-test.mjs",
+    "native:c1:run": "node --experimental-strip-types --no-warnings --test --test-concurrency=1 quicksilver/test/c1/bootstrap.test.ts"
   },
   "engines": {
     "node": ">=22.6"
