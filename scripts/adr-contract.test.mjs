@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { bodyDigest } from './adr-digest.mjs'
 
@@ -116,4 +120,63 @@ test('the body digest matches the record', () => {
 test('every ADR is reachable from the platform index', () => {
   const orphans = records.filter((record) => !index.includes(`(${record.name})`)).map((record) => record.name)
   assert.deepEqual(orphans, [], 'link every ADR from docs/platform/README.md so it can be found')
+})
+
+/**
+ * The sealer derives its record directory from its own location, so the fixture
+ * is a copy in a temporary tree with its own docs/platform. That is also
+ * evidence the real ADRs are never rewritten by a test run.
+ */
+const sealer = fileURLToPath(new URL('./adr-digest.mjs', import.meta.url))
+
+function adrFixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'qs-adr-seal-'))
+  mkdirSync(join(dir, 'scripts'))
+  mkdirSync(join(dir, 'docs', 'platform'), { recursive: true })
+  copyFileSync(sealer, join(dir, 'scripts', 'adr-digest.mjs'))
+  const record = (status) =>
+    `# ADR fixture\n\n- **Status:** ${status}\n- **Date:** 2026-01-01\n- **Deciders:** test\n- **Supersedes:** none\n- **Superseded by:** none\n\n## Decision\n\nbody\n`
+  writeFileSync(join(dir, 'docs', 'platform', 'adr-0001-proposal.md'), record('Proposed'))
+  writeFileSync(join(dir, 'docs', 'platform', 'adr-0002-accepted.md'), record('Accepted'))
+  return dir
+}
+
+function seal(dir, ...args) {
+  return spawnSync(process.execPath, [join(dir, 'scripts', 'adr-digest.mjs'), ...args], { cwd: dir, encoding: 'utf8' })
+}
+
+// Prevents: a bare seal stamping a Proposal as if it were accepted and frozen,
+// which lets an unsettled decision read later like a settled one.
+test('a bare seal leaves Proposed records unsealed and seals accepted ones', () => {
+  const dir = adrFixture()
+  try {
+    const proposal = join(dir, 'docs', 'platform', 'adr-0001-proposal.md')
+    const accepted = join(dir, 'docs', 'platform', 'adr-0002-accepted.md')
+    const first = seal(dir)
+    assert.equal(first.status, 0, first.stderr)
+    assert.doesNotMatch(readFileSync(proposal, 'utf8'), /Body digest/, 'a bare run must not seal a Proposal')
+    assert.match(readFileSync(accepted, 'utf8'), /- \*\*Body digest:\*\* sha256:[0-9a-f]{64}/, 'an accepted record must be sealed')
+    assert.match(first.stdout, /left unsealed: only accepted records are sealed/, 'the skip must say why')
+
+    const second = seal(dir)
+    assert.equal(second.status, 0, second.stderr)
+    assert.match(second.stdout, /unchanged/, 'resealing a sealed accepted record changes nothing')
+    assert.doesNotMatch(readFileSync(proposal, 'utf8'), /Body digest/, 'a second bare run must still not seal it')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Prevents: the rule becoming a prohibition, so nobody can seal a record before
+// its status is flipped when that is exactly what a review needs.
+test('naming a Proposed record seals it explicitly', () => {
+  const dir = adrFixture()
+  try {
+    const proposal = join(dir, 'docs', 'platform', 'adr-0001-proposal.md')
+    const result = seal(dir, proposal)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(readFileSync(proposal, 'utf8'), /- \*\*Body digest:\*\* sha256:[0-9a-f]{64}/, 'an explicit path is an explicit request')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

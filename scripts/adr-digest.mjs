@@ -24,11 +24,21 @@ import { fileURLToPath } from 'node:url'
  * platforms and editors: CRLF is folded to LF, trailing whitespace and trailing
  * blank lines are dropped. Reflowing a paragraph is a content change, and is
  * meant to be caught.
+ *
+ * A bare run (`npm run adr:seal`) seals accepted records and leaves Proposed
+ * ones alone: nothing is accepted until it is accepted, and a digest on a
+ * proposal would make an unsettled decision look frozen. Naming a file seals it
+ * whatever its status, because that is an explicit request.
  */
 const MUTABLE = [/^- \*\*Status:\*\*/, /^- \*\*Superseded by:\*\*/, /^- \*\*Body digest:\*\*/]
 
 const DIGEST_LINE = /^- \*\*Body digest:\*\*.*$/m
 const ANCHOR_LINE = /^- \*\*Superseded by:\*\*.*$/m
+const STATUS_LINE = /^- \*\*Status:\*\*[ \t]*(.*)$/m
+
+export function statusOf(text) {
+  return STATUS_LINE.exec(text)?.[1]?.trim() ?? ''
+}
 
 export function canonicalBody(text) {
   return text
@@ -59,8 +69,9 @@ const invokedDirectly = process.argv[1] && resolve(process.argv[1]) === fileURLT
 
 if (invokedDirectly) {
   const directory = fileURLToPath(new URL('../docs/platform/', import.meta.url))
-  const targets = process.argv.slice(2).length
-    ? process.argv.slice(2).map((argument) => resolve(argument))
+  const explicit = process.argv.slice(2)
+  const targets = explicit.length
+    ? explicit.map((argument) => resolve(argument))
     : readdirSync(directory)
         .filter((name) => /^adr-\d{4}-[a-z0-9-]+\.md$/.test(name))
         .map((name) => join(directory, name))
@@ -72,6 +83,10 @@ if (invokedDirectly) {
 
   for (const file of targets) {
     const before = readFileSync(file, 'utf8')
+    if (explicit.length === 0 && statusOf(before) === 'Proposed') {
+      console.log(`proposed   ${file}  (left unsealed: only accepted records are sealed; name the file to seal it anyway)`)
+      continue
+    }
     const after = withDigest(before)
     if (after === before) {
       console.log(`unchanged  ${file}`)
