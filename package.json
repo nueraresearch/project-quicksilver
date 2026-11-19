@@ -45,7 +45,7 @@
     "benchmark:stress": "npm run benchmark:stress --workspace=@quicksilver/agent --",
     "benchmark:waes": "npm run benchmark:waes --workspace=@quicksilver/agent --",
     "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p quicksilver --noEmit",
     "audit:exposure": "npm run audit:exposure --workspace=@quicksilver/studio",
     "demo:seed-decisions": "npm run demo:seed-decisions --workspace=@quicksilver/studio --",
     "demo:preflight": "npm run demo:preflight --workspace=@quicksilver/studio --",
