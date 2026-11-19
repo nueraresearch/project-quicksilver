@@ -23,8 +23,8 @@ These are constraints, not stage objectives.
 
 The executable gate currently exits **1**:
 
-- **23 core capabilities:** 1 native, 5 partial, 17 absent.
-- **14 content capabilities:** 0 native, 4 partial, 10 absent.
+- **23 core capabilities:** 1 native, 6 partial, 16 absent.
+- **14 content capabilities:** 0 native, 5 partial, 9 absent.
 - Sanity is still `required`; the Strapi chassis is an optional, non-runtime-registered scaffold and is not the C1 chassis (decided 2026-11-19: direct native repositories, [C0 packet §3](native-cms-c0-unblock-packet.md#3-decision-2--persistence-adapterchassis)).
 - The current Sanity Studio defines **36 schema types**.
 - **48 route files / 51 operations**, matching the 51 operations declared in `docs/api/openapi.json`. The invocation harness enumerates all 51 with **0 unimportable** modules, validates **37 of 51** against the declared response schema, and leaves **14 of 51** not successful: 8 answer 500 (unconfigured model provider, product-memory root, or entity store), 5 answer 503, and 1 answers 401 (no browser session). Those 14 need native seeded data or another configured dependency. Measured with `QS_SCHEMA_REPORT=1` against `apps/web/lib/api-response-schema.test.ts`.
