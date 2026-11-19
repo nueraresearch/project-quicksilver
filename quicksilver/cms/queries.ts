@@ -109,6 +109,16 @@ export interface DecisionPage {
   truncated: boolean
 }
 
+/**
+ * The read surface the contract implementations need. `MemoryStore` satisfies it
+ * today; a persistence adapter must satisfy the same two reads, not the whole
+ * store, so the query layer cannot reach a write path.
+ */
+export interface QueryStore {
+  rows(table: string): readonly StoredRow[]
+  findById(table: string, tenantId: string, id: string): StoredRow | undefined
+}
+
 const GRAPH_NODES = 500
 const GRAPH_EDGES = 2000
 const CONTRADICTIONS = 200
@@ -131,12 +141,12 @@ const DECISION_STATUSES = new Set([
   'rolled-back',
 ])
 
-function tenantRows(store: MemoryStore, table: string, tenantId: TenantId): StoredRow[] {
+function tenantRows(store: QueryStore, table: string, tenantId: TenantId): StoredRow[] {
   return store.rows(table).filter((row) => row.tenant_id === tenantId)
 }
 
 /** §7.1 — published capabilities only, edges resolved inside the tenant. */
-export async function getCapabilityGraph(store: MemoryStore, tenantId: TenantId): Promise<CapabilityGraph> {
+export async function getCapabilityGraph(store: QueryStore, tenantId: TenantId): Promise<CapabilityGraph> {
   const tenant = requireTenant(tenantId)
   const capabilities = tenantRows(store, 'qs_capabilities', tenant).filter(visible)
   const byId = new Map(capabilities.map((row) => [String(row.id), row]))
@@ -197,7 +207,7 @@ export async function getCapabilityGraph(store: MemoryStore, tenantId: TenantId)
 }
 
 /** §7.2 — policy conflicts, evidence contradictions and metric drift. */
-export async function findContradictions(store: MemoryStore, tenantId: TenantId): Promise<ContradictionFinding[]> {
+export async function findContradictions(store: QueryStore, tenantId: TenantId): Promise<ContradictionFinding[]> {
   const tenant = requireTenant(tenantId)
   const evidence = tenantRows(store, 'qs_evidence', tenant).filter((row) => typeof row.deleted_at !== 'string')
   const ids = new Set(evidence.map((row) => String(row.id)))
@@ -277,7 +287,7 @@ export async function findContradictions(store: MemoryStore, tenantId: TenantId)
  * §7.3 — the active publication head resolves one exact same-tenant version.
  * A missing head/version, or a foreign graph id, returns null: no draft fallback.
  */
-export async function getWorkflowDAG(store: MemoryStore, tenantId: TenantId, graphId: string): Promise<WorkflowDAG | null> {
+export async function getWorkflowDAG(store: QueryStore, tenantId: TenantId, graphId: string): Promise<WorkflowDAG | null> {
   const tenant = requireTenant(tenantId)
   if (typeof graphId !== 'string' || !graphId.trim()) throw new MalformedQueryError('graphId is required')
 
@@ -340,7 +350,7 @@ export async function getWorkflowDAG(store: MemoryStore, tenantId: TenantId, gra
 }
 
 /** §7.4 — one subtree or the roots; a foreign root yields an empty tree. */
-export async function getObjectiveTree(store: MemoryStore, tenantId: TenantId, objectiveId?: string): Promise<ObjectiveTree> {
+export async function getObjectiveTree(store: QueryStore, tenantId: TenantId, objectiveId?: string): Promise<ObjectiveTree> {
   const tenant = requireTenant(tenantId)
   const objectives = tenantRows(store, 'qs_objectives', tenant).filter(
     (row) => visible(row) && row.status === 'active',
@@ -421,7 +431,7 @@ function buildTree(rootIds: string[], byId: Map<string, StoredRow>): ObjectiveTr
 
 /** §7.5 — direct evidence links only, newest first, bounded. */
 export async function getEvidenceForMetric(
-  store: MemoryStore,
+  store: QueryStore,
   tenantId: TenantId,
   metricId: string,
   page: { limit?: number } = {},
@@ -460,7 +470,7 @@ export async function getEvidenceForMetric(
 
 /** §7.6 — immutable events, stable ordering, tenant-bound opaque cursor. */
 export async function getDecisionHistory(
-  store: MemoryStore,
+  store: QueryStore,
   tenantId: TenantId,
   filters: DecisionHistoryFilter = {},
 ): Promise<DecisionPage> {

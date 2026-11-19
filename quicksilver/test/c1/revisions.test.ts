@@ -149,7 +149,7 @@ test('C1-C06 revision 1 stays immutable while the published read keeps returning
   assert.notEqual(digestTwo, digestOne, 'revision 2 has a new digest')
 })
 
-test('C1-C06b the default read resolves the published revision and falls back to the draft when unpublished', async () => {
+test('C1-C06 the default read resolves the published revision and falls back to the draft when unpublished', async () => {
   const { store, repositories } = seededFixture()
   const organizations = repositories.OrganizationRepository as unknown as OrganizationRepository
   const target = await organizations.getRoot(TENANT_A)

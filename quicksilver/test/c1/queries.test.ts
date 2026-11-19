@@ -6,6 +6,7 @@
  * these functions writes.
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import { RepositoryError } from '../../cms/errors.ts'
@@ -18,6 +19,7 @@ import {
   getWorkflowDAG,
 } from '../../cms/queries.ts'
 import { digestOf } from '../../cms/store.ts'
+import * as publicQuery from '../../query/index.ts'
 import { FOREIGN_GRAPH, TENANT_A, TENANT_B, freshFixture, seededFixture } from './fixtures/two-tenants.ts'
 
 function code(error: unknown): string | undefined {
@@ -269,4 +271,32 @@ test('C1-G07 all six contracts exist, return their typed shape, and have a refus
   assert.deepEqual(await getEvidenceForMetric(store, TENANT_A, seeds[TENANT_B].metric), [])
   assert.equal(await getWorkflowDAG(store, TENANT_A, FOREIGN_GRAPH), null)
   assert.deepEqual((await getDecisionHistory(store, TENANT_A, { decisionId: seeds[TENANT_B].decision })).events, [])
+})
+
+test('C1-G07 the public entry points execute the contracts and no stub remains', async () => {
+  const { store, seeds } = seededFixture()
+  const contracts: Array<[string, () => Promise<number>]> = [
+    ['getCapabilityGraph', async () => (await publicQuery.getCapabilityGraph(store, TENANT_A)).nodes.length],
+    ['findContradictions', async () => (await publicQuery.findContradictions(store, TENANT_A)).length],
+    ['getWorkflowDAG', async () => (await publicQuery.getWorkflowDAG(store, TENANT_A, 'shared-graph'))?.nodes.length ?? 0],
+    ['getObjectiveTree', async () => (await publicQuery.getObjectiveTree(store, TENANT_A)).roots.length],
+    ['getEvidenceForMetric', async () => (await publicQuery.getEvidenceForMetric(store, TENANT_A, seeds[TENANT_A].metric)).length],
+    ['getDecisionHistory', async () => (await publicQuery.getDecisionHistory(store, TENANT_A, { decisionId: seeds[TENANT_A].decision })).events.length],
+  ]
+
+  for (const [name, size] of contracts) {
+    assert.ok((await size()) >= 1, `${name} returns fixture-backed data, not an empty stub`)
+  }
+
+  // Positive control for "not a stub": an unconditional empty result would pass
+  // the checks above only if the fixture were empty, but it could not refuse.
+  await assert.rejects(
+    publicQuery.getCapabilityGraph(store, '   '),
+    (error: unknown) => code(error) === 'MalformedQuery',
+    'the public entry point still refuses a blank tenant',
+  )
+  assert.deepEqual(await publicQuery.getEvidenceForMetric(store, TENANT_A, seeds[TENANT_B].metric), [])
+
+  const source = readFileSync(new URL('../../query/index.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /\bTODO\b|not implemented/i, 'no query entry point may remain a stub')
 })

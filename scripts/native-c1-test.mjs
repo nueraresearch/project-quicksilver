@@ -3,25 +3,30 @@
  * The C1 acceptance command: `npm run native:c1:test`.
  *
  * docs/platform/native-cms-c1-acceptance-test-matrix.md §2.1 names this command and
- * the files it runs. C1 is not implemented, so those files do not exist yet. A run
- * over zero files would report zero failures, and an empty pass is exactly what the
- * matrix forbids ("every case must exist and run, with zero skipped, zero todo").
+ * the files it runs. A run over zero files would report zero failures, and an empty
+ * pass is exactly what the matrix forbids ("every case must exist and run, with zero
+ * skipped, zero todo").
  *
- * So the command is wired now and refuses closed: missing files exit 1 and name what
- * is missing. Once the files exist it runs them with Node's test runner unchanged,
- * so nothing here has to be revisited when C1 starts.
+ * So the command refuses closed: missing files exit 1 and name what is missing.
+ * When the files exist it runs them and then accounts for the matrix itself: every
+ * case ID in the matrix tables must appear as a passing test, with no skip, no
+ * todo and no case the matrix does not define. A deleted case cannot pass as a
+ * shorter suite (implementation sequence Stage 8).
  *
  * Usage: native-c1-test [--root <dir>] [--list]
  * Exit: 0 all planned files exist and the suite passed · 1 C1 not implemented, or
  *       the suite failed · 2 invalid usage
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { checkMatrixRun } from './native-c1-matrix.mjs'
+
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const MATRIX = 'docs/platform/native-cms-c1-acceptance-test-matrix.md §2.1'
+const MATRIX_FILE = 'docs/platform/native-cms-c1-acceptance-test-matrix.md'
 
 /** The matrix's planned test files, in the order it lists them. */
 const TESTS = [
@@ -82,10 +87,40 @@ if (missing.length > 0) {
   process.exit(1)
 }
 
+// A gate started from inside another test process inherits NODE_TEST_CONTEXT,
+// which makes the inner `node --test` report through that context instead of
+// this process's output, so the run would look empty.
+const env = { ...process.env }
+delete env.NODE_TEST_CONTEXT
 const result = spawnSync(
   process.execPath,
   ['--experimental-strip-types', '--no-warnings', '--test', '--test-concurrency=1', ...TESTS],
-  { cwd: base, stdio: 'inherit' },
+  { cwd: base, encoding: 'utf8', env },
 )
 
-process.exit(result.status ?? 1)
+process.stdout.write(result.stdout ?? '')
+process.stderr.write(result.stderr ?? '')
+
+const check = checkMatrixRun({
+  output: `${result.stdout ?? ''}\n${result.stderr ?? ''}`,
+  markdown: readFileSync(join(repositoryRoot, MATRIX_FILE), 'utf8'),
+  status: result.status ?? 1,
+})
+
+if (check.problems.length > 0) {
+  console.error(
+    [
+      '',
+      'C1 MATRIX GATE FAILED: this run is not the 50-case matrix.',
+      ...check.problems.map((problem) => `  ${problem}`),
+      '',
+      `See ${MATRIX}. This is not a pass.`,
+    ].join('\n'),
+  )
+  process.exit(1)
+}
+
+console.log(
+  `C1 matrix: ${check.covered}/${check.expected} cases ran, ${check.counts.pass} passed, 0 skipped, 0 todo.`,
+)
+process.exit(0)
