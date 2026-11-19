@@ -14,6 +14,9 @@ const commands = [
   // saw it; `typecheck` now includes `tsc -p quicksilver`. Gate A has no other
   // CI path, so it runs here rather than in a separate job that could drift.
   ['native:c1:run', 'Native CMS C1 acceptance cases'],
+  // The matrix gate refuses until all eight planned C1 files exist. It runs after
+  // the discovering runner so a missing file fails as a gate, not as a shorter suite.
+  ['native:c1:test', 'Native CMS C1 acceptance matrix gate'],
   ['typecheck', 'TypeScript checks'],
 ]
 

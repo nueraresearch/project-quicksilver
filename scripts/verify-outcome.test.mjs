@@ -75,8 +75,9 @@ test('a stage that runs no passing test cannot produce VERIFY PASSED', { skip: p
   }
 })
 
-// Prevents: the C1 suite or the quicksilver type check being dropped from the
-// chain. Gate A has no other CI path, so its absence would be silent.
+// Prevents: the C1 suite, the eight-file matrix gate or the quicksilver type
+// check being dropped from the chain. They have no other CI path, so an absence
+// would be silent.
 test('the verify chain runs the C1 acceptance suite and type-checks quicksilver', { skip: process.platform === 'win32' }, () => {
   const fixtureDir = fixture()
   try {
@@ -84,6 +85,7 @@ test('the verify chain runs the C1 acceptance suite and type-checks quicksilver'
     assert.equal(result.status, 0, result.stderr)
     const invoked = readFileSync(join(fixtureDir.dir, 'calls.log'), 'utf8').trim().split('\n')
     assert.ok(invoked.includes('native:c1:run'), `the chain must run native:c1:run; it ran ${invoked.join(', ')}`)
+    assert.ok(invoked.includes('native:c1:test'), `the chain must run native:c1:test; it ran ${invoked.join(', ')}`)
 
     const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'))
     assert.match(pkg.scripts.typecheck, /tsc -p quicksilver/, 'quicksilver is not a workspace, so typecheck must name it')
@@ -98,7 +100,7 @@ test('a run whose stages pass keeps the VERIFY PASSED outcome', { skip: process.
     const result = run(fixtureDir, 'ok')
     const output = `${result.stdout}${result.stderr}`
     assert.equal(result.status, 0, `a verified run must pass:\n${output}`)
-    assert.match(output, /VERIFY PASSED: 20\/20 tests passed; type checks passed\./)
+    assert.match(output, /VERIFY PASSED: 22\/22 tests passed; type checks passed\./)
   } finally {
     rmSync(fixtureDir.dir, { recursive: true, force: true })
   }

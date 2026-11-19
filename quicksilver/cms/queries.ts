@@ -244,30 +244,28 @@ export async function findContradictions(store: MemoryStore, tenantId: TenantId)
     }
   }
 
-  // A metric whose latest two observations differ by half again has drifted
-  // from its own baseline (G02). Observations are the authority.
+  // The metric row is a projection of its observations. A projection that
+  // disagrees with its latest observation has drifted; a metric without an
+  // observation is skipped rather than compared against a guessed value. Any
+  // disagreement is a finding, so no percentage threshold is invented here.
   const observations = tenantRows(store, 'qs_metric_observations', tenant)
-  const byMetric = new Map<string, StoredRow[]>()
-  for (const observation of observations) {
-    const metricId = String(observation.metric_id)
-    byMetric.set(metricId, [...(byMetric.get(metricId) ?? []), observation])
-  }
-  for (const [metricId, group] of byMetric) {
-    const ordered = group.slice().sort((left, right) => {
-      const a = String(left.observed_at)
-      const b = String(right.observed_at)
-      return a === b ? String(left.id).localeCompare(String(right.id)) : a.localeCompare(b)
-    })
-    const previous = Number(ordered.at(-2)?.value)
-    const latest = Number(ordered.at(-1)?.value)
-    if (!Number.isFinite(previous) || !Number.isFinite(latest) || previous === 0) continue
-    if (Math.abs(latest - previous) / Math.abs(previous) < 0.5) continue
+  for (const metric of tenantRows(store, 'qs_metrics', tenant).filter(visible)) {
+    const metricId = String(metric.id)
+    const latest = observations
+      .filter((observation) => observation.metric_id === metricId)
+      .sort((left, right) => {
+        const a = String(left.observed_at)
+        const b = String(right.observed_at)
+        return a === b ? String(right.id).localeCompare(String(left.id)) : b.localeCompare(a)
+      })[0]
+    if (!latest) continue
+    if (Number(metric.value) === Number(latest.value)) continue
     findings.push({
       id: `metric:${metricId}`,
       kind: 'metric-drift',
       subjectIds: [metricId],
       severity: 'medium',
-      reason: 'the latest observation moved more than half from the previous one',
+      reason: 'the metric projection disagrees with its latest observation',
     })
   }
 

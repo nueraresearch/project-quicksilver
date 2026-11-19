@@ -318,7 +318,8 @@ interface ContradictionFinding {
 
 - Policy findings compare applicable live policies using explicit scope, priority, lineage, effect, and effective dates; same-priority conflicts remain findings for a human/kernel decision.
 - Evidence findings follow `supports`/`contradicts` within the tenant and preserve source/provenance for every finding.
-- Metric drift uses versioned observations and never invents a missing value.
+- Metric drift compares the metric row, which is a projection, with its latest observation: any disagreement is a finding, and a metric without an observation is skipped rather than compared against a guessed value. C1 ships no percentage threshold; a deployment that wants one configures it as policy, not as a constant in the query.
+- `severity` is required by the interface. C1 defaults: policy conflicts `high`, evidence contradictions and metric drift `medium`. A severity is a triage hint for a human or kernel decision and is never authority.
 - Ordering is by `(kind, id)`, bounded to 200 findings. No cross-tenant evidence or policy is compared, and no finding is written back as authority.
 
 ### 7.3 `getWorkflowDAG(tenantId, workflowId)`

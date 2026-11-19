@@ -60,7 +60,8 @@ test('C1-G02 contradictions cover all three kinds, are ordered, tenant-scoped an
   store.insert('qs_policies', { ...base, id: 'pol_b', lineage_id: 'lineage-1', effect: 'deny', name: 'Deny' })
   store.insert('qs_evidence', { ...base, id: 'ev_a', contradicts_ids: ['ev_b'], title: 'A' })
   store.insert('qs_evidence', { ...base, id: 'ev_b', contradicts_ids: [], title: 'B' })
-  store.insert('qs_metrics', { ...base, id: 'met_a', value: 16 })
+  // A stale projection: the row says 10, the latest observation says 16.
+  store.insert('qs_metrics', { ...base, id: 'met_a', value: 10 })
   store.insert('qs_metric_observations', { tenant_id: TENANT_A, id: 'obs_1', metric_id: 'met_a', value: 10, observed_at: '2026-01-01T00:00:00.000Z' })
   store.insert('qs_metric_observations', { tenant_id: TENANT_A, id: 'obs_2', metric_id: 'met_a', value: 16, observed_at: '2026-01-02T00:00:00.000Z' })
 
@@ -145,7 +146,6 @@ test('C1-G03 the workflow DAG resolves only an active same-tenant version and re
     'a cycle refuses',
   )
 
-  assert.equal(seeds[TENANT_A].workflow, seeds[TENANT_A].workflow, 'fixtures stay untouched')
 })
 
 test('C1-G04 the objective tree is deterministic, tenant-scoped and refuses orphan and cycle edges', async () => {
@@ -222,7 +222,6 @@ test('C1-G06 decision history serves A only and refuses invalid filters', async 
   const { store, seeds } = seededFixture()
   const history = await getDecisionHistory(store, TENANT_A, { decisionId: seeds[TENANT_A].decision })
   assert.equal(history.events.length, 1)
-  assert.equal(history.events[0]?.hash, history.events[0]?.hash)
   assert.equal(history.events[0]?.prevHash, null)
 
   assert.deepEqual(
