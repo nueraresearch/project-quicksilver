@@ -148,6 +148,15 @@ test('a second positional argument is rejected', () => {
   assert.match(result.stderr, /unexpected argument/)
 })
 
+// Prevents: a parser that reads the value after a flag as its argument, which
+// would demand JSON from a path that is not there.
+test('--json before the matrix path is still a flag, not a filename', () => {
+  const file = fixture('complete.json', baseMatrix())
+  const result = spawnSync(process.execPath, [script, '--json', file], { cwd: root, env, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(JSON.parse(result.stdout).passed, true)
+})
+
 test('--json still selects machine output', () => {
   const result = run(fixture('complete.json', baseMatrix()), '--json')
   assert.equal(result.status, 0, result.stderr)

@@ -96,11 +96,12 @@ function load(file) {
 
 function main() {
   const args = process.argv.slice(2)
-  const unknown = args.filter((arg) => arg.startsWith('-') && arg !== '--json')
-  if (unknown.length > 0) fail(`unknown option ${unknown.join(', ')}; ${USAGE}`)
+  const flags = args.filter((arg) => arg.startsWith('-'))
   const positional = args.filter((arg) => !arg.startsWith('-'))
+  const unknown = flags.filter((flag) => flag !== '--json')
+  if (unknown.length > 0) fail(`unknown option ${unknown.join(', ')}; ${USAGE}`)
   if (positional.length > 1) fail(`unexpected argument ${positional.slice(1).join(', ')}; ${USAGE}`)
-  const json = args.includes('--json')
+  const json = flags.includes('--json')
   const doc = load(positional[0] ?? 'docs/platform/native-capabilities.json')
 
   const core = doc.capabilities.filter((capability) => capability.core)
