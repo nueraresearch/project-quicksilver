@@ -26,10 +26,14 @@ async function findTests(dir) {
 const present = await findTests(root)
 const scripts = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).scripts
 const listed = new Set(Object.values(scripts).flatMap((command) => command.match(/[\w./-]+\.test\.(?:ts|mjs|cjs|js)/g) ?? []))
+// A script that is given a directory runs the test files inside it, so naming
+// the directory is coverage too (the C1 runner discovers its gates this way).
+const directories = new Set(Object.values(scripts).flatMap((command) => command.split(/\s+/)))
+const directoryOf = (file) => file.slice(0, file.lastIndexOf('/'))
 
 test('every test file is listed in a package.json script', () => {
   assert.ok(present.length > 100, `expected to find the repository's test files, found ${present.length}`)
-  const missing = present.filter((file) => !listed.has(file))
+  const missing = present.filter((file) => !listed.has(file) && !directories.has(directoryOf(file)))
   assert.deepEqual(missing, [], `these test files are not run by any script in package.json: ${missing.join(', ')}`)
 })
 

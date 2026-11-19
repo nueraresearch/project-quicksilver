@@ -15,7 +15,13 @@
  * absent rather than stubbed so no caller can mistake one for implemented.
  */
 import { C1_STORES } from './catalog.ts'
-import { AuditWriteFailedError, MalformedQueryError, NotFoundError } from './errors.ts'
+import {
+  AuditWriteFailedError,
+  CrossTenantRelationError,
+  MalformedQueryError,
+  NotFoundError,
+  UnresolvedRelationError,
+} from './errors.ts'
 import { MemoryStore, digestOf, type StoredRow } from './store.ts'
 
 export type TenantId = string
@@ -101,6 +107,18 @@ export class BaseRepository<T extends ContentRecord> {
     const tenant = requireTenant(tenantId)
     if (typeof id !== 'string' || id.trim().length === 0) throw new MalformedQueryError('id is required')
     const row = findRow(this.store, this.table, tenant, id)
+    if (!row) throw new NotFoundError()
+    return structuredClone(row) as T
+  }
+
+  /** Business-key lookup. Tenant-qualified, so a collision cannot merge rows. */
+  async getByKey(tenantId: TenantId, field: string, value: string): Promise<T> {
+    const tenant = requireTenant(tenantId)
+    if (typeof field !== 'string' || !field.trim()) throw new MalformedQueryError('field is required')
+    if (typeof value !== 'string' || !value.trim()) throw new MalformedQueryError('value is required')
+    const row = this.store
+      .rows(this.table)
+      .find((candidate) => candidate.tenant_id === tenant && candidate[field] === value)
     if (!row) throw new NotFoundError()
     return structuredClone(row) as T
   }
@@ -204,6 +222,67 @@ export class OrganizationRepository extends BaseRepository<OrganizationRecord> {
   }
 }
 
+export interface ObjectiveRecord extends ContentRecord {
+  name: string
+  owner_id: string | null
+}
+
+/**
+ * Stage 2's first relation: an objective's owner must resolve inside the same
+ * tenant. A target that exists elsewhere is `CrossTenantRelation` and never
+ * rewritten to a local row; a target that exists nowhere is `UnresolvedRelation`.
+ */
+export class ObjectiveRepository extends BaseRepository<ObjectiveRecord> {
+  constructor(store: MemoryStore) {
+    super(store, 'qs_objectives')
+  }
+
+  async setOwner(tenantId: TenantId, objectiveId: string, entityId: string, options: WriteOptions): Promise<ObjectiveRecord> {
+    const tenant = requireTenant(tenantId)
+    if (!options || typeof options.actorId !== 'string' || !options.actorId.trim()) {
+      throw new MalformedQueryError('actorId is required')
+    }
+    const objective = this.store.findById(this.table, tenant, objectiveId)
+    if (!objective) throw new NotFoundError()
+
+    const target = this.store.findById('qs_entities', tenant, entityId)
+    if (!target) {
+      if (this.store.existsInAnotherTenant('qs_entities', tenant, entityId)) {
+        throw new CrossTenantRelationError()
+      }
+      throw new UnresolvedRelationError()
+    }
+
+    // The obligation before the write: a failed revision append leaves the
+    // current row untouched, so nothing has to be rolled back.
+    if (this.store.consumeAuditFault('content.update', 'qs_content_revisions')) {
+      throw new AuditWriteFailedError()
+    }
+
+    const at = this.store.clock.now()
+    const revision = Number(objective.revision ?? 0) + 1
+    const updated = this.store.replace(this.table, tenant, objectiveId, {
+      owner_id: entityId,
+      revision,
+      updated_at: at,
+      updated_by: options.actorId,
+    })
+
+    this.store.insert('qs_content_revisions', {
+      tenant_id: tenant,
+      record_type: 'objective',
+      record_id: objectiveId,
+      revision,
+      state: 'draft',
+      snapshot: updated,
+      digest: digestOf(updated),
+      actor_id: options.actorId,
+      created_at: at,
+    })
+    return updated as ObjectiveRecord
+  }
+}
+
 export type RepositoryMap = Record<string, BaseRepository<ContentRecord>>
 
 /** Constructs one repository per catalog store; A02 requires all of them. */
@@ -213,7 +292,9 @@ export function createRepositories(store: MemoryStore): RepositoryMap {
     repositories[definition.repository] =
       definition.name === 'qs_organizations'
         ? (new OrganizationRepository(store) as unknown as BaseRepository<ContentRecord>)
-        : new BaseRepository<ContentRecord>(store, definition.name)
+        : definition.name === 'qs_objectives'
+          ? (new ObjectiveRepository(store) as unknown as BaseRepository<ContentRecord>)
+          : new BaseRepository<ContentRecord>(store, definition.name)
   }
   return repositories
 }

@@ -81,6 +81,26 @@ export class MemoryStore {
     rows.push(clone(row))
   }
 
+  findById(table: string, tenantId: string, id: string): StoredRow | undefined {
+    return this.rows(table).find((row) => row.tenant_id === tenantId && row.id === id)
+  }
+
+  /** Replaces one tenant's row in place and returns the stored copy. */
+  replace(table: string, tenantId: string, id: string, patch: StoredRow): StoredRow {
+    const rows = this.tables.get(table)
+    if (!rows) throw new MalformedQueryError(`unknown table: ${table}`)
+    const index = rows.findIndex((row) => row.tenant_id === tenantId && row.id === id)
+    if (index === -1) throw new MalformedQueryError(`no ${table} row ${id} for ${tenantId}`)
+    const next = { ...rows[index], ...patch, tenant_id: tenantId, id }
+    rows[index] = clone(next)
+    return clone(next)
+  }
+
+  /** True when the id exists in some other tenant, for a CrossTenantRelation. */
+  existsInAnotherTenant(table: string, tenantId: string, id: string): boolean {
+    return this.rows(table).some((row) => row.id === id && row.tenant_id !== tenantId)
+  }
+
   /** Read-only inspection for the suite: a copy, filtered to one tenant. */
   rawDump(tenantId: string, table: string): StoredRow[] {
     if (typeof tenantId !== 'string' || !tenantId.trim()) {
