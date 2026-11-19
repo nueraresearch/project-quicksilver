@@ -33,6 +33,7 @@ import { MUTATIONS } from './native-c1-mutations.mjs'
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const MATRIX_FILE = 'docs/platform/native-cms-c1-acceptance-test-matrix.md'
 const OUTPUT_DIR = 'docs/platform/native-cms-c1-evidence'
+const ARTIFACTS = ['c1-acceptance-report.md', 'c1-query-contract-report.md']
 const ADAPTER = 'direct native repositories (no external CMS host); in-memory MemoryStore fixture adapter'
 const COMMAND = 'npm run native:c1:test'
 const PRIVATE = /\btenant-[ab]\b|\bshared-(root|graph|agent|lineage)\b|\btenant-b-graph\b/
@@ -50,6 +51,7 @@ const INPUTS = [
   'scripts/native-c1-provoke.mjs',
   'scripts/native-c1-fixture-digest.ts',
   'scripts/native-c1-evidence.mjs',
+  'scripts/native-c1-evidence.test.mjs',
   'scripts/native-c1-run.test.mjs',
   'scripts/native-c1-test.test.mjs',
   MATRIX_FILE,
@@ -97,7 +99,34 @@ if (scriptOf(readFileSync(join(root, 'package.json'), 'utf8')) !== script) {
   fail('C1 EVIDENCE FAILED: the working copy\'s "native:c1:test" script differs from the committed one.')
 }
 
-// 2. The matrix run.
+const directory = join(root, OUTPUT_DIR)
+const namedCommit = (text) => /^- \*\*Commit under test:\*\* `([0-9a-f]{7,40})`$/m.exec(text)?.[1]
+
+// 2. In --check mode the committed claim can be falsified without running
+//    anything, so do it first: the artifacts must exist and name one commit
+//    whose matrix inputs match HEAD's. Matching text is not enough for that,
+//    because a code change that leaves every digest intact would compare equal
+//    while the artifacts still name an earlier commit.
+if (check) {
+  const absent = ARTIFACTS.filter((name) => !existsSync(join(directory, name)))
+  if (absent.length > 0) {
+    fail(`C1 EVIDENCE FAILED: stale artifact(s): ${absent.join(', ')}; regenerate them without --check.`)
+  }
+
+  const named = ARTIFACTS.map((name) => namedCommit(readFileSync(join(directory, name), 'utf8')))
+  if (named.some((value) => !value) || new Set(named).size !== 1) {
+    fail('C1 EVIDENCE FAILED: the artifacts do not name one commit under test; regenerate them.')
+  }
+  const drift = git('diff', '--quiet', named[0], commit, '--', ...INPUTS)
+  if (drift.status === 1) {
+    fail(`C1 EVIDENCE FAILED: the artifacts name ${named[0]}, but the matrix inputs differ at ${commit}; regenerate them without --check.`)
+  }
+  if (drift.status !== 0) {
+    fail(`C1 EVIDENCE FAILED: cannot compare ${named[0]} with ${commit}; the artifact cannot be reproduced from this history.\n${(drift.stderr ?? '').trim()}`)
+  }
+}
+
+// 3. The matrix run.
 const gate = spawnSync('npm', ['run', '--silent', 'native:c1:test'], { cwd: root, encoding: 'utf8', shell, env })
 const gateOutput = `${gate.stdout ?? ''}\n${gate.stderr ?? ''}`
 if (gate.status !== 0) fail('C1 EVIDENCE FAILED: the matrix gate is not green.', gateOutput)
@@ -106,7 +135,7 @@ const matrix = readFileSync(join(root, MATRIX_FILE), 'utf8')
 const accounting = checkMatrixRun({ output: gateOutput, markdown: matrix, status: gate.status })
 if (accounting.problems.length > 0) fail(`C1 EVIDENCE FAILED: ${accounting.problems.join('; ')}`, gateOutput)
 
-// 3. Guard-removal provocation. The gate above proves the cases pass; only the
+// 4. Guard-removal provocation. The gate above proves the cases pass; only the
 //    provocation proves they would notice a guard going missing. It must report
 //    every mutation this repository defines, not a shorter list it chose.
 const provoke = spawnSync(process.execPath, [join(root, 'scripts/native-c1-provoke.mjs'), '--json'], {
@@ -130,7 +159,7 @@ if (provocation.mutations.length !== MUTATIONS.length) {
   fail(`C1 EVIDENCE FAILED: the provocation reported ${provocation.mutations.length} of ${MUTATIONS.length} mutations.`)
 }
 
-// 4. Redaction-safe manifest digests.
+// 5. Redaction-safe manifest digests.
 const digest = spawnSync(
   process.execPath,
   ['--experimental-strip-types', '--no-warnings', join(root, 'scripts/native-c1-fixture-digest.ts')],
@@ -255,18 +284,15 @@ const queryReport = [
   '',
 ]
 
-const directory = join(root, OUTPUT_DIR)
 const files = [
-  ['c1-acceptance-report.md', acceptance.join('\n')],
-  ['c1-query-contract-report.md', queryReport.join('\n')],
+  [ARTIFACTS[0], acceptance.join('\n')],
+  [ARTIFACTS[1], queryReport.join('\n')],
 ]
 
 for (const [name, text] of files) {
   const leak = text.match(PRIVATE)
   if (leak) fail(`C1 EVIDENCE FAILED: ${name} is not redacted (found ${leak[0]}).`)
 }
-
-const namedCommit = (text) => /^- \*\*Commit under test:\*\* `([0-9a-f]{7,40})`$/m.exec(text)?.[1]
 
 if (check) {
   // Timestamps and the commit line legitimately change between runs.
@@ -277,22 +303,7 @@ if (check) {
   })
   if (stale.length > 0) fail(`C1 EVIDENCE FAILED: stale artifact(s): ${stale.map(([name]) => name).join(', ')}`)
 
-  // Matching text is not enough: a code change that leaves every digest intact
-  // would compare equal while the artifacts still name an earlier commit. So the
-  // named commit must describe the same inputs as HEAD.
-  const named = files.map(([name]) => namedCommit(readFileSync(join(directory, name), 'utf8')))
-  if (named.some((value) => !value) || new Set(named).size !== 1) {
-    fail('C1 EVIDENCE FAILED: the artifacts do not name one commit under test; regenerate them.')
-  }
-  const drift = git('diff', '--quiet', named[0], commit, '--', ...INPUTS)
-  if (drift.status === 1) {
-    fail(`C1 EVIDENCE FAILED: the artifacts name ${named[0]}, but the matrix inputs differ at ${commit}; regenerate them without --check.`)
-  }
-  if (drift.status !== 0) {
-    fail(`C1 EVIDENCE FAILED: cannot compare ${named[0]} with ${commit}; the artifact cannot be reproduced from this history.\n${(drift.stderr ?? '').trim()}`)
-  }
-
-  console.log(`C1 evidence: committed artifacts match a fresh green run of ${named[0]}.`)
+  console.log(`C1 evidence: committed artifacts match a fresh green run of ${namedCommit(files[0][1])}.`)
   process.exit(0)
 }
 
