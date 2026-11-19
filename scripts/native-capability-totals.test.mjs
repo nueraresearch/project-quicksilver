@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, test } from 'node:test'
@@ -22,12 +22,35 @@ function fixture(text, extension = 'md') {
   return file
 }
 
+/** A throwaway tree shaped like the repository: a matrix, docs/ and the module README. */
+function fixtureRoot(name, files) {
+  const root = path.join(temp, name)
+  for (const [relative, text] of Object.entries(files)) {
+    const target = path.join(root, relative)
+    mkdirSync(path.dirname(target), { recursive: true })
+    writeFileSync(target, text)
+  }
+  return root
+}
+
+// 2 core rows (1 native, 1 partial), 3 content rows (1 of each).
+const FIXTURE_MATRIX = JSON.stringify({
+  capabilities: [
+    { id: 'content.decisions', core: true, native: 'native' },
+    { id: 'content.query', core: true, native: 'partial' },
+    { id: 'content.chat', core: false, native: 'absent' },
+  ],
+})
+
 const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', cwd: process.cwd() })
 
 test('the committed docs quote the committed matrix', () => {
   const result = run()
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /capability totals: \d+ quoted block\(s\)/)
+  // Discovery is the whole docs tree, not a short list that could miss a new doc.
+  const scanned = Number(/in (\d+) doc\(s\)/.exec(result.stdout)?.[1])
+  assert.ok(scanned > 50, `expected the docs tree to be scanned, got ${scanned} doc(s)`)
 })
 
 test('a drifted core total fails while the same fixture unedited passes', () => {
@@ -67,6 +90,60 @@ test('a doc set that quotes nothing fails instead of passing over nothing', () =
   const result = run('--docs', empty, '--matrix', matrix)
   assert.equal(result.status, 1)
   assert.match(result.stderr, /would verify nothing/)
+})
+
+// The point of widening discovery: a doc that starts quoting totals later is
+// checked without anyone adding it to a list. This one is three levels deep.
+test('a new markdown file anywhere under docs/ is discovered and checked', () => {
+  const drifted = fixtureRoot('tree-drift', {
+    'docs/platform/native-capabilities.json': FIXTURE_MATRIX,
+    'docs/platform/new/deep/report.md': '- **2 core capabilities:** 1 native, 0 partial, 1 absent.\n',
+    'quicksilver/README.md': '- **3 content capabilities:** 1 native, 1 partial, 1 absent.\n',
+  })
+  const badRun = run('--root', drifted)
+  assert.equal(badRun.status, 1)
+  assert.match(badRun.stderr, /docs\/platform\/new\/deep\/report\.md:1 core: quoted 1 native, 0 partial, 1 absent of 2/)
+  assert.match(badRun.stderr, /the matrix has 1 native, 1 partial, 0 absent of 2/)
+
+  const clean = fixtureRoot('tree-clean', {
+    'docs/platform/native-capabilities.json': FIXTURE_MATRIX,
+    'docs/platform/new/deep/report.md': '- **2 core capabilities:** 1 native, 1 partial, 0 absent.\n',
+    'quicksilver/README.md': '- **3 content capabilities:** 1 native, 1 partial, 1 absent.\n',
+  })
+  const cleanRun = run('--root', clean)
+  assert.equal(cleanRun.status, 0, cleanRun.stderr)
+  // Only the two markdown files are scanned; the JSON matrix is not a doc.
+  assert.match(cleanRun.stdout, /2 quoted block\(s\) in 2 doc\(s\)/)
+})
+
+test('quicksilver/README.md is scanned like any other doc', () => {
+  const root = fixtureRoot('readme', {
+    'docs/platform/native-capabilities.json': FIXTURE_MATRIX,
+    'docs/guide.md': '# guide\n',
+    'quicksilver/README.md': '- **3 content capabilities:** 1 native, 0 partial, 2 absent.\n',
+  })
+  const result = run('--root', root)
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /quicksilver\/README\.md:1 content: quoted 1 native, 0 partial, 2 absent of 3/)
+})
+
+test('a scanned tree that quotes nothing still fails', () => {
+  const root = fixtureRoot('silent', {
+    'docs/platform/native-capabilities.json': FIXTURE_MATRIX,
+    'docs/guide.md': '# guide\n',
+    'quicksilver/README.md': '# module\n',
+  })
+  const result = run('--root', root)
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /no doc quotes capability totals in 2 scanned file\(s\)/)
+  assert.match(result.stderr, /would verify nothing/)
+})
+
+test('--root without a docs/ directory is invalid input', () => {
+  const root = fixtureRoot('no-docs', { 'quicksilver/README.md': '# module\n' })
+  const result = run('--root', root)
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /cannot read .*docs/)
 })
 
 test('a missing or malformed matrix is invalid input, not a pass', () => {
