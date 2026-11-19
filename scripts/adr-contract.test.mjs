@@ -138,6 +138,7 @@ function adrFixture() {
     `# ADR fixture\n\n- **Status:** ${status}\n- **Date:** 2026-01-01\n- **Deciders:** test\n- **Supersedes:** none\n- **Superseded by:** none\n\n## Decision\n\nbody\n`
   writeFileSync(join(dir, 'docs', 'platform', 'adr-0001-proposal.md'), record('Proposed'))
   writeFileSync(join(dir, 'docs', 'platform', 'adr-0002-accepted.md'), record('Accepted'))
+  writeFileSync(join(dir, 'docs', 'platform', 'adr-0003-superseded.md'), record('Superseded'))
   return dir
 }
 
@@ -152,16 +153,33 @@ test('a bare seal leaves Proposed records unsealed and seals accepted ones', () 
   try {
     const proposal = join(dir, 'docs', 'platform', 'adr-0001-proposal.md')
     const accepted = join(dir, 'docs', 'platform', 'adr-0002-accepted.md')
+    const superseded = join(dir, 'docs', 'platform', 'adr-0003-superseded.md')
     const first = seal(dir)
     assert.equal(first.status, 0, first.stderr)
     assert.doesNotMatch(readFileSync(proposal, 'utf8'), /Body digest/, 'a bare run must not seal a Proposal')
     assert.match(readFileSync(accepted, 'utf8'), /- \*\*Body digest:\*\* sha256:[0-9a-f]{64}/, 'an accepted record must be sealed')
+    assert.match(readFileSync(superseded, 'utf8'), /Body digest/, 'only Proposal is skipped; a superseded record is sealed too')
     assert.match(first.stdout, /left unsealed: only accepted records are sealed/, 'the skip must say why')
 
     const second = seal(dir)
     assert.equal(second.status, 0, second.stderr)
     assert.match(second.stdout, /unchanged/, 'resealing a sealed accepted record changes nothing')
     assert.doesNotMatch(readFileSync(proposal, 'utf8'), /Body digest/, 'a second bare run must still not seal it')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Prevents: the status match depending on exact spacing, which would seal a
+// Proposal written with a wider gap while the accepted ones look identical.
+test('status matching tolerates surrounding whitespace', () => {
+  const dir = adrFixture()
+  try {
+    const proposal = join(dir, 'docs', 'platform', 'adr-0001-proposal.md')
+    writeFileSync(proposal, readFileSync(proposal, 'utf8').replace('- **Status:** Proposed', '- **Status:**    Proposed  '))
+    const result = seal(dir)
+    assert.equal(result.status, 0, result.stderr)
+    assert.doesNotMatch(readFileSync(proposal, 'utf8'), /Body digest/, 'spacing around the status must not decide the outcome')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

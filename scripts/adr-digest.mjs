@@ -36,7 +36,7 @@ const DIGEST_LINE = /^- \*\*Body digest:\*\*.*$/m
 const ANCHOR_LINE = /^- \*\*Superseded by:\*\*.*$/m
 const STATUS_LINE = /^- \*\*Status:\*\*[ \t]*(.*)$/m
 
-export function statusOf(text) {
+function statusOf(text) {
   return STATUS_LINE.exec(text)?.[1]?.trim() ?? ''
 }
 
