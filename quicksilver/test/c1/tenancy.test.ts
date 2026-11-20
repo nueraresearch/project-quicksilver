@@ -7,6 +7,9 @@
  * repository that refuses everything cannot make the gate green.
  */
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { C1_STORES } from '../../cms/catalog.ts'
@@ -19,7 +22,10 @@ import {
   getObjectiveTree,
   getWorkflowDAG,
 } from '../../cms/queries.ts'
-import { RELATION_INVENTORY, linkRelation } from '../../cms/relations.ts'
+import { RELATION_INVENTORY, linkRelation, relationById } from '../../cms/relations.ts'
+import { FileStore } from '../../cms/filestore.ts'
+import { principalScope, tenantFromPrincipal } from '../../cms/principal.ts'
+import { createRepositories } from '../../cms/repositories.ts'
 import type {
   AgentPublicationHeadRepository,
   CapabilityRepository,
@@ -31,7 +37,7 @@ import type {
   ScheduledItemRepository,
   WorkflowPublicationHeadRepository,
 } from '../../cms/repositories.ts'
-import { COLLIDING_KEYS, FOREIGN_GRAPH, TENANT_A, TENANT_B, rowFor, seededFixture } from './fixtures/two-tenants.ts'
+import { COLLIDING_KEYS, FOREIGN_GRAPH, TENANT_A, TENANT_B, rowFor, seededFixture, type SeededFixture } from './fixtures/two-tenants.ts'
 
 function code(error: unknown): string | undefined {
   return error instanceof RepositoryError ? error.code : undefined
@@ -393,4 +399,98 @@ test('C1-B11 every inventory relation lands in its declared table and refuses a 
   // Every many-to-many relation names a join table, and no table serves two different relations.
   const declarations = RELATION_INVENTORY.filter((relation) => relation.kind === 'many-to-many').map((relation) => relation.joinTable)
   assert.ok(declarations.every((table) => typeof table === 'string'), 'every many-to-many relation declares its table')
+})
+
+/**
+ * C1 exit coverage, not a matrix case: the tenant boundary at the request edge
+ * and the durable adapter's own refusals. Each refusal is paired with the same
+ * call that must succeed, so a blanket rejection cannot pass this.
+ */
+test('the tenant comes from the principal and a caller cannot supply another', () => {
+  const principal = { subject: 'principal-a', tenantId: TENANT_A }
+  const scope = principalScope(principal)
+  assert.equal(scope.tenantId, TENANT_A)
+  assert.equal(scope.actorId, 'principal-a')
+  assert.equal(tenantFromPrincipal(principal), TENANT_A)
+  assert.equal(tenantFromPrincipal(principal, TENANT_A), TENANT_A, 'the principal’s own tenant is accepted')
+
+  const unusable: unknown[] = [
+    undefined,
+    null,
+    'principal-a',
+    {},
+    { tenantId: TENANT_A },
+    { subject: 'principal-a' },
+    { subject: 'principal-a', tenantId: '   ' },
+    { subject: '  ', tenantId: TENANT_A },
+  ]
+  for (const candidate of unusable) {
+    assert.throws(
+      () => principalScope(candidate),
+      (error: unknown) => code(error) === 'MalformedQuery',
+      `an unusable principal is refused: ${JSON.stringify(candidate)}`,
+    )
+  }
+  assert.throws(
+    () => tenantFromPrincipal(principal, TENANT_B),
+    (error: unknown) => code(error) === 'MalformedQuery',
+    'a claimed tenant that is not the principal’s is refused, not widened',
+  )
+})
+
+function durableFixture(dir: string): SeededFixture & { store: FileStore } {
+  const memory = seededFixture()
+  const store = new FileStore(join(dir, 'cms.json'))
+  for (const table of memory.store.tableNames()) {
+    for (const row of memory.store.rows(table)) store.insert(table, row)
+  }
+  store.clock.restore(memory.store.clock.state())
+  store.ids.restore(memory.store.ids.state())
+  return { store, repositories: createRepositories(store), seeds: memory.seeds }
+}
+
+test('the durable adapter refuses a foreign edge before writing, and keeps the edge it did write', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qs-c1-durable-'))
+  try {
+    const { store, seeds } = durableFixture(dir)
+    const relation = relationById('department.members')
+    const joinTable = relation.joinTable!
+    const source = rowFor(seeds, relation.sourceTable, TENANT_A)
+    const localTarget = rowFor(seeds, relation.targetTable, TENANT_A)
+    const foreignTarget = rowFor(seeds, relation.targetTable, TENANT_B)
+    const count = (candidate: FileStore): number => candidate.rows(joinTable).length
+    const before = count(store)
+
+    // Positive control: the same call with a local target writes exactly one edge.
+    linkRelation(store, TENANT_A, relation, source, localTarget, { actorId: 'principal-a' })
+    assert.equal(count(store), before + 1, 'a same-tenant edge is written')
+
+    assert.throws(
+      () => linkRelation(store, TENANT_A, relation, source, foreignTarget, { actorId: 'principal-a' }),
+      (error: unknown) => code(error) === 'CrossTenantRelation',
+      'a foreign target is refused by the durable adapter',
+    )
+    assert.equal(count(store), before + 1, 'a refused edge persists nothing')
+
+    assert.throws(
+      () => linkRelation(store, TENANT_A, relation, source, 'ent_missing', { actorId: 'principal-a' }),
+      (error: unknown) => code(error) === 'UnresolvedRelation',
+      'a target that exists nowhere is refused',
+    )
+    assert.equal(count(store), before + 1, 'an unresolved edge persists nothing')
+
+    linkRelation(store, TENANT_A, relation, source, localTarget, { actorId: 'principal-a' })
+    assert.equal(count(store), before + 1, 'the composite key makes a repeated link idempotent')
+
+    const reloaded = new FileStore(join(dir, 'cms.json'))
+    assert.equal(count(reloaded), before + 1, 'the committed edge is on disk after a reload')
+    assert.throws(
+      () => linkRelation(reloaded, TENANT_A, relation, source, foreignTarget, { actorId: 'principal-a' }),
+      (error: unknown) => code(error) === 'CrossTenantRelation',
+      'the reloaded adapter enforces the same boundary',
+    )
+    assert.equal(count(reloaded), before + 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
