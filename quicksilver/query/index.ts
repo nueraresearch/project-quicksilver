@@ -1,33 +1,63 @@
-import type { TenantId, TenantScopedRecord } from '../utils/types.ts'
+/**
+ * The six C1 query entry points (schema and repository map §7).
+ *
+ * The implementations live in `cms/queries.ts`; this module is the stable name
+ * C1 fixtures and later routes import. `tenantId` is required and never
+ * defaulted, and the read source is passed explicitly, so no caller can query
+ * an implicit tenant or reach a write path.
+ *
+ * A foreign or missing ID returns the contract's empty result. A missing or
+ * blank tenant refuses with `MalformedQuery` before anything is read.
+ */
+import type { DecisionHistoryFilter, QueryStore } from '../cms/queries.ts'
+import {
+  findContradictions as findContradictionsIn,
+  getCapabilityGraph as getCapabilityGraphIn,
+  getDecisionHistory as getDecisionHistoryIn,
+  getEvidenceForMetric as getEvidenceForMetricIn,
+  getObjectiveTree as getObjectiveTreeIn,
+  getWorkflowDAG as getWorkflowDAGIn,
+} from '../cms/queries.ts'
+import type { TenantId } from '../cms/tenancy.ts'
 
-export type QuicksilverQueryResult<T extends TenantScopedRecord = TenantScopedRecord> = Promise<T[]>
+export type {
+  CapabilityGraph,
+  ContradictionFinding,
+  DecisionEvent,
+  DecisionHistoryFilter,
+  DecisionPage,
+  MetricEvidence,
+  ObjectiveNode,
+  ObjectiveTree,
+  QueryStore,
+  WorkflowDAG,
+} from '../cms/queries.ts'
 
-// TODO: implement tenant-scoped graph traversal through the Strapi repository adapter.
-export function getCapabilityGraph(_tenantId: TenantId): QuicksilverQueryResult {
-  throw new Error('TODO: getCapabilityGraph is not implemented.')
+export function getCapabilityGraph(store: QueryStore, tenantId: TenantId) {
+  return getCapabilityGraphIn(store, tenantId)
 }
 
-// TODO: compare applicable policies and evidence without crossing tenant boundaries.
-export function findContradictions(_tenantId: TenantId): QuicksilverQueryResult {
-  throw new Error('TODO: findContradictions is not implemented.')
+export function findContradictions(store: QueryStore, tenantId: TenantId) {
+  return findContradictionsIn(store, tenantId)
 }
 
-// TODO: return the validated directed acyclic graph for a tenant workflow.
-export function getWorkflowDAG(_tenantId: TenantId, _workflowId: string): QuicksilverQueryResult {
-  throw new Error('TODO: getWorkflowDAG is not implemented.')
+export function getWorkflowDAG(store: QueryStore, tenantId: TenantId, workflowId: string) {
+  return getWorkflowDAGIn(store, tenantId, workflowId)
 }
 
-// TODO: return the parent/child objective hierarchy for one tenant.
-export function getObjectiveTree(_tenantId: TenantId, _objectiveId?: string): QuicksilverQueryResult {
-  throw new Error('TODO: getObjectiveTree is not implemented.')
+export function getObjectiveTree(store: QueryStore, tenantId: TenantId, objectiveId?: string) {
+  return getObjectiveTreeIn(store, tenantId, objectiveId)
 }
 
-// TODO: resolve evidence linked to a metric, filtered to the same tenant.
-export function getEvidenceForMetric(_tenantId: TenantId, _metricId: string): QuicksilverQueryResult {
-  throw new Error('TODO: getEvidenceForMetric is not implemented.')
+export function getEvidenceForMetric(
+  store: QueryStore,
+  tenantId: TenantId,
+  metricId: string,
+  page: { limit?: number } = {},
+) {
+  return getEvidenceForMetricIn(store, tenantId, metricId, page)
 }
 
-// TODO: return immutable, tenant-scoped decision history in deterministic order.
-export function getDecisionHistory(_tenantId: TenantId, _filters?: Record<string, unknown>): QuicksilverQueryResult {
-  throw new Error('TODO: getDecisionHistory is not implemented.')
+export function getDecisionHistory(store: QueryStore, tenantId: TenantId, filters?: DecisionHistoryFilter) {
+  return getDecisionHistoryIn(store, tenantId, filters)
 }
