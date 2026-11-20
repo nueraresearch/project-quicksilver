@@ -26,7 +26,7 @@
     "check:clean-install": "node scripts/clean-install-check.mjs",
     "adr:seal": "node scripts/adr-digest.mjs",
     "resend:check": "node scripts/resend-check.mjs",
-    "parity:test": "node --test scripts/parity-matrix.test.mjs scripts/adr-contract.test.mjs scripts/clean-install-check.test.mjs scripts/verify-outcome.test.mjs scripts/test-registration.test.mjs scripts/azure-template.test.mjs scripts/principal-token.test.mjs scripts/resend-check.test.mjs scripts/native-capability-matrix.test.mjs scripts/native-c0-gate.test.mjs scripts/native-migration-rehearsal.test.mjs scripts/native-c1-test.test.mjs scripts/native-capability-enumeration.test.mjs scripts/native-capability-totals.test.mjs scripts/native-c1-evidence.test.mjs scripts/native-c1-run.test.mjs",
+    "parity:test": "node --test scripts/parity-matrix.test.mjs scripts/adr-contract.test.mjs scripts/clean-install-check.test.mjs scripts/verify-outcome.test.mjs scripts/test-registration.test.mjs scripts/azure-template.test.mjs scripts/principal-token.test.mjs scripts/resend-check.test.mjs scripts/native-capability-matrix.test.mjs scripts/native-c0-gate.test.mjs scripts/native-migration-rehearsal.test.mjs scripts/native-c1-test.test.mjs scripts/native-capability-enumeration.test.mjs scripts/native-capability-totals.test.mjs scripts/native-c1-evidence.test.mjs scripts/native-c1-run.test.mjs scripts/doc-link-check.test.mjs",
     "audit:deps": "node scripts/dependency-audit.mjs",
     "sdk:test": "node --experimental-strip-types --no-warnings --test packages/sdk/src/index.test.ts",
     "schema:deploy": "npm run schema:deploy --workspace=@quicksilver/studio --",
