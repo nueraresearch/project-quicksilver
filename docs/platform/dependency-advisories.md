@@ -30,10 +30,11 @@ schema deploy, seeding and local development, not while serving a request. That
 is a judgement, not a fact, and it is the main thing to revisit if the Studio
 ever becomes a server-rendered app.
 
-## Runtime-path advisories: six fixed, zero blocking, five accepted
+## Runtime-path advisories: six fixed, zero blocking
 
-Two advisories were in a serving path and have been fixed by pinning a
-non-vulnerable version in the root `overrides` block:
+Six advisories in serving paths have been fixed: two by pinning a
+non-vulnerable version in the root `overrides` block, and four by the
+2026-11-10 dependency refresh:
 
 | Package | Advisory | Path | Resolution |
 |---|---|---|---|
@@ -41,18 +42,21 @@ non-vulnerable version in the root `overrides` block:
 | `source-map-js` | GHSA-68fv-2mgg-jv7q | `apps/web → next@16.4.6 → postcss → source-map-js@1.2.1` | Pinned to `1.2.2` |
 | `next` | GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r | `apps/web → next@16.4.0` | Upgraded to `16.4.6` on 2026-11-10; `npm audit` no longer reports any of the three |
 | `body-parser` | GHSA-27r3-jxmh-p828 | `@quicksilver/host → @modelcontextprotocol/sdk → express → body-parser@2.3.0` | Updated to `2.4.0` on 2026-11-10, within `express`’s `^2.2.1` range |
-| `undici` | GHSA-2m5v-pch6-74hx, GHSA-f72v-6w45-q472, GHSA-4qv8-2p9j-2685 | `@quicksilver/agent → @ai-sdk/provider-utils → undici@6.28.1 / 7.30.0` | Updated within range to `6.29.1` and `7.30.2` on 2026-11-10 |
+| `undici` | GHSA-2m5v-pch6-74hx, GHSA-f72v-6w45-q472, GHSA-4qv8-2p9j-2685 | `@quicksilver/agent → @ai-sdk/provider-utils → undici@6.28.1 / 7.30.0` | Updated within range to `6.29.1` and `7.30.1` on 2026-11-10 |
 | `zod` | GHSA-mrhx-c7xc-m3w5 | Direct dependency of `packages/agent` and `packages/operator` (`zod@3.25.76`) | Upgraded to `^4.6.7` on 2026-11-10; the AI SDK peer range allows `^4.1.8` |
 
 Both were transitive. Neither needed a direct dependency change; both sat
 inside ranges (`^0.35.4`, `^1.2.1`) that already permitted the fixed version, so
 the lockfile simply had not been updated to the newest allowed patch.
 
-Five advisories remain in a serving workspace's production tree today, all below
-the blocking threshold, and each is accepted with its residual risk recorded. No
-high or critical advisory remains in a serving path: `npm run audit:deps` exits 0
-with 25 advisories, 0 runtime blockers and 0 undecided. The rows above record how
-the four runtime blockers were cleared on 2026-11-10.
+Five advisories remain below the blocking threshold and are accepted with their
+residual risk recorded. No high or critical advisory remains in a serving path:
+after the 2026-11-14 consolidation, `npm run audit:deps` exits 0 with 0 runtime
+blockers and 0 undecided. The exact advisory and production-package counts are not stable
+across npm versions and install roots: observed runs reported 21–23 advisories
+across 196–198 production packages. npm 10 (Node 22, the CI pin) and npm 11
+(Node 26) both report 0 runtime blockers and 0 undecided. The table
+above records how the six runtime-path advisories were cleared.
 
 | Package | Severity | Class | Decision |
 |---|---|---|---|
@@ -69,7 +73,7 @@ never executes in a request-serving process. They are accepted, not ignored.
 
 | Package | Severity | Class | Decision |
 |---|---|---|---|
-| `tailwindcss` | high | devDependency of `apps/web`; pulls `chokidar`, `fast-glob`, `micromatch`, `braces` | Accepted. Build-time CSS tooling. Fix is Tailwind 4, a breaking rewrite of every stylesheet; not justified by a build-time advisory. Re-evaluate when Tailwind 4 is adopted for other reasons. |
+| `tailwindcss` | high | devDependency of `apps/web`; pulled `chokidar`, `fast-glob`, `micromatch`, `braces` before v4 | Accepted. Build-time CSS tooling. Tailwind 4.3.3 was adopted on 2026-11-14 as part of the dependency consolidation, and this advisory is no longer reported. The row records the decision for the v3 tree it replaced; the remaining v4 PostCSS dependencies are build-time only. |
 | `chokidar` | high | via `tailwindcss`; file watching | Accepted. Runs in the dev server and build only. |
 | `fast-glob` | high | via `tailwindcss`/`globby`; glob matching | Accepted. Build-time. |
 | `micromatch` | high | via `fast-glob`; pattern matching | Accepted. Build-time. |
@@ -99,14 +103,24 @@ never executes in a request-serving process. They are accepted, not ignored.
 | `@sanity/cli-build` | moderate | via `@sanity/cli` | Accepted. Schema and Studio build plumbing. Residual: runs only during schema deploy and local Studio work; no request path. |
 | `@sanity/cli-core` | moderate | via `@sanity/cli` and `@sanity/cli-build` | Accepted. CLI core behind the same `minimatch` chain. Residual: Studio command line only. |
 | `@sanity/migrate` | moderate | via `sanity` and `@sanity/cli` | Accepted. Migration command run deliberately by an operator. Residual: a crafted migration input could slow the command; it is not a request path. |
+| `@sanity/workflows-cli` | moderate | `apps/studio` via `sanity → @sanity/cli → @sanity/workflows-cli` | Accepted. The workflows CLI is flagged through the same `@oclif/core` chain (`via`: `@oclif/core`, `@oclif/plugin-help`, `@sanity/cli-core`); it is a CLI entry point, not a library the console or host loads. Residual: a pathological pattern in a Studio CLI invocation can slow that command; no request path reaches it. |
+| `@sanity-labs/oclif-plugin-skills-flag` | moderate | via `sanity → @sanity/cli`; oclif plugin | Accepted. Studio CLI plugin; runs only during schema deploy and local Studio work. No request path loads it. |
+| `@sanity/blueprints` | moderate | via `sanity → @sanity/cli-build` | Accepted. Studio build tooling. Compiles static Studio output; not part of the console or host artifact. |
+| `@sanity/vision` | moderate | `apps/studio` dependency; GROQ playground | Accepted. Vision runs inside Studio only, against the dataset the operator can already read. It is not bundled into the serving console or host. |
+| `@sanity/workbench-cli` | moderate | via `sanity → @sanity/cli` | Accepted. Studio CLI tooling; no request-serving path. |
+| `@sanity/workflow-cli` | moderate | via `sanity → @sanity/cli-core` | Accepted. Studio CLI tooling; no request-serving path. |
+| `sanity-plugin-utils` | moderate | via `apps/studio → sanity-plugin-workflow` | Accepted. Studio-only helper library; it is compiled into the static Studio bundle and is not loaded by the serving console or host. |
+| `sanity-plugin-workflow` | moderate | `apps/studio` dependency; Studio kanban plugin | Accepted. Studio-only plugin built into static output; no request path imports it. |
 
 ## Re-audit
 
 `npm run audit:deps` fails when any advisory lacks a row above, so this table
 cannot silently fall behind the lockfile. Run it after any dependency change.
-After the 2026-11-10 pass every reported advisory has a row, so the gate's
-undecided count is 0; with no runtime high/critical advisory left it exits 0 and
-P-109 is covered. Re-open it if a later audit reports either condition.
+After the 2026-11-14 consolidation every reported advisory has a row, so the
+gate's undecided count is 0; with no runtime high/critical advisory left it exits
+0 and P-109 is covered. The exact count is npm-version dependent, so verify the
+two passing conditions (0 runtime blockers and 0 undecided) rather than a fixed
+number. Re-open it if a later audit reports either condition.
 
 ## References
 

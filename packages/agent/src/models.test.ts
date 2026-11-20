@@ -108,10 +108,18 @@ test('Azure mode without credentials fails with an actionable message', () => {
   })
 })
 
-test('Cloud providers produce spec v3 models (Claude/Gemini used to be v1)', () => {
+test('Cloud providers produce current AI SDK spec models', () => {
   withEnv({ ANTHROPIC_API_KEY: 'sk-ant-test', OPENAI_API_KEY: 'sk-test', GOOGLE_GENERATIVE_AI_API_KEY: 'g-test' }, () => {
-    for (const id of ['claude-sonnet-5', 'gpt-5.6-sol', 'gemini-3.8-flash']) {
-      assert.equal((languageModelForId(id, 'cloud') as { specificationVersion?: string }).specificationVersion, 'v3', id)
+    // @ai-sdk/anthropic 4.x moved Claude to the v4 model spec; OpenAI and Google
+    // still emit v3. The AI SDK runtime supports both, so pin each provider's
+    // actual spec rather than assuming a single version across cloud providers.
+    const expected = {
+      'claude-sonnet-5': 'v4',
+      'gpt-5.6-sol': 'v3',
+      'gemini-3.8-flash': 'v3',
+    } as const
+    for (const [id, spec] of Object.entries(expected)) {
+      assert.equal((languageModelForId(id, 'cloud') as { specificationVersion?: string }).specificationVersion, spec, id)
     }
   })
 })
