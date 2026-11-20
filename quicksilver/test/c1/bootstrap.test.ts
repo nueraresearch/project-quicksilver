@@ -8,6 +8,9 @@
  * is inert rather than merely unused.
  */
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { after, test } from 'node:test'
 
 import { C1_COLLECTIONS, C1_DERIVED_STORES, C1_STORES, EXCLUDED_AUTH_STORES } from '../../cms/catalog.ts'
@@ -20,7 +23,8 @@ import {
   getObjectiveTree,
   getWorkflowDAG,
 } from '../../cms/queries.ts'
-import type { OrganizationRepository } from '../../cms/repositories.ts'
+import { FileStore, PersistenceError } from '../../cms/filestore.ts'
+import { createRepositories, type OrganizationRepository } from '../../cms/repositories.ts'
 import { FORBIDDEN_ENV, TENANT_A, TENANT_B, clearForbiddenEnv, freshFixture } from './fixtures/two-tenants.ts'
 
 const restores: Array<() => void> = []
@@ -165,4 +169,59 @@ test('C1-A04 uses only the tenant the caller passes, even when the environment n
     organizations.get(TENANT_B, created.id),
     (error: unknown) => error instanceof RepositoryError && error.code === 'NotFound',
   )
+})
+
+/**
+ * C1 exit coverage, not a matrix case: the durable adapter must survive a
+ * restart, must not reissue an id it already stored, and must refuse an
+ * unreadable snapshot instead of booting empty over it.
+ */
+test('the durable store reloads committed rows, resumes ids and refuses a corrupt file', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qs-c1-durable-boot-'))
+  try {
+    const path = join(dir, 'cms.json')
+    const first = new FileStore(path)
+    const created = await (
+      createRepositories(first).OrganizationRepository as unknown as {
+        create(tenantId: string, input: { name: string }, options: { actorId: string }): Promise<{ id: string }>
+      }
+    ).create(TENANT_A, { name: 'Durable Root' }, { actorId: 'principal-a' })
+
+    const second = new FileStore(path)
+    const reopened = createRepositories(second).OrganizationRepository as unknown as {
+      getRoot(tenantId: string): Promise<{ id: string; name: string }>
+      create(tenantId: string, input: { name: string }, options: { actorId: string }): Promise<{ id: string }>
+    }
+    const loaded = await reopened.getRoot(TENANT_A)
+    assert.equal(loaded.id, created.id, 'the committed record is on disk')
+    assert.equal(loaded.name, 'Durable Root', 'the body survived, not only the key')
+    const next = await reopened.create(TENANT_B, { name: 'Second Root' }, { actorId: 'principal-b' })
+    assert.notEqual(next.id, created.id, 'ids resume after a reload instead of restarting')
+
+    writeFileSync(join(dir, 'broken.json'), '{"version":1,"tables":')
+    assert.throws(
+      () => new FileStore(join(dir, 'broken.json')),
+      (error: unknown) => error instanceof PersistenceError,
+      'corrupt JSON refuses to open',
+    )
+    writeFileSync(join(dir, 'future.json'), JSON.stringify({ version: 99, tables: {}, clock: 0, ids: {} }))
+    assert.throws(
+      () => new FileStore(join(dir, 'future.json')),
+      (error: unknown) => error instanceof PersistenceError,
+      'an unknown snapshot version refuses',
+    )
+    writeFileSync(join(dir, 'foreign.json'), JSON.stringify({ version: 1, tables: { qs_unknown: [] }, clock: 0, ids: {} }))
+    assert.throws(
+      () => new FileStore(join(dir, 'foreign.json')),
+      (error: unknown) => error instanceof PersistenceError,
+      'an unknown table refuses',
+    )
+
+    // Positive control: an absent path is a fresh store with the whole catalog.
+    const fresh = new FileStore(join(dir, 'fresh.json'))
+    assert.ok(fresh.hasTable('qs_organizations'))
+    assert.equal(fresh.rows('qs_organizations').length, 0)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

@@ -6,14 +6,15 @@
  * fail-audit seam, and a two-operation barrier. Nothing else is faked, so a
  * passing case is evidence about repository behaviour rather than about a mock.
  *
- * This is an in-memory adapter, not a persistence choice: C1 sign-off still
- * requires the selected adapter, and a green suite here is repository evidence,
- * not migration evidence.
+ * This is the fixture adapter. `FileStore` implements the same `CmsStore`
+ * surface on disk; the suite still runs against this one for speed, and the
+ * durable adapter has its own cases in `tenancy.test.ts` and `bootstrap.test.ts`.
  */
 import { createHash } from 'node:crypto'
 
-import { MalformedQueryError } from './errors.ts'
+import { CrossTenantRelationError, MalformedQueryError, NotFoundError, UnresolvedRelationError } from './errors.ts'
 import { C1_INTERNAL_TABLES, C1_STORES } from './catalog.ts'
+import { requireTenant } from './tenancy.ts'
 
 /** Fixed by the matrix so assertions never depend on the wall clock. */
 export const FIXED_NOW = '2026-01-01T00:00:00.000Z'
@@ -27,6 +28,16 @@ export class DeterministicClock {
   now(): string {
     return new Date(Date.parse(FIXED_NOW) + this.ticks++).toISOString()
   }
+
+  /** Ticks consumed so far, so a durable adapter resumes the same sequence. */
+  state(): number {
+    return this.ticks
+  }
+
+  restore(state: number): void {
+    if (!Number.isInteger(state) || state < 0) throw new MalformedQueryError('clock state must be a non-negative integer')
+    this.ticks = state
+  }
 }
 
 /** Ids are `prefix_0001`, `prefix_0002`, … per prefix. No randomness. */
@@ -37,6 +48,23 @@ export class DeterministicIds {
     const next = (this.counters.get(prefix) ?? 0) + 1
     this.counters.set(prefix, next)
     return `${prefix}_${String(next).padStart(4, '0')}`
+  }
+
+  /** Per-prefix counters, so a reload continues instead of reissuing ids. */
+  state(): Record<string, number> {
+    return Object.fromEntries(this.counters)
+  }
+
+  restore(state: Record<string, number>): void {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      throw new MalformedQueryError('id state must be an object of prefix counters')
+    }
+    for (const [prefix, count] of Object.entries(state)) {
+      if (prefix.length === 0 || !Number.isInteger(count) || count < 0) {
+        throw new MalformedQueryError('id state must be an object of prefix counters')
+      }
+      this.counters.set(prefix, count)
+    }
   }
 }
 
@@ -50,7 +78,41 @@ export interface Barrier {
   release(): void
 }
 
-export class MemoryStore {
+/** One same-tenant edge write: both endpoints, the join table and the row. */
+export interface EdgeWrite {
+  readonly tenantId: string
+  readonly joinTable: string
+  readonly sourceTable: string
+  readonly sourceId: string
+  readonly targetTable: string
+  readonly targetId: string
+  readonly row: StoredRow
+}
+
+/**
+ * The surface every repository, relation and query uses. Repositories take this
+ * rather than the fixture store, so the durable adapter is the same boundary and
+ * the suite exercises the adapter that will serve traffic.
+ */
+export interface CmsStore {
+  readonly clock: DeterministicClock
+  readonly ids: DeterministicIds
+  tableNames(): string[]
+  hasTable(name: string): boolean
+  rows(table: string): readonly StoredRow[]
+  insert(table: string, row: StoredRow): void
+  findById(table: string, tenantId: string, id: string): StoredRow | undefined
+  replace(table: string, tenantId: string, id: string, patch: StoredRow): StoredRow
+  existsInAnotherTenant(table: string, tenantId: string, id: string): boolean
+  rawDump(tenantId: string, table: string): StoredRow[]
+  failAuditAppend(operation: string, table: string): void
+  consumeAuditFault(operation: string, table: string): boolean
+  barrier(participants?: number): Barrier
+  /** Composite, same-tenant edge: endpoints are resolved before anything is written. */
+  linkEdge(edge: EdgeWrite): StoredRow
+}
+
+export class MemoryStore implements CmsStore {
   private readonly tables = new Map<string, StoredRow[]>()
   private readonly auditFaults = new Set<string>()
   readonly clock = new DeterministicClock()
@@ -99,6 +161,31 @@ export class MemoryStore {
   /** True when the id exists in some other tenant, for a CrossTenantRelation. */
   existsInAnotherTenant(table: string, tenantId: string, id: string): boolean {
     return this.rows(table).some((row) => row.id === id && row.tenant_id !== tenantId)
+  }
+
+  /**
+   * Writes one same-tenant composite edge. The source must resolve in the
+   * tenant, the target must resolve in the tenant, and (tenant, join table,
+   * from, to) is the composite key, so a repeated link returns the existing row
+   * instead of a second edge. A foreign target is refused before any write.
+   */
+  linkEdge({ tenantId, joinTable, sourceTable, sourceId, targetTable, targetId, row }: EdgeWrite): StoredRow {
+    const tenant = requireTenant(tenantId)
+    if (!this.hasTable(joinTable)) throw new MalformedQueryError(`unknown table: ${joinTable}`)
+    if (typeof sourceId !== 'string' || sourceId.trim().length === 0) throw new MalformedQueryError('sourceId is required')
+    if (typeof targetId !== 'string' || targetId.trim().length === 0) throw new MalformedQueryError('targetId is required')
+    if (!this.findById(sourceTable, tenant, sourceId)) throw new NotFoundError()
+    if (!this.findById(targetTable, tenant, targetId)) {
+      if (this.existsInAnotherTenant(targetTable, tenant, targetId)) throw new CrossTenantRelationError()
+      throw new UnresolvedRelationError()
+    }
+    const existing = this.rows(joinTable).find(
+      (candidate) => candidate.tenant_id === tenant && candidate.from_id === sourceId && candidate.to_id === targetId,
+    )
+    if (existing) return clone(existing)
+    const edge: StoredRow = { ...row, tenant_id: tenant, from_id: sourceId, to_id: targetId }
+    this.insert(joinTable, edge)
+    return clone(edge)
   }
 
   /** Read-only inspection for the suite: a copy, filtered to one tenant. */

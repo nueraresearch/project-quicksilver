@@ -1,5 +1,7 @@
 export * from './catalog.ts'
 export * from './errors.ts'
+export * from './filestore.ts'
+export * from './principal.ts'
 export * from './relations.ts'
 export * from './tenancy.ts'
 export * from './queries.ts'
