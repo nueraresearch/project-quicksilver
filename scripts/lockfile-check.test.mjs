@@ -29,17 +29,17 @@ const run = (dir) => spawnSync(process.execPath, [SCRIPT, '--root', dir], { enco
 
 const root = { name: 'root', workspaces: ['packages/*'] }
 const member = { name: 'a', dependencies: { x: '^1.0.0' } }
-const lockFor = (memberDeps) => ({
+const lockFor = (fields) => ({
   name: 'root',
   lockfileVersion: 3,
-  packages: { '': { name: 'root', workspaces: ['packages/*'] }, 'packages/a': { name: 'a', dependencies: memberDeps } },
+  packages: { '': { name: 'root', workspaces: ['packages/*'] }, 'packages/a': { name: 'a', ...fields } },
 })
 
 test('a lockfile that agrees with every manifest passes', () => {
   const dir = fixture({
     'package.json': root,
     'packages/a/package.json': member,
-    'package-lock.json': lockFor({ x: '^1.0.0' }),
+    'package-lock.json': lockFor({ dependencies: { x: '^1.0.0' } }),
   })
   try {
     const result = run(dir)
@@ -54,7 +54,7 @@ test('a spec that moved fails and names the manifest and field', () => {
   const dir = fixture({
     'package.json': root,
     'packages/a/package.json': member,
-    'package-lock.json': lockFor({ x: '^0.9.0' }),
+    'package-lock.json': lockFor({ dependencies: { x: '^0.9.0' } }),
   })
   try {
     const result = run(dir)
@@ -70,7 +70,7 @@ test('a dependency only the lockfile carries fails', () => {
   const dir = fixture({
     'package.json': root,
     'packages/a/package.json': member,
-    'package-lock.json': lockFor({ x: '^1.0.0', ghost: '^2.0.0' }),
+    'package-lock.json': lockFor({ dependencies: { x: '^1.0.0', ghost: '^2.0.0' } }),
   })
   try {
     const result = run(dir)
@@ -119,6 +119,32 @@ test('a lockfile with nothing to compare exits 2', () => {
     assert.match(result.stderr, /no dependency specs to compare/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('every dependency field is compared, not only dependencies', () => {
+  const cases = [
+    ['devDependencies', 'typescript', '^7.0.2', '^6.0.0'],
+    ['optionalDependencies', 'fsevents', '^2.3.3', '^2.3.0'],
+    ['peerDependencies', 'react', '^19.0.0', '^18.0.0'],
+  ]
+  for (const [field, name, spec, other] of cases) {
+    const member = { name: 'a', [field]: { [name]: spec } }
+    const expectations = [
+      [{ [field]: { [name]: spec } }, 0, null],
+      [{ [field]: { [name]: other } }, 1, `${field} "${name}" is "${spec}" in the manifest but "${other}" in the lockfile`],
+      [{}, 1, `${field} "${name}" is "${spec}" in the manifest but absent in the lockfile`],
+    ]
+    for (const [fields, status, message] of expectations) {
+      const dir = fixture({ 'package.json': root, 'packages/a/package.json': member, 'package-lock.json': lockFor(fields) })
+      try {
+        const result = run(dir)
+        assert.equal(result.status, status, `${field} ${JSON.stringify(fields)}: ${result.stdout}${result.stderr}`)
+        if (message) assert.ok(result.stdout.includes(message), `${field}: expected "${message}" in\n${result.stdout}`)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
   }
 })
 

@@ -18,6 +18,9 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// npm's v3 lockfile mirrors all four onto each workspace's entry — verified
+// against a throwaway workspace — and each has a fixture, so no field here is
+// compared without something that would notice it stop working.
 const FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']
 
 class InputError extends Error {}
