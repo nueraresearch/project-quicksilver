@@ -15,8 +15,8 @@
  * rather than passing over nothing. Exit 1 means at least one reference is
  * broken; 0 is the only pass.
  *
- * Known limits: two headings that slug identically are not distinguished, an
- * unmatched backtick blanks the rest of its line, and whether a linked page says
+ * Known limits: two headings that slug identically are not distinguished, a code
+ * span split across two lines is not recognised, and whether a linked page says
  * the right thing is not checked.
  *
  *   node scripts/doc-link-check.mjs [--root <dir>]
@@ -79,7 +79,14 @@ function maskInline(text, state) {
       const run = text.slice(code).match(/^`+/)[0]
       // A closer is a run of exactly the opening run's length; a longer run is literal.
       const closer = [...text.slice(code + run.length).matchAll(/`+/g)].find((match) => match[0].length === run.length)
-      const stop = closer ? code + run.length + closer.index + run.length : text.length
+      if (!closer) {
+        // Unmatched, so it is literal text: keep scanning the rest of the line.
+        prose += text.slice(index, code + run.length)
+        masked += text.slice(index, code + run.length)
+        index = code + run.length
+        continue
+      }
+      const stop = code + run.length + closer.index + run.length
       prose += text.slice(index, stop)
       masked += text.slice(index, code) + blank(text.slice(code, stop))
       index = stop

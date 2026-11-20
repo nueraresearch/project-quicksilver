@@ -230,6 +230,22 @@ test('an HTML comment is neither a link nor an anchor', () => {
   )
 })
 
+test('an unmatched backtick is literal text, not code to end of line', () => {
+  withFixture(
+    {
+      'docs/a.md': ['# Alpha', '', 'an `unmatched tick [after](b.md)', 'a ` stray [gone](missing.md)', ''].join('\n'),
+      'docs/b.md': '# Beta\n',
+    },
+    (dir) => {
+      const result = run(dir)
+      assert.equal(result.status, 1, `${result.stdout}${result.stderr}`)
+      assert.match(result.stdout, /2 link\(s\), 1 broken/, 'resolution still sees the links after the stray backticks')
+      assert.match(result.stdout, /a\.md:4 -> missing\.md \(file does not exist\)/, 'the link after an unmatched backtick is still read')
+      assert.doesNotMatch(result.stdout, /-> b\.md/, 'the resolvable link after an unmatched backtick is read and resolves')
+    },
+  )
+})
+
 // Fixtures prove the checker works. This proves the repository is clean, which
 // is the only reason the check is in the suite: without it, `npm run verify`
 // runs a well-tested tool that never looks at the documents it protects.
