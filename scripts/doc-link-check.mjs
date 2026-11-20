@@ -7,15 +7,17 @@
  * links to itself, and they go stale the same way when a file moves or a
  * heading is renamed. A relative link must resolve to an existing file, and a
  * `#fragment` on a markdown target must match a heading slug or an explicit
- * `<a id="...">`. External URLs are never fetched. Fenced code blocks are not
- * read as documentation: a `#` line or a link in a sample is not a reference.
+ * `<a id="...">`. External URLs are never fetched. Code is not documentation:
+ * a `#` line or a link in a fenced block, an inline code span or an HTML comment
+ * is not a reference.
  *
  * It fails closed: a tree with no markdown, or with no links at all, exits 2
  * rather than passing over nothing. Exit 1 means at least one reference is
  * broken; 0 is the only pass.
  *
- * Known limits: two headings that slug identically are not distinguished, and
- * whether a linked page says the right thing is not checked.
+ * Known limits: two headings that slug identically are not distinguished, an
+ * unmatched backtick blanks the rest of its line, and whether a linked page says
+ * the right thing is not checked.
  *
  *   node scripts/doc-link-check.mjs [--root <dir>]
  */
@@ -40,11 +42,64 @@ function slug(text) {
     .replace(/ /g, '-')
 }
 
+/** Spaces of the same length, so masking never shifts a column or joins words. */
+const blank = (text) => ' '.repeat(text.length)
+
 /**
- * Calls `visit(text, lineNumber)` for every line outside a fenced code block, so
- * neither scan reads a sample as documentation.
+ * One line split into what can appear in documentation: `prose` keeps inline
+ * code spans, because a heading's code is part of its slug, and drops HTML
+ * comments; `masked` drops both. A comment left open continues on the next line.
  */
-function eachProseLine(markdown, visit) {
+function maskInline(text, state) {
+  let prose = ''
+  let masked = ''
+  let index = 0
+  while (index < text.length) {
+    if (state.comment) {
+      const end = text.indexOf('-->', index)
+      const stop = end === -1 ? text.length : end + 3
+      prose += blank(text.slice(index, stop))
+      masked += blank(text.slice(index, stop))
+      index = stop
+      if (end !== -1) state.comment = false
+      continue
+    }
+    const comment = text.indexOf('<!--', index)
+    const code = text.indexOf('`', index)
+    if (comment !== -1 && (code === -1 || comment < code)) {
+      prose += text.slice(index, comment)
+      masked += text.slice(index, comment)
+      prose += blank('<!--')
+      masked += blank('<!--')
+      state.comment = true
+      index = comment + 4
+      continue
+    }
+    if (code !== -1) {
+      const run = text.slice(code).match(/^`+/)[0]
+      // A closer is a run of exactly the opening run's length; a longer run is literal.
+      const closer = [...text.slice(code + run.length).matchAll(/`+/g)].find((match) => match[0].length === run.length)
+      const stop = closer ? code + run.length + closer.index + run.length : text.length
+      prose += text.slice(index, stop)
+      masked += text.slice(index, code) + blank(text.slice(code, stop))
+      index = stop
+      continue
+    }
+    prose += text.slice(index)
+    masked += text.slice(index)
+    break
+  }
+  return { prose, masked }
+}
+
+/**
+ * The lines outside fenced code blocks, in document order. Fenced blocks open on
+ * three or more backticks or tildes and close on the same character, at least as
+ * long, alone on the line.
+ */
+function proseLines(markdown) {
+  const lines = []
+  const state = { comment: false }
   let fence = null
   markdown.split('\n').forEach((text, index) => {
     if (fence) {
@@ -53,23 +108,26 @@ function eachProseLine(markdown, visit) {
       if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null
       return
     }
-    const opening = text.match(/^ {0,3}(`{3,}|~{3,})/)
-    if (opening) {
-      fence = opening[1]
-      return
+    if (!state.comment) {
+      const opening = text.match(/^ {0,3}(`{3,}|~{3,})/)
+      if (opening) {
+        fence = opening[1]
+        return
+      }
     }
-    visit(text, index + 1)
+    lines.push({ ...maskInline(text, state), number: index + 1 })
   })
+  return lines
 }
 
 /** Heading slugs and explicit ids. */
 function anchorIds(markdown) {
   const anchors = []
-  eachProseLine(markdown, (line) => {
-    const heading = line.match(/^#{1,6}[ \t]+(.+?)[ \t]*$/)
+  for (const { prose, masked } of proseLines(markdown)) {
+    const heading = prose.match(/^#{1,6}[ \t]+(.+?)[ \t]*$/)
     if (heading) anchors.push(slug(heading[1]))
-    for (const match of line.matchAll(/<a[^>]+id=["']([^"']+)["']/gi)) anchors.push(match[1])
-  })
+    for (const match of masked.matchAll(/<a[^>]+id=["']([^"']+)["']/gi)) anchors.push(match[1])
+  }
   return new Set(anchors)
 }
 
@@ -89,11 +147,11 @@ function markdownFiles(directory, out = []) {
 /** Inline markdown links only; reference-style links and autolinks are ignored. */
 function linksIn(markdown) {
   const found = []
-  eachProseLine(markdown, (line, number) => {
-    for (const match of line.matchAll(/\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g)) {
+  for (const { masked, number } of proseLines(markdown)) {
+    for (const match of masked.matchAll(/\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g)) {
       found.push({ target: match[1], line: number })
     }
-  })
+  }
   return found
 }
 

@@ -175,6 +175,61 @@ test('a link inside a fenced block is not a reference', () => {
   )
 })
 
+test('an inline code span is neither a link nor an anchor', () => {
+  withFixture(
+    {
+      'docs/a.md': [
+        '# Alpha',
+        '',
+        '`[sample](not-here.md)`',
+        '',
+        '[real](b.md#beta)',
+        '[code anchor](b.md#not-an-anchor)',
+        '[heading code](b.md#the-beta-heading)',
+        '',
+      ].join('\n'),
+      'docs/b.md': ['# Beta', '', '## The `beta` heading', '', '`# not an anchor`', ''].join('\n'),
+    },
+    (dir) => {
+      const result = run(dir)
+      assert.equal(result.status, 1, `${result.stdout}${result.stderr}`)
+      assert.match(result.stdout, /3 link\(s\), 1 broken/, 'the sample link is not counted; the three prose links are')
+      assert.match(result.stdout, /b\.md#not-an-anchor \(no heading or id with that anchor\)/, 'a heading inside a code span is not an anchor')
+      assert.doesNotMatch(result.stdout, /not-here\.md/, 'the link inside the code span must not be scanned')
+      assert.doesNotMatch(result.stdout, /b\.md#(beta|the-beta-heading)/, 'code inside a heading still counts towards its slug')
+    },
+  )
+})
+
+test('an HTML comment is neither a link nor an anchor', () => {
+  withFixture(
+    {
+      'docs/a.md': [
+        '# Alpha',
+        '',
+        '<!-- [hidden](not-here.md) -->',
+        '',
+        '<!--',
+        '[multi-line](also-not-here.md)',
+        '# not-a-heading',
+        '-->',
+        '',
+        '[commented anchor](#not-a-heading)',
+        '[real](b.md)',
+        '',
+      ].join('\n'),
+      'docs/b.md': '# Beta\n',
+    },
+    (dir) => {
+      const result = run(dir)
+      assert.equal(result.status, 1, `${result.stdout}${result.stderr}`)
+      assert.match(result.stdout, /2 link\(s\), 1 broken/, 'links in comments are not counted; the two outside are')
+      assert.match(result.stdout, /a\.md:10 -> #not-a-heading \(no heading or id with that anchor\)/, 'a heading inside a comment is not an anchor')
+      assert.doesNotMatch(result.stdout, /not-here\.md/, 'links inside comments must not be scanned')
+    },
+  )
+})
+
 // Fixtures prove the checker works. This proves the repository is clean, which
 // is the only reason the check is in the suite: without it, `npm run verify`
 // runs a well-tested tool that never looks at the documents it protects.
