@@ -38,6 +38,9 @@ function fixture(mode) {
   const cleanTree = '{"dependencies":{}}'
   const highLodash = '{"vulnerabilities":{"lodash":{"severity":"high","range":"<4.17.21","isDirect":false,"via":[{"title":"lodash prototype pollution","url":""}]}}}'
   const lodashTree = '{"dependencies":{"lodash":{}}}'
+  // ~1.5 MiB: over spawnSync's 1 MiB default, so the gate must size its buffer
+  // rather than read a truncated report as unreadable.
+  const hugeTree = JSON.stringify({ dependencies: Object.fromEntries(Array.from({ length: 90000 }, (_, i) => [`pkg-${i}`, {}])) })
   const reports = {
     ok: [cleaner, cleanTree],
     'audit-empty': [null, cleanTree],
@@ -45,6 +48,7 @@ function fixture(mode) {
     'ls-empty': [cleaner, null],
     'ls-garbage': [cleaner, 'not json'],
     blocker: [highLodash, lodashTree],
+    'ls-huge': [cleaner, hugeTree],
   }[mode]
   if (!reports) throw new Error(`unknown fixture mode: ${mode}`)
   const [audit, ls] = reports
@@ -128,6 +132,21 @@ test('an npm ls report that is not JSON fails instead of classifying nothing as 
     assert.equal(result.status, 1, `an unparsable production tree must not exit 0:\n${output}`)
     assert.match(output, /DEPENDENCY AUDIT FAILED \(P-109\): npm ls output for apps\/web is not JSON/)
     assert.doesNotMatch(result.stdout, /production dependency packages/)
+  } finally {
+    rmSync(fixtureDir.dir, { recursive: true, force: true })
+  }
+})
+
+test('a production tree larger than the default buffer still classifies instead of reading as unreadable', SKIP, () => {
+  const fixtureDir = fixture('ls-huge')
+  try {
+    const reportBytes = Buffer.byteLength(JSON.stringify({ dependencies: Object.fromEntries(Array.from({ length: 90000 }, (_, i) => [`pkg-${i}`, {}])) }))
+    assert.ok(reportBytes > 1024 * 1024, `the fixture must exceed the 1 MiB default to prove anything (got ${reportBytes} bytes)`)
+    const result = run(fixtureDir)
+    const output = `${result.stdout}${result.stderr}`
+    assert.equal(result.status, 0, `a large readable tree must pass, not fail as unreadable:\n${output}`)
+    assert.doesNotMatch(output, /DEPENDENCY AUDIT FAILED/, 'the buffer must not turn a large report into an input error')
+    assert.match(result.stdout, /production dependency packages/)
   } finally {
     rmSync(fixtureDir.dir, { recursive: true, force: true })
   }

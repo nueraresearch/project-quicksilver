@@ -30,8 +30,14 @@ const BLOCKING_SEVERITIES = new Set(['high', 'critical'])
 /** A report the gate cannot read. It is never an empty result, so it fails the run. */
 class GateInputError extends Error {}
 
+// `npm ls --all --json` for a full production tree can exceed spawnSync's 1 MiB
+// default. The truncation surfaces as unparsable JSON, which this gate correctly
+// treats as unreadable - so a large but perfectly readable tree would fail as if
+// the report were missing. Size the buffer for the tree, not the default.
+const MAX_REPORT_BYTES = 64 * 1024 * 1024
+
 function run(args, { allowFailure = false } = {}) {
-  const result = spawnSync('npm', args, { cwd: repoRoot, encoding: 'utf8', shell: process.platform === 'win32' })
+  const result = spawnSync('npm', args, { cwd: repoRoot, encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: MAX_REPORT_BYTES })
   const stdout = result.stdout ?? ''
   const stderr = result.stderr ?? ''
   // npm writes reports to stdout but returns non-zero when it finds advisories,
