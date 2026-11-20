@@ -14,7 +14,7 @@
  * design (§6, last row).
  */
 import { CrossTenantRelationError, MalformedQueryError, NotFoundError, UnresolvedRelationError } from './errors.ts'
-import type { MemoryStore, StoredRow } from './store.ts'
+import type { CmsStore, StoredRow } from './store.ts'
 import { requireTenant } from './tenancy.ts'
 
 export interface RelationDefinition {
@@ -100,7 +100,7 @@ export interface LinkOptions {
  * Returns the relation so a caller (and a test) can see what was enforced.
  */
 export function linkRelation(
-  store: MemoryStore,
+  store: CmsStore,
   tenantId: string,
   relation: RelationDefinition,
   sourceId: string,
@@ -123,20 +123,18 @@ export function linkRelation(
   }
 
   if (relation.kind === 'many-to-many') {
-    const joinTable = relation.joinTable!
-    const existing = store
-      .rows(joinTable)
-      .find((row) => row.tenant_id === tenant && row.from_id === sourceId && row.to_id === targetId)
-    if (!existing) {
-      store.insert(joinTable, {
-        tenant_id: tenant,
-        id: store.ids.next('lnk'),
-        from_id: sourceId,
-        to_id: targetId,
-        created_at: store.clock.now(),
-        created_by: options.actorId,
-      })
-    }
+    // The edge is written by the store, which re-checks both endpoints inside
+    // the tenant and keys the row by (tenant, join table, from, to). A foreign
+    // or missing target refuses there, before a row exists to persist.
+    store.linkEdge({
+      tenantId: tenant,
+      joinTable: relation.joinTable!,
+      sourceTable: relation.sourceTable,
+      sourceId,
+      targetTable: relation.targetTable,
+      targetId,
+      row: { id: store.ids.next('lnk'), created_at: store.clock.now(), created_by: options.actorId },
+    })
     return relation
   }
 
@@ -150,6 +148,6 @@ export function linkRelation(
 }
 
 /** Rows of a join table for one tenant, used by the relation tests. */
-export function joinRows(store: MemoryStore, tenantId: string, joinTable: string): StoredRow[] {
+export function joinRows(store: CmsStore, tenantId: string, joinTable: string): StoredRow[] {
   return store.rows(joinTable).filter((row) => row.tenant_id === tenantId)
 }
