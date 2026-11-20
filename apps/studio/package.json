@@ -5,7 +5,7 @@
   "license": "MIT",
   "description": "Quicksilver — Sanity Studio (schema authoring)",
   "scripts": {
-    "dev": "sanity dev",
+    "dev": "tsx scripts/dev-preflight.ts && sanity dev",
     "start": "sanity start",
     "build": "sanity build",
     "deploy": "sanity deploy",

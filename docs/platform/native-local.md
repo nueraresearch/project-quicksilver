@@ -3,11 +3,12 @@
 ## Target and boundaries
 
 The migration proceeds from the current Sanity-backed application, through a
-customized Strapi chassis, to the Quicksilver CMS Module as the product-owned
-backend. Strapi is an implementation chassis, not a reason to couple
-Quicksilver's domain logic to generic CMS behavior. Sanity and standalone Strapi
-may remain optional adapters or migration sources after cutover, but neither may
-be a required external service for the built-in product.
+native store catalog and repository layer, to the Quicksilver CMS Module as the
+product-owned backend. Strapi is not the chassis (decided 2026-11-19): it remains
+an optional adapter example, not a reason to couple Quicksilver's domain logic to
+generic CMS behavior. Sanity and standalone Strapi may remain optional adapters or
+migration sources after cutover, but neither may be a required external service
+for the built-in product.
 
 The target is a Quicksilver-owned, self-hosted experience: no mandatory CMS
 account, hosted model key, or paid API for features that can run locally. A clean
@@ -73,13 +74,60 @@ audit records and fail-closed execution apply equally to local deployments.
 Local credentials can be generated during setup; no external identity account
 should be required for a single-owner installation.
 
+## Capability matrix and removal gate
+
+The parity inventory is versioned in [native-capabilities.json](native-capabilities.json)
+(version 1, updated 2026-11-19). It records, per provider feature, the native status
+(`native`, `partial`, `absent`), whether an external account is required, the
+evidence path, the known gap, and the R1 disposition.
+
+The gate is executable and fail-closed:
+
+```sh
+npm run native:gate          # exit 0 only when every core capability is native
+node scripts/native-capability-matrix.mjs --json
+```
+
+Exit codes: `0` the removal gate passes; `1` blocked, with each non-native core
+capability and its gap printed; `2` the matrix itself is missing, empty,
+malformed, references a missing evidence path, or claims `native` without a
+test as evidence. A blocked gate is the expected state today: local BYO-model
+planning is the only native core row, the ontology scaffold, tenant-scoped query
+contracts, API response contracts, tenant isolation, SMTP submission and the
+migration rehearsal harness are partial, and the remaining Sanity content
+capabilities, local identity, model provisioning, inbound email, STARTTLS
+submission and live native delivery are absent.
+Sanity, OIDC and Resend stay required for those features; removing any of them
+before its rows are native would violate the gate and R1.
+
+### Migration rehearsal harness
+
+`scripts/native-migration-rehearsal.mjs` is the rehearsal mechanism the gate
+requires, over exported JSONL keyed by `_id`:
+
+```sh
+npm run native:rehearse -- compare --source source.jsonl --target target.jsonl
+npm run native:rehearse -- snapshot --source source.jsonl --out rehearsal/
+npm run native:rehearse -- verify --snapshot rehearsal/
+npm run native:rehearse -- restore --snapshot rehearsal/ --target restored.jsonl
+```
+
+It prints source and target counts and overall SHA-256 digests, refuses empty
+datasets and duplicate ids, exits 1 on any missing, extra or changed record, and
+writes a snapshot manifest with a per-record digest. `verify` detects a tampered
+snapshot; `restore` is the rollback path and re-verifies the written file. Exit
+codes are 0 clean, 1 diverged or corrupt, 2 invalid input. It proves
+export-to-export parity and rollback mechanics. It does not prove a Sanity
+extraction, tenant refusals, a deployed restart/restore, or owner sign-off; the
+matrix row stays `partial` until those exist.
+
 ## Delivery Order
 
 These are proposed implementation stages, not claims of completed migration.
 
 | Stage | Work | Acceptance check |
 |---|---|---|
-| 1. Strapi chassis and parity inventory | Add the local Quicksilver Strapi plugin chassis and map current Sanity schemas, APIs, workflows and data to the ontology. Keep Sanity active until parity is evidenced. | Versioned capability matrix covers every provider feature, with migration fixtures and documented differences. |
+| 1. Native chassis and parity inventory | Add the local Quicksilver CMS store catalog and repositories and map current Sanity schemas, APIs, workflows and data to the ontology. Keep Sanity active until parity is evidenced. | Versioned capability matrix covers every provider feature, with migration fixtures and documented differences. |
 | 2. Quicksilver-owned default backend | Complete local repositories, admin/API experience, authorization, audit, migrations, backups and recovery. Make both CMS integrations optional. | Clean install works with Sanity and external Strapi settings unset; existing capability and refusal suites pass against the new backend. |
 | 3. Parity rehearsal and cutover | Rehearse import, compare records and behavior, test rollback, then switch one deployment at a time with one authoritative writer. | Full feature matrix passes, data divergence is resolved, rollback is rehearsed, and owner signs off before changing defaults. |
 | 4. Local identity | Add first-owner enrollment and local authentication using standard security primitives; generate local signing/encryption keys and support rotation, recovery and revocation. Keep OIDC optional. | No external identity account required; remote unauthenticated enrollment, self-grants and invalid sessions refuse. |

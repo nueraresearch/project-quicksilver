@@ -39,7 +39,7 @@
     "@ai-sdk/openai-compatible": "^3.0.63",
     "@quicksilver/kernel": "*",
     "ai": "^7.0.127",
-    "zod": "^3.25.76",
+    "zod": "^4.6.7",
     "@quicksilver/aura": "*"
   },
   "devDependencies": {
