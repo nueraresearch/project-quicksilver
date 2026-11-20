@@ -5,7 +5,7 @@
   "license": "MIT",
   "description": "Quicksilver — Sanity Studio (schema authoring)",
   "scripts": {
-    "dev": "sanity dev",
+    "dev": "tsx scripts/dev-preflight.ts && sanity dev",
     "start": "sanity start",
     "build": "sanity build",
     "deploy": "sanity deploy",
@@ -24,13 +24,13 @@
     "demo:post-check": "tsx scripts/demo-post-check.ts"
   },
   "dependencies": {
-    "@sanity/client": "^8.9.0",
-    "@sanity/vision": "^5.31.2",
-    "react": "^19.2.2",
-    "react-dom": "^19.2.2",
-    "sanity": "^5.1.0",
-    "sanity-plugin-workflow": "^3.0.47",
-    "styled-components": "^6.1.15"
+    "@sanity/client": "^8.13.0",
+    "@sanity/vision": "^6.21.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sanity": "^6.21.0",
+    "sanity-plugin-workflow": "^3.0.52",
+    "styled-components": "^6.6.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

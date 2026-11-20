@@ -31,15 +31,15 @@
     "capture:kb": "tsx src/capture-kb.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/anthropic": "^4.0.91",
     "@ai-sdk/azure": "^3.0.0",
     "@ai-sdk/google": "^3.0.0",
     "@ai-sdk/mcp": "^1.0.0",
     "@ai-sdk/openai": "^3.0.0",
-    "@ai-sdk/openai-compatible": "^3.0.63",
+    "@ai-sdk/openai-compatible": "^3.0.80",
     "@quicksilver/kernel": "*",
-    "ai": "^7.0.127",
-    "zod": "^3.25.76",
+    "ai": "7.0.177",
+    "zod": "^4.6.7",
     "@quicksilver/aura": "*"
   },
   "devDependencies": {
