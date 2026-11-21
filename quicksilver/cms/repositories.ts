@@ -168,15 +168,19 @@ export class BaseRepository<T extends ContentRecord> {
     const row = this.writable(tenant, id, options, 'content.update')
     const revision = Number(row.revision) + 1
     const at = this.store.clock.now()
-    const updated = this.store.replace(this.table, tenant, id, {
-      ...patch,
-      tenant_id: tenant,
-      revision,
-      updated_at: at,
-      updated_by: options.actorId,
+    // The record and its revision are one write: a failure between them would
+    // leave a revision number with no snapshot to read it back from.
+    return this.store.atomically(() => {
+      const updated = this.store.replace(this.table, tenant, id, {
+        ...patch,
+        tenant_id: tenant,
+        revision,
+        updated_at: at,
+        updated_by: options.actorId,
+      })
+      this.snapshot(tenant, id, revision, 'draft', updated, options.actorId, at)
+      return updated as T
     })
-    this.snapshot(tenant, id, revision, 'draft', updated, options.actorId, at)
-    return updated as T
   }
 
   /** Publishes one existing revision; it does not allocate a new one. */
@@ -189,24 +193,28 @@ export class BaseRepository<T extends ContentRecord> {
       .some((candidate) => candidate.tenant_id === tenant && candidate.record_id === id && Number(candidate.revision) === revision)
     if (!exists) throw new NotFoundError('revision not found')
     const at = this.store.clock.now()
-    const updated = this.store.replace(this.table, tenant, id, {
-      lifecycle: 'published',
-      published_revision: revision,
-      updated_at: at,
-      updated_by: options.actorId,
+    // The row and the marked revision are one write: a record must not say
+    // "published" while its snapshot is still a draft.
+    return this.store.atomically(() => {
+      const updated = this.store.replace(this.table, tenant, id, {
+        lifecycle: 'published',
+        published_revision: revision,
+        updated_at: at,
+        updated_by: options.actorId,
+      })
+      // Publishing marks the existing snapshot; it does not rewrite its body or
+      // allocate a revision, so the published digest cannot change under review.
+      const snapshot = this.store
+        .rows('qs_content_revisions')
+        .find((candidate) => candidate.tenant_id === tenant && candidate.record_id === id && Number(candidate.revision) === revision)
+      // Every revision row is addressable; publishing marks it rather than
+      // appending a second row with the same revision number.
+      if (!snapshot || typeof snapshot.id !== 'string') {
+        throw new MalformedQueryError('revision snapshot is missing its id')
+      }
+      this.store.replace('qs_content_revisions', tenant, snapshot.id, { state: 'published' })
+      return updated as T
     })
-    // Publishing marks the existing snapshot; it does not rewrite its body or
-    // allocate a revision, so the published digest cannot change under review.
-    const snapshot = this.store
-      .rows('qs_content_revisions')
-      .find((candidate) => candidate.tenant_id === tenant && candidate.record_id === id && Number(candidate.revision) === revision)
-    // Every revision row is addressable; publishing marks it rather than
-    // appending a second row with the same revision number.
-    if (!snapshot || typeof snapshot.id !== 'string') {
-      throw new MalformedQueryError('revision snapshot is missing its id')
-    }
-    this.store.replace('qs_content_revisions', tenant, snapshot.id, { state: 'published' })
-    return updated as T
   }
 
   async archive(tenantId: TenantId, id: string, options: WriteOptions & { expectedRevision: number }): Promise<T> {
@@ -214,14 +222,16 @@ export class BaseRepository<T extends ContentRecord> {
     const row = this.writable(tenant, id, options, 'content.archive')
     const revision = Number(row.revision) + 1
     const at = this.store.clock.now()
-    const updated = this.store.replace(this.table, tenant, id, {
-      lifecycle: 'archived',
-      revision,
-      updated_at: at,
-      updated_by: options.actorId,
+    return this.store.atomically(() => {
+      const updated = this.store.replace(this.table, tenant, id, {
+        lifecycle: 'archived',
+        revision,
+        updated_at: at,
+        updated_by: options.actorId,
+      })
+      this.snapshot(tenant, id, revision, 'archived', updated, options.actorId, at)
+      return updated as T
     })
-    this.snapshot(tenant, id, revision, 'archived', updated, options.actorId, at)
-    return updated as T
   }
 
   async softDelete(tenantId: TenantId, id: string, options: WriteOptions & { expectedRevision: number }): Promise<T> {
@@ -229,17 +239,19 @@ export class BaseRepository<T extends ContentRecord> {
     const row = this.writable(tenant, id, options, 'content.delete')
     const revision = Number(row.revision) + 1
     const at = this.store.clock.now()
-    const updated = this.store.replace(this.table, tenant, id, {
-      revision,
-      deleted_at: at,
-      deleted_by: options.actorId,
-      delete_reason: 'soft-delete',
-      purge_after: new Date(Date.parse(at) + 30 * 86_400_000).toISOString(),
-      updated_at: at,
-      updated_by: options.actorId,
+    return this.store.atomically(() => {
+      const updated = this.store.replace(this.table, tenant, id, {
+        revision,
+        deleted_at: at,
+        deleted_by: options.actorId,
+        delete_reason: 'soft-delete',
+        purge_after: new Date(Date.parse(at) + 30 * 86_400_000).toISOString(),
+        updated_at: at,
+        updated_by: options.actorId,
+      })
+      this.snapshot(tenant, id, revision, 'tombstoned', updated, options.actorId, at)
+      return updated as T
     })
-    this.snapshot(tenant, id, revision, 'tombstoned', updated, options.actorId, at)
-    return updated as T
   }
 
   /** A repeated update with the same key replays its first result (§6 D06). */
@@ -285,17 +297,19 @@ export class BaseRepository<T extends ContentRecord> {
     const row = this.writable(tenant, id, options, 'content.restore')
     const revision = Number(row.revision) + 1
     const at = this.store.clock.now()
-    const updated = this.store.replace(this.table, tenant, id, {
-      revision,
-      deleted_at: null,
-      deleted_by: null,
-      delete_reason: null,
-      purge_after: null,
-      updated_at: at,
-      updated_by: options.actorId,
+    return this.store.atomically(() => {
+      const updated = this.store.replace(this.table, tenant, id, {
+        revision,
+        deleted_at: null,
+        deleted_by: null,
+        delete_reason: null,
+        purge_after: null,
+        updated_at: at,
+        updated_by: options.actorId,
+      })
+      this.snapshot(tenant, id, revision, 'restored', updated, options.actorId, at)
+      return updated as T
     })
-    this.snapshot(tenant, id, revision, 'restored', updated, options.actorId, at)
-    return updated as T
   }
 
   /** Shared checks for a mutating write: actor, expected revision, audit fault. */
@@ -436,8 +450,10 @@ export class OrganizationRepository extends BaseRepository<OrganizationRecord> {
     if (this.store.consumeAuditFault('content.create', 'qs_content_revisions')) {
       throw new AuditWriteFailedError()
     }
-    this.store.insert(this.table, record)
-    this.store.insert('qs_content_revisions', revision)
+    this.store.atomically(() => {
+      this.store.insert(this.table, record)
+      this.store.insert('qs_content_revisions', revision)
+    })
     return structuredClone(record)
   }
 
@@ -499,25 +515,27 @@ export class ObjectiveRepository extends BaseRepository<ObjectiveRecord> {
 
     const at = this.store.clock.now()
     const revision = Number(objective.revision ?? 0) + 1
-    const updated = this.store.replace(this.table, tenant, objectiveId, {
-      owner_id: entityId,
-      revision,
-      updated_at: at,
-      updated_by: options.actorId,
-    })
+    return this.store.atomically(() => {
+      const updated = this.store.replace(this.table, tenant, objectiveId, {
+        owner_id: entityId,
+        revision,
+        updated_at: at,
+        updated_by: options.actorId,
+      })
 
-    this.store.insert('qs_content_revisions', {
-      tenant_id: tenant,
-      record_type: 'objective',
-      record_id: objectiveId,
-      revision,
-      state: 'draft',
-      snapshot: updated,
-      digest: digestOf(updated),
-      actor_id: options.actorId,
-      created_at: at,
+      this.store.insert('qs_content_revisions', {
+        tenant_id: tenant,
+        record_type: 'objective',
+        record_id: objectiveId,
+        revision,
+        state: 'draft',
+        snapshot: updated,
+        digest: digestOf(updated),
+        actor_id: options.actorId,
+        created_at: at,
+      })
+      return updated as ObjectiveRecord
     })
-    return updated as ObjectiveRecord
   }
 }
 
@@ -613,16 +631,20 @@ export class DecisionRepository extends BaseRepository<ContentRecord> {
     if (this.store.consumeAuditFault('decision.event', 'qs_decision_events')) throw new AuditWriteFailedError()
 
     const at = this.store.clock.now()
-    const updated = this.store.replace(this.table, tenant, decisionId, {
-      context_entity_id: key === 'entityId' ? targetId : null,
-      context_capability_id: key === 'capabilityId' ? targetId : null,
-      context_policy_id: key === 'policyId' ? targetId : null,
-      revision: Number(decision.revision ?? 0) + 1,
-      updated_at: at,
-      updated_by: options.actorId,
+    // The projection and its event are one write: a decision that moved without
+    // its event would break the chain the event log exists to prove.
+    return this.store.atomically(() => {
+      const updated = this.store.replace(this.table, tenant, decisionId, {
+        context_entity_id: key === 'entityId' ? targetId : null,
+        context_capability_id: key === 'capabilityId' ? targetId : null,
+        context_policy_id: key === 'policyId' ? targetId : null,
+        revision: Number(decision.revision ?? 0) + 1,
+        updated_at: at,
+        updated_by: options.actorId,
+      })
+      appendDecisionEvent(this.store, tenant, decisionId, 'context-linked', String(decision.status ?? 'proposed'), String(decision.status ?? 'proposed'), options.actorId)
+      return updated as ContentRecord
     })
-    appendDecisionEvent(this.store, tenant, decisionId, 'context-linked', String(decision.status ?? 'proposed'), String(decision.status ?? 'proposed'), options.actorId)
-    return updated as ContentRecord
   }
 }
 
@@ -646,20 +668,24 @@ export class MetricRepository extends BaseRepository<ContentRecord> {
     if (this.store.consumeAuditFault('metric.observe', 'qs_metric_observations')) throw new AuditWriteFailedError()
 
     const at = this.store.clock.now()
-    this.store.insert('qs_metric_observations', {
-      tenant_id: tenant,
-      id: this.store.ids.next('obs'),
-      metric_id: metricId,
-      value,
-      observed_at: at,
-      actor_id: options.actorId,
+    // The observation is the authority and the metric row is its projection, so
+    // the projection must not be able to land without the observation.
+    return this.store.atomically(() => {
+      this.store.insert('qs_metric_observations', {
+        tenant_id: tenant,
+        id: this.store.ids.next('obs'),
+        metric_id: metricId,
+        value,
+        observed_at: at,
+        actor_id: options.actorId,
+      })
+      return this.store.replace(this.table, tenant, metricId, {
+        value,
+        revision: Number(metric.revision ?? 0) + 1,
+        updated_at: at,
+        updated_by: options.actorId,
+      }) as ContentRecord
     })
-    return this.store.replace(this.table, tenant, metricId, {
-      value,
-      revision: Number(metric.revision ?? 0) + 1,
-      updated_at: at,
-      updated_by: options.actorId,
-    }) as ContentRecord
   }
 }
 
@@ -737,23 +763,27 @@ function casPublicationHead(
   if (store.consumeAuditFault('publication.cas', config.auditTable)) throw new AuditWriteFailedError()
 
   const at = store.clock.now()
-  const updated = store.replace(config.headTable, tenant, String(head.id), {
-    active_version: activeVersion,
-    cas_revision: expectedCasRevision + 1,
-    updated_at: at,
+  // The head and its audit row are one write: a moved head with no audit trail
+  // is the state E04 exists to rule out.
+  return store.atomically(() => {
+    const updated = store.replace(config.headTable, tenant, String(head.id), {
+      active_version: activeVersion,
+      cas_revision: expectedCasRevision + 1,
+      updated_at: at,
+    })
+    store.insert(config.auditTable, {
+      tenant_id: tenant,
+      id: store.ids.next('aud'),
+      seq: store.rows(config.auditTable).filter((row) => row.tenant_id === tenant).length + 1,
+      event: config.auditEvent,
+      [config.keyColumn]: keyValue,
+      version: activeVersion,
+      actor_id: options.actorId,
+      at,
+      detail: null,
+    })
+    return updated as ContentRecord
   })
-  store.insert(config.auditTable, {
-    tenant_id: tenant,
-    id: store.ids.next('aud'),
-    seq: store.rows(config.auditTable).filter((row) => row.tenant_id === tenant).length + 1,
-    event: config.auditEvent,
-    [config.keyColumn]: keyValue,
-    version: activeVersion,
-    actor_id: options.actorId,
-    at,
-    detail: null,
-  })
-  return updated as ContentRecord
 }
 
 /** B09: operator records link only to same-tenant targets. */

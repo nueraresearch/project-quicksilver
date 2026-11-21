@@ -103,6 +103,13 @@ export interface Store {
   failAuditAppend(operation: string, table: string): void
   consumeAuditFault(operation: string, table: string): boolean
   barrier(participants?: number): Barrier
+  /**
+   * Runs `work` as one persistence unit. A durable store commits every table
+   * `work` touched with a single write and undoes all of it if `work` throws,
+   * so a record and its revision cannot land one without the other. An
+   * in-memory store has nothing to commit and runs the body unchanged.
+   */
+  atomically<T>(work: () => T): T
 }
 
 export class MemoryStore implements Store {
@@ -179,6 +186,14 @@ export class MemoryStore implements Store {
 
   barrier(participants = 2): Barrier {
     return createBarrier(participants)
+  }
+
+  /**
+   * Nothing is persisted here, and the C1 fixture's atomicity comes from its
+   * pre-write audit seams, so the body runs as-is.
+   */
+  atomically<T>(work: () => T): T {
+    return work()
   }
 }
 

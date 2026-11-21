@@ -132,8 +132,9 @@ test('C2-P06 a failed save leaves disk and memory at the previous state', async 
   assert.equal(reopened.store.rawDump('tenant-a', 'qs_organizations')[0].id, tenantA.id)
 
   // Positive control: the same create succeeds once the save is not failed.
-  // The id may skip the number the rolled-back write took; it must not reuse a
-  // persisted one, and it must be the id that reaches disk.
+  // The rolled-back write consumed no id, so the retry takes the next number;
+  // what matters is that a persisted id is never reissued, and that the id the
+  // caller receives is the one on disk.
   const tenantB = await first.organizations.create('tenant-b', ORGANIZATION, WRITE)
   assert.notEqual(tenantB.id, tenantA.id)
   const persisted = open(dir).store.rawDump('tenant-b', 'qs_organizations')
@@ -153,3 +154,130 @@ test('C2-P07 tenant isolation holds through the durable adapter', async () => {
   assert.equal(store.findById('qs_organizations', 'tenant-a', tenantA.id)?.id, tenantA.id)
   assert.equal(store.findById('qs_organizations', 'tenant-b', tenantB.id)?.id, tenantB.id)
 })
+
+test('C2-P08 an update that touches the record and its revision is one snapshot write', async () => {
+  const dir = tempRoot()
+  const { store, organizations } = open(dir)
+  const created = await organizations.create('tenant-a', ORGANIZATION, WRITE)
+  const before = store.snapshotWrites()
+
+  const updated = await organizations.update(
+    'tenant-a',
+    created.id,
+    { mission: 'Keep the handover honest' },
+    { expectedRevision: 1, actorId: 'principal-founder' },
+  )
+
+  assert.equal(updated.revision, 2)
+  assert.equal(store.snapshotWrites() - before, 1, 'a two-table update must commit once, not once per table')
+  assert.equal(store.rawDump('tenant-a', 'qs_organizations')[0].revision, 2)
+  assert.equal(store.rawDump('tenant-a', 'qs_content_revisions').length, 2)
+
+  // Positive control: the single commit is a real one, readable by the next process.
+  const reopened = open(dir)
+  assert.equal((await reopened.organizations.getRoot('tenant-a')).revision, 2)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_content_revisions').length, 2)
+})
+
+test('C2-P09 a failed commit leaves neither the bumped record nor its revision row', async () => {
+  const dir = tempRoot()
+  const { store, organizations } = open(dir)
+  const created = await organizations.create('tenant-a', ORGANIZATION, WRITE)
+  const before = store.snapshotWrites()
+
+  // The record and the revision are written together, so failing that one write
+  // is failing "between" them: neither may survive.
+  store.failNextSave()
+  await assert.rejects(
+    organizations.update(
+      'tenant-a',
+      created.id,
+      { mission: 'never lands' },
+      { expectedRevision: 1, actorId: 'principal-founder' },
+    ),
+    (error: unknown) => error instanceof StorePersistenceError && /injected save failure/.test(error.message),
+  )
+
+  assert.equal(store.snapshotWrites(), before, 'a failed commit writes no snapshot')
+  const inMemory = store.rawDump('tenant-a', 'qs_organizations')[0]
+  assert.equal(inMemory.revision, 1, 'the recorded revision must not advance')
+  assert.equal(inMemory.mission, undefined, 'the patch must not survive the failed commit')
+  assert.equal(store.rawDump('tenant-a', 'qs_content_revisions').length, 1, 'the revision row must not survive either')
+
+  const reopened = open(dir)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_organizations')[0].revision, 1)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_organizations')[0].mission, undefined)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_content_revisions').length, 1)
+
+  // Positive control: the same update commits both halves when the write is not failed.
+  const updated = await organizations.update(
+    'tenant-a',
+    created.id,
+    { mission: 'lands' },
+    { expectedRevision: 1, actorId: 'principal-founder' },
+  )
+  assert.equal(updated.revision, 2)
+  const committed = open(dir)
+  assert.equal(committed.store.rawDump('tenant-a', 'qs_organizations')[0].mission, 'lands')
+  assert.deepEqual(
+    committed.store
+      .rawDump('tenant-a', 'qs_content_revisions')
+      .map((row) => Number(row.revision))
+      .sort((left, right) => left - right),
+    [1, 2],
+    'both revisions are on disk, and the failed attempt left no third row',
+  )
+})
+
+test('C2-P10 a failure after the record write and before its revision row leaves the record unchanged', async () => {
+  const dir = tempRoot()
+  const { store, organizations } = open(dir)
+  const created = await organizations.create('tenant-a', ORGANIZATION, WRITE)
+  const writes = store.snapshotWrites()
+
+  // The record has already been replaced when the revision row is allocated, so
+  // throwing here is the failure the two writes used to allow: a bumped record
+  // with no revision to read it back from. One commit means the rollback has to
+  // undo the record write too.
+  const nextId = store.ids.next.bind(store.ids)
+  store.ids.next = () => {
+    throw new Error('injected revision failure')
+  }
+  await assert.rejects(
+    organizations.update(
+      'tenant-a',
+      created.id,
+      { mission: 'never lands' },
+      { expectedRevision: 1, actorId: 'principal-founder' },
+    ),
+    /injected revision failure/,
+  )
+  store.ids.next = nextId
+
+  assert.equal(store.snapshotWrites(), writes, 'a rolled-back write commits nothing')
+  const inMemory = store.rawDump('tenant-a', 'qs_organizations')[0]
+  assert.equal(inMemory.revision, 1, 'the record write must be undone')
+  assert.equal(inMemory.mission, undefined)
+  assert.equal(store.rawDump('tenant-a', 'qs_content_revisions').length, 1)
+
+  const reopened = open(dir)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_organizations')[0].revision, 1)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_organizations')[0].mission, undefined)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_content_revisions').length, 1)
+
+  // Positive control: with ids working again the same update commits both halves,
+  // and the rolled-back attempt left no third row behind.
+  const updated = await organizations.update(
+    'tenant-a',
+    created.id,
+    { mission: 'lands' },
+    { expectedRevision: 1, actorId: 'principal-founder' },
+  )
+  assert.equal(updated.revision, 2)
+  assert.deepEqual(
+    store.rawDump('tenant-a', 'qs_content_revisions').map((row) => Number(row.revision)),
+    [1, 2],
+    'one revision row per committed write',
+  )
+})
+

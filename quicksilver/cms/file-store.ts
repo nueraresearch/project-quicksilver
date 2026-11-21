@@ -19,6 +19,10 @@
  *   leave the process believing in rows that were never persisted.
  * - **Ids that continue.** Id counters are seeded from the loaded rows, so a
  *   reopen cannot hand out `org_0001` a second time.
+ * - **One commit per write.** `atomically` defers every table mutation in a
+ *   repository write to a single snapshot, and undoes all of them if the write
+ *   throws, so a record and its revision cannot be persisted apart. A failed
+ *   commit also puts back the id counters, so a rolled-back write consumes no id.
  * - **Fail closed on corruption.** A truncated, malformed or unknown-table
  *   snapshot refuses to open. Reading it as an empty store would silently
  *   discard the content the cutover depends on.
@@ -76,6 +80,17 @@ class DurableIds implements IdSource {
     return `${prefix}_${String(next).padStart(4, '0')}`
   }
 
+  /** Counter state, so a rolled-back transaction cannot consume an id. */
+  counterState(): Map<string, number> {
+    return new Map(this.counters)
+  }
+
+  /** Puts the counters back to a captured state. */
+  restore(state: Map<string, number>): void {
+    this.counters.clear()
+    for (const [prefix, value] of state) this.counters.set(prefix, value)
+  }
+
   /** Seed a counter from an existing id, e.g. `org_0007` → at least 7. */
   observe(value: unknown): void {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return
@@ -104,6 +119,10 @@ export class FileStore implements Store {
   private readonly tables = new Map<string, StoredRow[]>()
   private readonly auditFaults = new Set<string>()
   private failNextSaveOnce = false
+  /** >0 while a transaction is open, so writes defer to its single commit. */
+  private depth = 0
+  /** Snapshot commits, for tests that count them. */
+  private saves = 0
 
   constructor(options: FileStoreOptions) {
     this.root = options.root
@@ -179,6 +198,41 @@ export class FileStore implements Store {
     return createBarrier(participants)
   }
 
+  /**
+   * One persistence unit: every table the work touches is written once, on
+   * return, and every table is put back if the work throws. Nested calls join
+   * the outer unit, so a helper cannot commit half of a repository write.
+   */
+  atomically<T>(work: () => T): T {
+    if (this.depth > 0) return work()
+    const before = this.capture()
+    this.depth = 1
+    let result: T
+    try {
+      result = work()
+    } catch (error) {
+      this.depth = 0
+      this.restore(before)
+      throw error
+    }
+    this.depth = 0
+    try {
+      this.persist()
+    } catch (error) {
+      // `persist` already reloaded from the last good snapshot, but a failure
+      // before the write (serialising the document) would not have, so the
+      // captured state is restored either way.
+      this.restore(before)
+      throw error
+    }
+    return result
+  }
+
+  /** Snapshot writes committed so far. Tests use it to count commits. */
+  snapshotWrites(): number {
+    return this.saves
+  }
+
   /** Test seam: the next save fails after the in-memory mutation. */
   failNextSave(): void {
     this.failNextSaveOnce = true
@@ -238,6 +292,18 @@ export class FileStore implements Store {
     }
   }
 
+  private capture(): { tables: Map<string, StoredRow[]>; counters: Map<string, number> } {
+    const tables = new Map<string, StoredRow[]>()
+    for (const [name, rows] of this.tables) tables.set(name, rows.map((row) => clone(row)))
+    return { tables, counters: this.ids.counterState() }
+  }
+
+  private restore(state: { tables: Map<string, StoredRow[]>; counters: Map<string, number> }): void {
+    this.tables.clear()
+    for (const [name, rows] of state.tables) this.tables.set(name, rows)
+    this.ids.restore(state.counters)
+  }
+
   private document(): string {
     const tables: Record<string, StoredRow[]> = {}
     for (const [name, rows] of this.tables) tables[name] = rows.map((row) => clone(row))
@@ -245,6 +311,8 @@ export class FileStore implements Store {
   }
 
   private persist(): void {
+    // Inside a transaction the commit writes once, for every table.
+    if (this.depth > 0) return
     if (this.failNextSaveOnce) {
       this.failNextSaveOnce = false
       this.reloadFromDisk()
@@ -262,6 +330,7 @@ export class FileStore implements Store {
       }
       renameSync(temporary, this.snapshotPath)
       this.syncDirectory()
+      this.saves += 1
     } catch (error) {
       this.reloadFromDisk()
       throw new StorePersistenceError(`could not persist ${this.snapshotPath}: ${(error as Error).message}`)

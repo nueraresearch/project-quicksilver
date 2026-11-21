@@ -75,10 +75,10 @@ test('a stage that runs no passing test cannot produce VERIFY PASSED', { skip: p
   }
 })
 
-// Prevents: the C1 suite, the eight-file matrix gate or the quicksilver type
-// check being dropped from the chain. They have no other CI path, so an absence
-// would be silent.
-test('the verify chain runs the C1 acceptance suite and type-checks quicksilver', { skip: process.platform === 'win32' }, () => {
+// Prevents: the C1 and C2 suites, the eight-file matrix gate or the quicksilver
+// type check being dropped from the chain. They have no other CI path, so an
+// absence would be silent.
+test('the verify chain runs the C1 and C2 suites and type-checks quicksilver', { skip: process.platform === 'win32' }, () => {
   const fixtureDir = fixture()
   try {
     const result = run(fixtureDir, 'ok')
@@ -86,6 +86,7 @@ test('the verify chain runs the C1 acceptance suite and type-checks quicksilver'
     const invoked = readFileSync(join(fixtureDir.dir, 'calls.log'), 'utf8').trim().split('\n')
     assert.ok(invoked.includes('native:c1:run'), `the chain must run native:c1:run; it ran ${invoked.join(', ')}`)
     assert.ok(invoked.includes('native:c1:test'), `the chain must run native:c1:test; it ran ${invoked.join(', ')}`)
+    assert.ok(invoked.includes('native:c2:test'), `the chain must run native:c2:test; it ran ${invoked.join(', ')}`)
 
     const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'))
     assert.match(pkg.scripts.typecheck, /tsc -p quicksilver/, 'quicksilver is not a workspace, so typecheck must name it')
@@ -100,7 +101,20 @@ test('a run whose stages pass keeps the VERIFY PASSED outcome', { skip: process.
     const result = run(fixtureDir, 'ok')
     const output = `${result.stdout}${result.stderr}`
     assert.equal(result.status, 0, `a verified run must pass:\n${output}`)
-    assert.match(output, /VERIFY PASSED: 22\/22 tests passed; type checks passed\./)
+    // Derived from the stages that actually ran rather than hardcoded, so adding
+    // a leg cannot turn this into a stale number: the fake npm reports two
+    // passing tests per stage.
+    // `typecheck` is the one stage that runs no tests; every other stage reports
+    // two through the fake npm.
+    const testStages = readFileSync(join(fixtureDir.dir, 'calls.log'), 'utf8')
+      .trim()
+      .split('\n')
+      .filter((stage) => stage !== 'typecheck')
+    assert.match(
+      output,
+      new RegExp(`VERIFY PASSED: ${testStages.length * 2}/${testStages.length * 2} tests passed; type checks passed\\.`),
+      `the total must be the sum of every test stage; the chain ran ${testStages.length}`,
+    )
   } finally {
     rmSync(fixtureDir.dir, { recursive: true, force: true })
   }
