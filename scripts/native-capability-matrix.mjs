@@ -17,7 +17,9 @@ const TEST_EVIDENCE = /\.(test|spec)\.(?:ts|tsx|mjs|cjs|js)$/
 
 class GateInputError extends Error {}
 
-const USAGE = 'usage: native-capability-matrix.mjs [matrix.json] [--json]'
+const SCOPES = new Set(['global', 'content'])
+
+const USAGE = 'usage: native-capability-matrix.mjs [matrix.json] [--json] [--scope=global|content]'
 
 function fail(message) {
   throw new GateInputError(message)
@@ -98,13 +100,23 @@ function main() {
   const args = process.argv.slice(2)
   const flags = args.filter((arg) => arg.startsWith('-'))
   const positional = args.filter((arg) => !arg.startsWith('-'))
-  const unknown = flags.filter((flag) => flag !== '--json')
+  const scopeFlags = flags.filter((flag) => flag === '--scope' || flag.startsWith('--scope='))
+  const unknown = flags.filter((flag) => flag !== '--json' && !scopeFlags.includes(flag))
   if (unknown.length > 0) fail(`unknown option ${unknown.join(', ')}; ${USAGE}`)
+  if (scopeFlags.length > 1) fail(`--scope may be given once; ${USAGE}`)
   if (positional.length > 1) fail(`unexpected argument ${positional.slice(1).join(', ')}; ${USAGE}`)
   const json = flags.includes('--json')
+  const scope = scopeFlags.length === 0
+    ? 'global'
+    : scopeFlags[0].includes('=')
+      ? scopeFlags[0].slice(scopeFlags[0].indexOf('=') + 1)
+      : ''
+  if (!SCOPES.has(scope)) fail(`unknown scope ${scope === '' ? '(missing)' : scope}; expected global or content`)
   const doc = load(positional[0] ?? 'docs/platform/native-capabilities.json')
 
-  const core = doc.capabilities.filter((capability) => capability.core)
+  const inScope = (capability) => scope === 'global' || capability.id.startsWith('content.')
+  const core = doc.capabilities.filter((capability) => capability.core && inScope(capability))
+  if (core.length === 0) fail(`scope ${scope} matched no core capabilities; an empty scope is not a pass`)
   const optional = doc.capabilities.filter((capability) => !capability.core)
   const count = (rows, status) => rows.filter((row) => row.native === status).length
   const blockers = core.filter((capability) => capability.native !== 'native')
@@ -112,6 +124,7 @@ function main() {
     version: doc.version,
     updated: doc.updated,
     gate: doc.gate,
+    scope,
     core: core.length,
     optional: optional.length,
     native: count(core, 'native'),
@@ -129,14 +142,20 @@ function main() {
   if (json) {
     console.log(JSON.stringify(summary, null, 2))
   } else {
-    console.log(`Native capability matrix v${doc.version} (${doc.updated}) - ${doc.gate}`)
+    console.log(`Native capability matrix v${doc.version} (${doc.updated}) - ${doc.gate} [scope: ${scope}]`)
     console.log(`core: ${summary.core} (native ${summary.native}, partial ${summary.partial}, absent ${summary.absent}); optional: ${summary.optional}`)
+    const label = scope === 'content' ? 'CONTENT PARITY GATE' : 'REMOVAL GATE'
+    const noun = scope === 'content' ? 'content' : 'core'
     if (blockers.length) {
-      console.log(`\nREMOVAL GATE BLOCKED: ${blockers.length} of ${core.length} core capabilities are not native.`)
+      console.log(`\n${label} BLOCKED: ${blockers.length} of ${core.length} ${noun} capabilities are not native.`)
       for (const capability of blockers) {
         console.log(`  - ${capability.id} [${capability.provider}/${capability.native}]: ${capability.gaps}`)
       }
-      console.log('\nThis is not a pass. Sanity, OIDC, Resend and hosted-model defaults may not be retired while any row above is not native (R1).')
+      console.log(scope === 'content'
+        ? '\nThis is not a pass, and it is not a provider retirement: content parity is a milestone. Sanity, OIDC, Resend and hosted-model keep their current status until the global gate passes (ADR 0006).'
+        : '\nThis is not a pass. Sanity, OIDC, Resend and hosted-model defaults may not be retired while any row above is not native (R1).')
+    } else if (scope === 'content') {
+      console.log(`\nCONTENT PARITY GATE PASSED: all ${core.length} content capabilities are native. Provider status is unchanged; removal is still the global gate (ADR 0006).`)
     } else {
       console.log(`\nREMOVAL GATE PASSED: all ${core.length} core capabilities are native.`)
     }

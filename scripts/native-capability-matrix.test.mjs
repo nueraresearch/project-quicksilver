@@ -162,3 +162,68 @@ test('--json still selects machine output', () => {
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).passed, true)
 })
+
+// Prevents: content parity and provider removal collapsing into one signal, so
+// either progress reads as retirement, or retirement is claimed on content alone.
+test('content scope passes on content parity while the global gate stays blocked', () => {
+  const matrix = baseMatrix()
+  matrix.capabilities.push({
+    id: 'identity.local-enrollment',
+    provider: 'stripe',
+    feature: 'Local enrollment',
+    core: true,
+    native: 'absent',
+    externalRequired: true,
+    evidence: ['docs/platform/native-local.md'],
+    gaps: 'not built yet',
+    r1: 'later workstream',
+  })
+  const file = fixture('scope-split.json', matrix)
+  const global = run(file)
+  assert.equal(global.status, 1, 'a non-content core row must still block removal')
+  assert.match(global.stdout, /REMOVAL GATE BLOCKED: 1 of 2 core capabilities/)
+  const content = run(file, '--scope=content')
+  assert.equal(content.status, 0, content.stderr)
+  assert.match(content.stdout, /CONTENT PARITY GATE PASSED/)
+  assert.match(content.stdout, /Provider status is unchanged/)
+})
+
+test('content scope still refuses a partial content row', () => {
+  const matrix = baseMatrix()
+  matrix.capabilities[0].native = 'partial'
+  matrix.capabilities[0].gaps = 'no native decision store'
+  const result = run(fixture('scope-partial.json', matrix), '--scope=content')
+  assert.equal(result.status, 1)
+  assert.match(result.stdout, /CONTENT PARITY GATE BLOCKED: 1 of 1 content capabilities/)
+  assert.match(result.stdout, /not a provider retirement/i)
+})
+
+// Prevents: a scope that matches nothing exiting 0 — the same fail-open as an
+// empty report counting as zero advisories.
+test('a scope that matches no row is invalid input, never an empty pass', () => {
+  const matrix = baseMatrix()
+  matrix.capabilities[0].id = 'payments.billing'
+  matrix.capabilities[0].provider = 'stripe'
+  const result = run(fixture('scope-empty.json', matrix), '--scope=content')
+  assert.equal(result.status, 2)
+  assert.match(result.stderr, /matched no core capabilities/)
+  assert.match(result.stderr, /This is not a pass/)
+})
+
+test('an unknown or valueless scope is invalid input', () => {
+  const file = fixture('scope-bad.json', baseMatrix())
+  const unknown = run(file, '--scope=everything')
+  assert.equal(unknown.status, 2)
+  assert.match(unknown.stderr, /unknown scope everything/)
+  const bare = run(file, '--scope')
+  assert.equal(bare.status, 2)
+  assert.match(bare.stderr, /unknown scope \(missing\)/)
+})
+
+test('--scope=content --json reports the scope it gated', () => {
+  const result = run(fixture('scope-json.json', baseMatrix()), '--scope=content', '--json')
+  assert.equal(result.status, 0, result.stderr)
+  const summary = JSON.parse(result.stdout)
+  assert.equal(summary.scope, 'content')
+  assert.equal(summary.passed, true)
+})

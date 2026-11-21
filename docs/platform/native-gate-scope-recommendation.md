@@ -1,6 +1,6 @@
 # ADR 0005 recommendation memo: which gate decides when Sanity may become optional
 
-- **Status:** Recommendation for the Product Owner. **Not** an accepted ADR. Nothing here changes a provider status, edits `core` flags, runs an export, touches production, or authorizes migration.
+- **Status:** Superseded by [ADR 0006](adr-0006-content-parity-first-gate.md) on 2026-11-21. The Product Owner chose the content-first sequence this memo argued against, and ADR 0006 answers the objection it raised; the memo is kept as the comparison record, not as current guidance. Nothing here changes a provider status, edits `core` flags, runs an export, touches production, or authorizes migration.
 - **Date:** 2026-11-21
 - **Decision under review:** [ADR 0005 — Sanity demotion and the global removal gate](adr-0005-sanity-demotion-global-gate.md) (Proposed, D1–D5)
 - **Inputs:** [native capability matrix](native-capabilities.json) v1, [CMS cutover plan](native-cms-cutover.md) §2/§7, [C0 unblock packet](native-cms-c0-unblock-packet.md), [C1 acceptance report](native-cms-c1-evidence/c1-acceptance-report.md), [ADR 0001](adr-0001-native-first-ownership.md) R1/R3, [ADR 0003](adr-0003-native-local-operation.md) L2
