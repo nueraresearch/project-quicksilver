@@ -21,8 +21,9 @@
  *   reopen cannot hand out `org_0001` a second time.
  * - **One commit per write.** `atomically` defers every table mutation in a
  *   repository write to a single snapshot, and undoes all of them if the write
- *   throws, so a record and its revision cannot be persisted apart. A failed
- *   commit also puts back the id counters, so a rolled-back write consumes no id.
+ *   throws, so a record and its revision cannot be persisted apart. Undoing
+ *   reseeds the tables and reloads the last snapshot, which also reseeds the id
+ *   counters, so a rolled-back write consumes no id.
  * - **Fail closed on corruption.** A truncated, malformed or unknown-table
  *   snapshot refuses to open. Reading it as an empty store would silently
  *   discard the content the cutover depends on.
@@ -80,15 +81,9 @@ class DurableIds implements IdSource {
     return `${prefix}_${String(next).padStart(4, '0')}`
   }
 
-  /** Counter state, so a rolled-back transaction cannot consume an id. */
-  counterState(): Map<string, number> {
-    return new Map(this.counters)
-  }
-
-  /** Puts the counters back to a captured state. */
-  restore(state: Map<string, number>): void {
+  /** Clears every counter, so a reload reseeds them from the rows on disk. */
+  reset(): void {
     this.counters.clear()
-    for (const [prefix, value] of state) this.counters.set(prefix, value)
   }
 
   /** Seed a counter from an existing id, e.g. `org_0007` → at least 7. */
@@ -205,25 +200,21 @@ export class FileStore implements Store {
    */
   atomically<T>(work: () => T): T {
     if (this.depth > 0) return work()
-    const before = this.capture()
     this.depth = 1
     let result: T
     try {
       result = work()
     } catch (error) {
       this.depth = 0
-      this.restore(before)
-      throw error
+      this.failWith(error)
     }
     this.depth = 0
     try {
       this.persist()
     } catch (error) {
-      // `persist` already reloaded from the last good snapshot, but a failure
-      // before the write (serialising the document) would not have, so the
-      // captured state is restored either way.
-      this.restore(before)
-      throw error
+      // `persist` rolls back its own failures; a failure while serialising the
+      // document never reaches it, so roll back here too.
+      this.failWith(error)
     }
     return result
   }
@@ -292,16 +283,27 @@ export class FileStore implements Store {
     }
   }
 
-  private capture(): { tables: Map<string, StoredRow[]>; counters: Map<string, number> } {
-    const tables = new Map<string, StoredRow[]>()
-    for (const [name, rows] of this.tables) tables.set(name, rows.map((row) => clone(row)))
-    return { tables, counters: this.ids.counterState() }
-  }
-
-  private restore(state: { tables: Map<string, StoredRow[]>; counters: Map<string, number> }): void {
-    this.tables.clear()
-    for (const [name, rows] of state.tables) this.tables.set(name, rows)
-    this.ids.restore(state.counters)
+  /**
+   * Roll back to the last committed snapshot: drop every table, reseed them from
+   * the catalog, reload, then reseed the id counters from the rows just read.
+   *
+   * This replaces copying every table before a write. The copy cost a full clone
+   * of the store per mutation and could only describe memory; a reload describes
+   * what is actually on disk, which is the state a rollback has to return to.
+   * A rollback that cannot read the snapshot is surfaced rather than swallowed:
+   * the process must not continue believing either state.
+   */
+  private failWith(error: unknown): never {
+    try {
+      this.ids.reset()
+      this.resetTables()
+      this.load()
+    } catch (reloadError) {
+      throw new StorePersistenceError(
+        `could not roll back to the last snapshot after "${(error as Error)?.message ?? String(error)}": ${(reloadError as Error).message}`,
+      )
+    }
+    throw error
   }
 
   private document(): string {
@@ -315,8 +317,7 @@ export class FileStore implements Store {
     if (this.depth > 0) return
     if (this.failNextSaveOnce) {
       this.failNextSaveOnce = false
-      this.reloadFromDisk()
-      throw new StorePersistenceError('injected save failure')
+      this.failWith(new StorePersistenceError('injected save failure'))
     }
     const payload = this.document()
     const temporary = `${this.snapshotPath}.tmp`
@@ -332,18 +333,8 @@ export class FileStore implements Store {
       this.syncDirectory()
       this.saves += 1
     } catch (error) {
-      this.reloadFromDisk()
-      throw new StorePersistenceError(`could not persist ${this.snapshotPath}: ${(error as Error).message}`)
+      this.failWith(new StorePersistenceError(`could not persist ${this.snapshotPath}: ${(error as Error).message}`))
     }
-  }
-
-  /**
-   * After a failed write the process must not believe in rows that are not on
-   * disk, so the in-memory tables are rebuilt from the last good snapshot.
-   */
-  private reloadFromDisk(): void {
-    this.resetTables()
-    this.load()
   }
 
   /** Make the rename durable. Not every filesystem supports this; the write succeeded. */

@@ -158,6 +158,14 @@ export class BaseRepository<T extends ContentRecord> {
 
   /** Expected-revision compare-and-swap; a mismatch never overwrites (§2.3). */
   async update(tenantId: TenantId, id: string, patch: Record<string, unknown>, options: WriteOptions & { expectedRevision: number }): Promise<T> {
+    return this.updateSync(tenantId, id, patch, options)
+  }
+
+  /**
+   * The synchronous core. An idempotent write runs this and its key row in one
+   * transaction, and a transaction cannot span an await.
+   */
+  updateSync(tenantId: TenantId, id: string, patch: Record<string, unknown>, options: WriteOptions & { expectedRevision: number }): T {
     const tenant = requireTenant(tenantId)
     if (!patch || typeof patch !== 'object') throw new MalformedQueryError('patch is required')
     // Identity and ownership are never patchable: a tenant is the call's, not a
@@ -185,6 +193,11 @@ export class BaseRepository<T extends ContentRecord> {
 
   /** Publishes one existing revision; it does not allocate a new one. */
   async publish(tenantId: TenantId, id: string, revision: number, options: WriteOptions & { expectedRevision: number }): Promise<T> {
+    return this.publishSync(tenantId, id, revision, options)
+  }
+
+  /** The synchronous core, for the same reason as `updateSync`. */
+  publishSync(tenantId: TenantId, id: string, revision: number, options: WriteOptions & { expectedRevision: number }): T {
     const tenant = requireTenant(tenantId)
     const row = this.writable(tenant, id, options, 'content.publish')
     if (!Number.isInteger(revision) || revision < 1) throw new MalformedQueryError('revision must be a positive integer')
@@ -268,7 +281,7 @@ export class BaseRepository<T extends ContentRecord> {
       'update',
       idempotencyKey,
       { id, patch, expectedRevision: options.expectedRevision, actorId: options.actorId },
-      () => this.update(tenantId, id, patch, write),
+      () => this.updateSync(tenantId, id, patch, write),
     )
     return structuredClone(outcome.result) as T
   }
@@ -287,7 +300,7 @@ export class BaseRepository<T extends ContentRecord> {
       'publish',
       idempotencyKey,
       { id, revision, expectedRevision: options.expectedRevision, actorId: options.actorId },
-      () => this.publish(tenantId, id, revision, write),
+      () => this.publishSync(tenantId, id, revision, write),
     )
     return structuredClone(outcome.result) as T
   }
@@ -409,6 +422,11 @@ export class OrganizationRepository extends BaseRepository<OrganizationRecord> {
   }
 
   async create(tenantId: TenantId, input: OrganizationInput, options: WriteOptions): Promise<OrganizationRecord> {
+    return this.createSync(tenantId, input, options)
+  }
+
+  /** The synchronous core, so `createIdempotent` can commit the key with it. */
+  createSync(tenantId: TenantId, input: OrganizationInput, options: WriteOptions): OrganizationRecord {
     const tenant = requireTenant(tenantId)
     if (!options || typeof options.actorId !== 'string' || !options.actorId.trim()) {
       throw new MalformedQueryError('actorId is required')
@@ -470,7 +488,7 @@ export class OrganizationRepository extends BaseRepository<OrganizationRecord> {
       'create',
       idempotencyKey,
       { table: this.table, input, actorId: options.actorId },
-      () => this.create(tenantId, input, write),
+      () => this.createSync(tenantId, input, write),
     )
     return structuredClone(outcome.result)
   }

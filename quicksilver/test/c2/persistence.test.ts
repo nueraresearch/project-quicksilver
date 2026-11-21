@@ -137,6 +137,7 @@ test('C2-P06 a failed save leaves disk and memory at the previous state', async 
   // caller receives is the one on disk.
   const tenantB = await first.organizations.create('tenant-b', ORGANIZATION, WRITE)
   assert.notEqual(tenantB.id, tenantA.id)
+  assert.equal(tenantB.id, 'org_0002', 'a rolled-back write consumes no id')
   const persisted = open(dir).store.rawDump('tenant-b', 'qs_organizations')
   assert.equal(persisted.length, 1)
   assert.equal(persisted[0].id, tenantB.id)
@@ -279,5 +280,69 @@ test('C2-P10 a failure after the record write and before its revision row leaves
     [1, 2],
     'one revision row per committed write',
   )
+})
+
+test('C2-P12 an idempotent create commits its record, revision and key together', async () => {
+  const dir = tempRoot()
+  const { store, organizations } = open(dir)
+  const before = store.snapshotWrites()
+
+  const created = await organizations.createIdempotent('tenant-a', ORGANIZATION, {
+    ...WRITE,
+    idempotencyKey: 'k-one',
+  })
+
+  assert.equal(store.snapshotWrites() - before, 1, 'record, revision and key are one commit')
+  assert.equal(store.rawDump('tenant-a', 'qs_organizations').length, 1)
+  assert.equal(store.rawDump('tenant-a', 'qs_content_revisions').length, 1)
+  assert.equal(store.rawDump('tenant-a', 'qs_idempotency_keys').length, 1)
+
+  // Positive control: the same key replays the first result instead of writing.
+  const replay = await organizations.createIdempotent('tenant-a', ORGANIZATION, {
+    ...WRITE,
+    idempotencyKey: 'k-one',
+  })
+  assert.equal(replay.id, created.id)
+  assert.equal(store.snapshotWrites() - before, 1, 'a replay commits nothing')
+  assert.equal(open(dir).store.rawDump('tenant-a', 'qs_idempotency_keys').length, 1)
+})
+
+test('C2-P13 a failure before the key row leaves no record, revision or key', async () => {
+  const dir = tempRoot()
+  const { store, organizations } = open(dir)
+  const owning = store.ids.next.bind(store.ids)
+  // The record and revision have been written by the time the key's id is
+  // allocated, so throwing here is the failure that used to leave a record
+  // without the key that makes its retry a replay.
+  store.ids.next = (prefix: string) => {
+    if (prefix === 'idem') throw new Error('injected key failure')
+    return owning(prefix)
+  }
+
+  await assert.rejects(
+    organizations.createIdempotent('tenant-a', ORGANIZATION, { ...WRITE, idempotencyKey: 'k-doomed' }),
+    /injected key failure/,
+  )
+  store.ids.next = owning
+
+  assert.equal(store.rawDump('tenant-a', 'qs_organizations').length, 0, 'no record')
+  assert.equal(store.rawDump('tenant-a', 'qs_content_revisions').length, 0, 'no revision')
+  assert.equal(store.rawDump('tenant-a', 'qs_idempotency_keys').length, 0, 'no key')
+
+  const reopened = open(dir)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_organizations').length, 0, 'nothing reached disk either')
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_content_revisions').length, 0)
+  assert.equal(reopened.store.rawDump('tenant-a', 'qs_idempotency_keys').length, 0)
+
+  // Positive control: the retry is a first attempt, and the rolled-back write
+  // consumed no id.
+  const created = await organizations.createIdempotent('tenant-a', ORGANIZATION, {
+    ...WRITE,
+    idempotencyKey: 'k-doomed',
+  })
+  assert.equal(created.id, 'org_0001', 'a rolled-back write consumes no id')
+  assert.equal(store.rawDump('tenant-a', 'qs_organizations').length, 1)
+  assert.equal(store.rawDump('tenant-a', 'qs_content_revisions').length, 1)
+  assert.equal(store.rawDump('tenant-a', 'qs_idempotency_keys').length, 1)
 })
 
