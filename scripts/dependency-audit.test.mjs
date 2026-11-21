@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -140,7 +140,7 @@ test('an npm ls report that is not JSON fails instead of classifying nothing as 
 test('a production tree larger than the default buffer still classifies instead of reading as unreadable', SKIP, () => {
   const fixtureDir = fixture('ls-huge')
   try {
-    const reportBytes = Buffer.byteLength(JSON.stringify({ dependencies: Object.fromEntries(Array.from({ length: 90000 }, (_, i) => [`pkg-${i}`, {}])) }))
+    const reportBytes = statSync(join(fixtureDir.dir, 'ls.json')).size
     assert.ok(reportBytes > 1024 * 1024, `the fixture must exceed the 1 MiB default to prove anything (got ${reportBytes} bytes)`)
     const result = run(fixtureDir)
     const output = `${result.stdout}${result.stderr}`
