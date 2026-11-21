@@ -18,7 +18,7 @@ import {
   UnresolvedRelationError,
 } from './errors.ts'
 import { requireTenant, type TenantId } from './tenancy.ts'
-import type { MemoryStore, StoredRow } from './store.ts'
+import type { StoredRow } from './store.ts'
 
 export interface CapabilityGraph {
   nodes: Array<{ id: string; name: string; riskLevel: number; policyScopes: string[] }>
@@ -111,9 +111,9 @@ export interface DecisionPage {
 }
 
 /**
- * The read surface the contract implementations need. `MemoryStore` satisfies it
- * today; a persistence adapter must satisfy the same two reads, not the whole
- * store, so the query layer cannot reach a write path.
+ * The read surface the contract implementations need. Both `MemoryStore` and
+ * `FileStore` satisfy it; a query needs the same two reads, not the whole store,
+ * so the query layer cannot reach a write path.
  */
 export interface QueryStore {
   rows(table: string): readonly StoredRow[]

@@ -10,7 +10,7 @@
  * fails before commit leaves no key behind, so its retry is a first attempt.
  */
 import { IdempotencyConflictError, MalformedQueryError } from './errors.ts'
-import { MemoryStore, digestOf, type StoredRow } from './store.ts'
+import { digestOf, type Store, type StoredRow } from './store.ts'
 import { requireTenant, type TenantId } from './tenancy.ts'
 
 /** A key is reusable after this window, at the store's fixed clock. */
@@ -27,14 +27,14 @@ export interface IdempotentOutcome<T> {
  * In-flight requests are held per store, so two callers with the same key wait
  * on one execution instead of racing to write (§6 D04).
  */
-const inFlight = new WeakMap<MemoryStore, Map<string, Promise<IdempotentOutcome<unknown>>>>()
+const inFlight = new WeakMap<Store, Map<string, Promise<IdempotentOutcome<unknown>>>>()
 
 function clone<T>(value: T): T {
   return structuredClone(value)
 }
 
 export async function runIdempotent<T>(
-  store: MemoryStore,
+  store: Store,
   tenantId: TenantId,
   operation: string,
   key: string,
@@ -129,7 +129,7 @@ export async function runIdempotent<T>(
 
 /** The stored key row for a tenant, or undefined. Keys never cross tenants. */
 export function findIdempotencyKey(
-  store: MemoryStore,
+  store: Store,
   tenantId: TenantId,
   operation: string,
   key: string,

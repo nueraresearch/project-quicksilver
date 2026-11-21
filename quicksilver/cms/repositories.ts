@@ -24,7 +24,7 @@ import {
   RevisionConflictError,
   UnresolvedRelationError,
 } from './errors.ts'
-import { MemoryStore, digestOf, type StoredRow } from './store.ts'
+import { digestOf, type Store, type StoredRow } from './store.ts'
 import { linkRelation, relationById } from './relations.ts'
 import { runIdempotent } from './idempotency.ts'
 import { requireTenant, type TenantId } from './tenancy.ts'
@@ -86,16 +86,16 @@ function requireLimit(page: PageRequest): number {
   return limit
 }
 
-function findRow(store: MemoryStore, table: string, tenantId: TenantId, id: string): StoredRow | undefined {
+function findRow(store: Store, table: string, tenantId: TenantId, id: string): StoredRow | undefined {
   return store.rows(table).find((row) => row.tenant_id === tenantId && row.id === id)
 }
 
 /** Tenant-qualified reads shared by every store's repository. */
 export class BaseRepository<T extends ContentRecord> {
-  protected readonly store: MemoryStore
+  protected readonly store: Store
   readonly table: string
 
-  constructor(store: MemoryStore, table: string) {
+  constructor(store: Store, table: string) {
     this.store = store
     this.table = table
   }
@@ -383,7 +383,7 @@ export interface OrganizationInput {
  * together, and a failed revision append aborts before either lands.
  */
 export class OrganizationRepository extends BaseRepository<OrganizationRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_organizations')
   }
 
@@ -471,7 +471,7 @@ export interface ObjectiveRecord extends ContentRecord {
  * rewritten to a local row; a target that exists nowhere is `UnresolvedRelation`.
  */
 export class ObjectiveRepository extends BaseRepository<ObjectiveRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_objectives')
   }
 
@@ -521,13 +521,13 @@ export class ObjectiveRepository extends BaseRepository<ObjectiveRecord> {
   }
 }
 
-function link(store: MemoryStore, tenantId: TenantId, relationId: string, sourceId: string, targetId: string, options: WriteOptions): void {
+function link(store: Store, tenantId: TenantId, relationId: string, sourceId: string, targetId: string, options: WriteOptions): void {
   linkRelation(store, tenantId, relationById(relationId), sourceId, targetId, options)
 }
 
 /** B06: a department member is a same-tenant entity. */
 export class DepartmentRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_departments')
   }
 
@@ -538,7 +538,7 @@ export class DepartmentRepository extends BaseRepository<ContentRecord> {
 
 /** B06: authorizing an entity for a capability writes the same-tenant join row. */
 export class CapabilityRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_capabilities')
   }
 
@@ -548,7 +548,7 @@ export class CapabilityRepository extends BaseRepository<ContentRecord> {
 }
 
 function appendDecisionEvent(
-  store: MemoryStore,
+  store: Store,
   tenantId: TenantId,
   decisionId: string,
   eventType: string,
@@ -585,7 +585,7 @@ export type DecisionContextTarget = { entityId?: string; capabilityId?: string; 
 
 /** B07: exactly one typed context target, all same-tenant, one decision event. */
 export class DecisionRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_decisions')
   }
 
@@ -631,7 +631,7 @@ export class DecisionRepository extends BaseRepository<ContentRecord> {
  * a failed observation append leaves the projection untouched.
  */
 export class MetricRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_metrics')
   }
 
@@ -665,7 +665,7 @@ export class MetricRepository extends BaseRepository<ContentRecord> {
 
 /** B08: one CAS winner per head, and a failed audit append leaves the head alone. */
 export class WorkflowPublicationHeadRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_workflow_publication_heads')
   }
 
@@ -682,7 +682,7 @@ export class WorkflowPublicationHeadRepository extends BaseRepository<ContentRec
 }
 
 export class AgentPublicationHeadRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_agent_publication_heads')
   }
 
@@ -699,7 +699,7 @@ export class AgentPublicationHeadRepository extends BaseRepository<ContentRecord
 }
 
 function casPublicationHead(
-  store: MemoryStore,
+  store: Store,
   tenantId: TenantId,
   keyValue: string,
   expectedCasRevision: number,
@@ -758,7 +758,7 @@ function casPublicationHead(
 
 /** B09: operator records link only to same-tenant targets. */
 export class CommitmentRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_commitments')
   }
 
@@ -768,7 +768,7 @@ export class CommitmentRepository extends BaseRepository<ContentRecord> {
 }
 
 export class ScheduledItemRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_scheduled_items')
   }
 
@@ -786,7 +786,7 @@ export class ScheduledItemRepository extends BaseRepository<ContentRecord> {
 }
 
 export class DraftedCommunicationRepository extends BaseRepository<ContentRecord> {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_drafted_communications')
   }
 
@@ -828,7 +828,7 @@ export class AppendOnlyRepository extends BaseRepository<ContentRecord> {
 
 /** E07: the audit store's only write is an append, and its failure is surfaced. */
 export class DepartmentAuditRepository extends AppendOnlyRepository {
-  constructor(store: MemoryStore) {
+  constructor(store: Store) {
     super(store, 'qs_department_execution_audits')
   }
 
@@ -854,8 +854,8 @@ export class DepartmentAuditRepository extends AppendOnlyRepository {
 export type RepositoryMap = Record<string, BaseRepository<ContentRecord>>
 
 /** Constructs one repository per catalog store; A02 requires all of them. */
-export function createRepositories(store: MemoryStore): RepositoryMap {
-  const specialized: Record<string, new (store: MemoryStore) => BaseRepository<ContentRecord>> = {
+export function createRepositories(store: Store): RepositoryMap {
+  const specialized: Record<string, new (store: Store) => BaseRepository<ContentRecord>> = {
     OrganizationRepository,
     ObjectiveRepository,
     DepartmentRepository,

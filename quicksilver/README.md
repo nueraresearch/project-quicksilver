@@ -61,3 +61,20 @@ catches all six mutations. `engine/contradictionEngine.ts`,
 errors, no web route reads the native stores, and C1 has not exited — the C0
 export, signed ownership manifest and C1 entry bundle are outstanding. Approval
 authority remains with the NQC Kernel.
+
+## Persistence adapters
+
+`MemoryStore` is the C1 fixture and stays the default for the acceptance suite.
+`FileStore` (C2) is the first durable adapter: a versioned `snapshot.json`
+rewritten atomically per mutation, memory rolled back when a write fails, id
+counters seeded from disk so a reopen cannot reissue an id, and fail-closed
+loading (truncated, malformed or unknown-table snapshots refuse rather than
+reading as empty).
+
+It is single-process and no route uses it yet, so no capability row changes
+status. Repositories are typed against `Store`, so a server-backed adapter can
+replace it without touching repository code.
+
+```
+npm run native:c2:test   # reopen, id continuity, corruption, failed write, isolation
+```
