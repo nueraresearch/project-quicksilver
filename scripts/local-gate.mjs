@@ -51,6 +51,7 @@ const steps = [
   { id: 'dependency-audit', argv: ['npm', 'run', 'audit:deps'] },
   { id: 'parity', argv: ['npm', 'run', 'parity:test'] },
   { id: 'native-c1', argv: ['npm', 'run', 'native:c1:test'] },
+  { id: 'native-c2', argv: ['npm', 'run', 'native:c2:test'] },
   ...(skipGo
     ? []
     : [
