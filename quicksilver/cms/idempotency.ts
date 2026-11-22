@@ -6,11 +6,12 @@
  * and never re-enters the body, so a retried create cannot write a second row
  * or a second revision. A different digest under the same key is a conflict.
  *
- * The key row is written only after the body succeeds: a transaction that
- * fails before commit leaves no key behind, so its retry is a first attempt.
+ * The key row and the body's writes commit together: a transaction that fails
+ * leaves neither, so its retry is a first attempt. That is why the body is
+ * synchronous — a commit cannot span an await.
  */
 import { IdempotencyConflictError, MalformedQueryError } from './errors.ts'
-import { MemoryStore, digestOf, type StoredRow } from './store.ts'
+import { digestOf, type Store, type StoredRow } from './store.ts'
 import { requireTenant, type TenantId } from './tenancy.ts'
 
 /** A key is reusable after this window, at the store's fixed clock. */
@@ -23,23 +24,17 @@ export interface IdempotentOutcome<T> {
   replayed: boolean
 }
 
-/**
- * In-flight requests are held per store, so two callers with the same key wait
- * on one execution instead of racing to write (§6 D04).
- */
-const inFlight = new WeakMap<MemoryStore, Map<string, Promise<IdempotentOutcome<unknown>>>>()
-
 function clone<T>(value: T): T {
   return structuredClone(value)
 }
 
 export async function runIdempotent<T>(
-  store: MemoryStore,
+  store: Store,
   tenantId: TenantId,
   operation: string,
   key: string,
   request: unknown,
-  body: () => Promise<T>,
+  body: () => T,
 ): Promise<IdempotentOutcome<T>> {
   const tenant = requireTenant(tenantId)
   if (typeof operation !== 'string' || operation.trim().length === 0) {
@@ -69,32 +64,12 @@ export async function runIdempotent<T>(
     }
   }
 
-  let flights = inFlight.get(store)
-  if (!flights) {
-    flights = new Map()
-    inFlight.set(store, flights)
-  }
-  const flightKey = JSON.stringify([tenant, operation, key])
-  const running = flights.get(flightKey)
-  if (running) {
-    const outcome = await running
-    if (outcome.requestDigest !== requestDigest) throw new IdempotencyConflictError()
-    return { ...outcome, result: clone(outcome.result as T), replayed: true } as IdempotentOutcome<T>
-  }
-
-  // Register the flight before running the body, so a concurrent caller waits
-  // on the same execution rather than starting a second one.
-  let settle!: { resolve: (outcome: IdempotentOutcome<unknown>) => void; reject: (error: unknown) => void }
-  const pending = new Promise<IdempotentOutcome<unknown>>((resolve, reject) => {
-    settle = { resolve, reject }
-  })
-  // A lone caller observes the rejection through its own await; the stored
-  // promise still needs a handler so a failure is not an unhandled rejection.
-  void pending.catch(() => {})
-  flights.set(flightKey, pending)
-
-  try {
-    const result = await body()
+  // The body runs inside the transaction, so the record, its revision and the
+  // key are one commit. Because the body is synchronous, two callers with the
+  // same key cannot interleave: the second one finds the completed key row and
+  // replays it (§6 D04).
+  const committed = store.atomically(() => {
+    const result = body()
     const responseDigest = digestOf(result)
     const recordedAt = store.clock.now()
     const record = {
@@ -116,20 +91,15 @@ export async function runIdempotent<T>(
     } else {
       store.insert('qs_idempotency_keys', { tenant_id: tenant, id: store.ids.next('idem'), ...record })
     }
-    const outcome: IdempotentOutcome<T> = { result, requestDigest, responseDigest, replayed: false }
-    settle.resolve(outcome)
-    return outcome
-  } catch (error) {
-    settle.reject(error)
-    throw error
-  } finally {
-    flights.delete(flightKey)
-  }
+    return { result, responseDigest }
+  })
+
+  return { result: committed.result, requestDigest, responseDigest: committed.responseDigest, replayed: false }
 }
 
 /** The stored key row for a tenant, or undefined. Keys never cross tenants. */
 export function findIdempotencyKey(
-  store: MemoryStore,
+  store: Store,
   tenantId: TenantId,
   operation: string,
   key: string,

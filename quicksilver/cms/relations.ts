@@ -14,7 +14,7 @@
  * design (§6, last row).
  */
 import { CrossTenantRelationError, MalformedQueryError, NotFoundError, UnresolvedRelationError } from './errors.ts'
-import type { MemoryStore, StoredRow } from './store.ts'
+import type { Store, StoredRow } from './store.ts'
 import { requireTenant } from './tenancy.ts'
 
 export interface RelationDefinition {
@@ -100,7 +100,7 @@ export interface LinkOptions {
  * Returns the relation so a caller (and a test) can see what was enforced.
  */
 export function linkRelation(
-  store: MemoryStore,
+  store: Store,
   tenantId: string,
   relation: RelationDefinition,
   sourceId: string,
@@ -150,6 +150,6 @@ export function linkRelation(
 }
 
 /** Rows of a join table for one tenant, used by the relation tests. */
-export function joinRows(store: MemoryStore, tenantId: string, joinTable: string): StoredRow[] {
+export function joinRows(store: Store, tenantId: string, joinTable: string): StoredRow[] {
   return store.rows(joinTable).filter((row) => row.tenant_id === tenantId)
 }

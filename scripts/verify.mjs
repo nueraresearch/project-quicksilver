@@ -17,6 +17,10 @@ const commands = [
   // The matrix gate refuses until all eight planned C1 files exist. It runs after
   // the discovering runner so a missing file fails as a gate, not as a shorter suite.
   ['native:c1:test', 'Native CMS C1 acceptance matrix gate'],
+  // C2 runs the same repositories over the durable adapter, so it covers the
+  // persistence layer C1's in-memory fixture cannot: reopen, id continuity and
+  // one commit per multi-table write.
+  ['native:c2:test', 'Native CMS C2 durable store suite'],
   ['typecheck', 'TypeScript checks'],
 ]
 

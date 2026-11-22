@@ -20,8 +20,18 @@ export const FIXED_NOW = '2026-01-01T00:00:00.000Z'
 
 export type StoredRow = Record<string, unknown>
 
+/** Time source. Deterministic in the suite; the system clock in a real install. */
+export interface Clock {
+  now(): string
+}
+
+/** Id source. Unique ids are the requirement; determinism is the test property. */
+export interface IdSource {
+  next(prefix: string): string
+}
+
 /** Stable ordering and timestamps: one tick per call, starting at FIXED_NOW. */
-export class DeterministicClock {
+export class DeterministicClock implements Clock {
   private ticks = 0
 
   now(): string {
@@ -30,7 +40,7 @@ export class DeterministicClock {
 }
 
 /** Ids are `prefix_0001`, `prefix_0002`, … per prefix. No randomness. */
-export class DeterministicIds {
+export class DeterministicIds implements IdSource {
   private readonly counters = new Map<string, number>()
 
   next(prefix: string): string {
@@ -50,7 +60,59 @@ export interface Barrier {
   release(): void
 }
 
-export class MemoryStore {
+/** Held operations release together, for the CAS races in C02/C07/D04. */
+export function createBarrier(participants = 2): Barrier {
+  let arrived = 0
+  let open = false
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = () => {
+      open = true
+      resolve()
+    }
+  })
+  return {
+    wait: () => {
+      arrived += 1
+      if (arrived >= participants) release()
+      return open ? Promise.resolve() : gate
+    },
+    release,
+  }
+}
+
+/**
+ * What the repository layer needs from a persistence adapter.
+ *
+ * `MemoryStore` is the C1 fixture and `FileStore` is the first durable adapter;
+ * both satisfy this, so a repository cannot tell which it was handed. That is
+ * deliberate: the C1 suite constrains the adapter it runs on, and this interface
+ * keeps a second adapter from quietly diverging from it.
+ */
+export interface Store {
+  readonly clock: Clock
+  readonly ids: IdSource
+  tableNames(): string[]
+  hasTable(name: string): boolean
+  rows(table: string): readonly StoredRow[]
+  insert(table: string, row: StoredRow): void
+  findById(table: string, tenantId: string, id: string): StoredRow | undefined
+  replace(table: string, tenantId: string, id: string, patch: StoredRow): StoredRow
+  existsInAnotherTenant(table: string, tenantId: string, id: string): boolean
+  rawDump(tenantId: string, table: string): StoredRow[]
+  failAuditAppend(operation: string, table: string): void
+  consumeAuditFault(operation: string, table: string): boolean
+  barrier(participants?: number): Barrier
+  /**
+   * Runs `work` as one persistence unit. A durable store commits every table
+   * `work` touched with a single write and undoes all of it if `work` throws,
+   * so a record and its revision cannot land one without the other. An
+   * in-memory store has nothing to commit and runs the body unchanged.
+   */
+  atomically<T>(work: () => T): T
+}
+
+export class MemoryStore implements Store {
   private readonly tables = new Map<string, StoredRow[]>()
   private readonly auditFaults = new Set<string>()
   readonly clock = new DeterministicClock()
@@ -123,23 +185,15 @@ export class MemoryStore {
   }
 
   barrier(participants = 2): Barrier {
-    let arrived = 0
-    let open = false
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = () => {
-        open = true
-        resolve()
-      }
-    })
-    return {
-      wait: () => {
-        arrived += 1
-        if (arrived >= participants) release()
-        return open ? Promise.resolve() : gate
-      },
-      release,
-    }
+    return createBarrier(participants)
+  }
+
+  /**
+   * Nothing is persisted here, and the C1 fixture's atomicity comes from its
+   * pre-write audit seams, so the body runs as-is.
+   */
+  atomically<T>(work: () => T): T {
+    return work()
   }
 }
 
