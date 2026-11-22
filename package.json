@@ -60,6 +60,7 @@
     "aura:choices:v2": "node --experimental-strip-types --no-warnings packages/aura/src/choice-v2-cli.ts",
     "aura:agreement": "node --experimental-strip-types --no-warnings packages/aura/src/agreement-cli.ts",
     "aura:eval:model": "npm run intent:eval --workspace=@quicksilver/agent --",
+    "gate:local": "node scripts/local-gate.mjs",
     "genesis": "npm run genesis --workspace=@quicksilver/host --",
     "operate": "npm run operate --workspace=@quicksilver/host --",
     "whatif": "npm run whatif --workspace=@quicksilver/host --",
