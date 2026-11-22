@@ -9,6 +9,15 @@ In the [product definition](../NUERA-QUICKSILVER-PRODUCT.md), this is the
 **Foundation** layer. It includes the platform feature baseline (section 7) that
 every operating mode depends on.
 
+## Architecture decisions
+
+- [ADR 0001: native-first ownership of the runtime](adr-0001-native-first-ownership.md): determinism, credential entropy, the retire-after-replacement rule, and the milestone evidence cadence
+- [ADR 0002: provider compatibility policy](adr-0002-provider-compatibility-policy.md): what makes a provider supported — scoped credentials, test modes first, read before write, no silent substitution, parity before a default changes
+- [ADR 0003: native local operation](adr-0003-native-local-operation.md): what "native" means, the default-backend removal gate, the four things nobody can own, and how local operation keeps kernel authority
+- [ADR 0004: native CMS deletion and tombstone model](adr-0004-native-cms-deletion-tombstones.md): deleted versus missing export records, restored-state transitions, audit events, and retention/purge rules
+- [ADR 0005: Sanity demotion and the global removal gate](adr-0005-sanity-demotion-global-gate.md): why all core rows, not only the content rows, must be native before Sanity becomes optional — superseded by ADR 0006 before acceptance
+- [ADR 0006: content parity first, and a provider-scoped Sanity demotion gate](adr-0006-content-parity-first-gate.md): the owner's content-first sequence, the two named gates, the local principal the terminal row needs, and what may and may not be claimed
+
 ## Governance and authority
 
 - [Identity and RBAC](identity-rbac.md)

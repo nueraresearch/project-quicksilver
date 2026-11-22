@@ -13,16 +13,20 @@
     "source-map-js": "1.2.2"
   },
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "npm run dev:web",
+    "dev:all": "npm run dev --workspaces --if-present",
     "dev:web": "npm run dev --workspace=@quicksilver/web",
     "dev:studio": "npm run dev --workspace=@quicksilver/studio",
+    "dev:preflight": "npm run dev:preflight --workspace=@quicksilver/studio",
     "host": "npm run start --workspace=@quicksilver/host --",
     "qcs:test": "node --experimental-strip-types --no-warnings --test packages/qcs/tests/qcs.test.ts",
     "onboard": "npm run onboard --workspace=@quicksilver/host --",
     "build": "npm run build --workspaces --if-present",
     "verify": "node scripts/verify.mjs",
+    "check:clean-install": "node scripts/clean-install-check.mjs",
+    "adr:seal": "node scripts/adr-digest.mjs",
     "resend:check": "node scripts/resend-check.mjs",
-    "parity:test": "node --test scripts/parity-matrix.test.mjs scripts/test-registration.test.mjs scripts/azure-template.test.mjs scripts/principal-token.test.mjs scripts/resend-check.test.mjs",
+    "parity:test": "node --test scripts/parity-matrix.test.mjs scripts/adr-contract.test.mjs scripts/clean-install-check.test.mjs scripts/verify-outcome.test.mjs scripts/test-registration.test.mjs scripts/azure-template.test.mjs scripts/principal-token.test.mjs scripts/resend-check.test.mjs scripts/native-capability-matrix.test.mjs scripts/native-c0-gate.test.mjs scripts/native-migration-rehearsal.test.mjs scripts/native-c1-test.test.mjs scripts/native-capability-enumeration.test.mjs scripts/native-capability-totals.test.mjs scripts/native-c1-evidence.test.mjs scripts/native-c1-run.test.mjs scripts/doc-link-check.test.mjs scripts/dependency-audit.test.mjs",
     "audit:deps": "node scripts/dependency-audit.mjs",
     "sdk:test": "node --experimental-strip-types --no-warnings --test packages/sdk/src/index.test.ts",
     "schema:deploy": "npm run schema:deploy --workspace=@quicksilver/studio --",
@@ -41,7 +45,7 @@
     "benchmark:stress": "npm run benchmark:stress --workspace=@quicksilver/agent --",
     "benchmark:waes": "npm run benchmark:waes --workspace=@quicksilver/agent --",
     "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p quicksilver --noEmit",
     "audit:exposure": "npm run audit:exposure --workspace=@quicksilver/studio",
     "demo:seed-decisions": "npm run demo:seed-decisions --workspace=@quicksilver/studio --",
     "demo:preflight": "npm run demo:preflight --workspace=@quicksilver/studio --",
@@ -67,7 +71,13 @@
     "operator": "node --experimental-strip-types --no-warnings packages/operator/src/cli.ts",
     "operator:test": "node --experimental-strip-types --no-warnings --test packages/operator/src/operator.test.ts packages/operator/src/operator-cli.test.ts packages/operator/src/channels.test.ts packages/operator/src/automations.test.ts packages/operator/src/setup.test.ts packages/operator/src/web-search.test.ts packages/operator/src/review.test.ts packages/operator/src/calendar.test.ts packages/operator/src/ical-adapter.test.ts packages/operator/src/routines.test.ts packages/operator/src/communications.test.ts",
     "operator:gateway": "node --experimental-strip-types --no-warnings packages/operator/src/gateway-cli.ts",
-    "operator:auto": "node --experimental-strip-types --no-warnings packages/operator/src/automations-cli.ts"
+    "operator:auto": "node --experimental-strip-types --no-warnings packages/operator/src/automations-cli.ts",
+    "native:gate": "node scripts/native-capability-matrix.mjs",
+    "native:parity:gate": "node scripts/native-capability-matrix.mjs --scope=content",
+    "native:c0:gate": "node scripts/native-c0-gate.mjs",
+    "native:rehearse": "node scripts/native-migration-rehearsal.mjs",
+    "native:c1:test": "node scripts/native-c1-test.mjs",
+    "native:c1:run": "node scripts/native-c1-run.mjs quicksilver/test/c1"
   },
   "engines": {
     "node": ">=22.6"
