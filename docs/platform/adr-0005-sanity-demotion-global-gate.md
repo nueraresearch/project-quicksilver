@@ -1,10 +1,11 @@
 # ADR 0005: Sanity demotion and the global removal gate
 
-- **Status:** Proposed
+- **Status:** Superseded
 - **Date:** 2026-11-17
 - **Deciders:** Product Owner (Nuera RDL)
 - **Supersedes:** none
-- **Superseded by:** none
+- **Superseded by:** ADR-0006 ([content parity first](adr-0006-content-parity-first-gate.md))
+- **Body digest:** sha256:bb982fbd01ceb512a76c247d348db6f55eca4af0e6220800ac63bafdea1658b6
 - **Related:** [ADR 0001](adr-0001-native-first-ownership.md) · [ADR 0002](adr-0002-provider-compatibility-policy.md) · [ADR 0003](adr-0003-native-local-operation.md) · [Native CMS cutover](native-cms-cutover.md) · [Native local operation](native-local.md) · [Native capability matrix](native-capabilities.json) · [Parity tests](parity-tests.md)
 
 This record decides one gate question. It does not change any provider status,
